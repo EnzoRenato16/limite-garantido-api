@@ -56,7 +56,7 @@ class Configuracao(BaseSettings):
     # CUSTODIA_SEGREDOS='{"custodiante_agil": "...", "custodiante_lento": "..."}'
     custodia_segredos: dict[str, SecretStr] = Field(default_factory=dict)
     # Janela contra reapresentação de callback (diferença máxima do timestamp assinado).
-    custodia_tolerancia_segundos: int = Field(default=300, ge=1)
+    custodia_tolerancia_segundos: int = Field(default=300, ge=1, le=900)
     # De quanto em quanto tempo o worker consulta pedidos sem resposta (polling).
     custodia_intervalo_segundos: float = Field(default=2.0, gt=0)
 
@@ -76,6 +76,22 @@ class Configuracao(BaseSettings):
     demo_api_key: SecretStr | None = None
     demo_webhook_segredo: SecretStr | None = None
     demo_webhook_url: str = "http://localhost:8000/demo/webhooks"
+
+    @model_validator(mode="after")
+    def _recusar_segredo_de_callback_fraco(self) -> Configuracao:
+        # Vale em qualquer ambiente: com segredo vazio ou curto, qualquer um forja a
+        # confirmação de um gravame, e isso vira limite sem garantia.
+        fracos = [
+            custodiante_id
+            for custodiante_id, segredo in self.custodia_segredos.items()
+            if len(segredo.get_secret_value()) < TAMANHO_MINIMO_DE_SEGREDO
+        ]
+        if fracos:
+            raise ValueError(
+                f"segredo de callback de {', '.join(sorted(fracos))} precisa ter "
+                f"{TAMANHO_MINIMO_DE_SEGREDO}+ caracteres"
+            )
+        return self
 
     @model_validator(mode="after")
     def _recusar_configuracao_insegura_em_producao(self) -> Configuracao:

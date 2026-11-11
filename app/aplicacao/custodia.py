@@ -237,11 +237,32 @@ def acompanhar_garantia(
     if solicitacao is None or not garantia.aguardando_custodiante:
         return None
     pedido = pedido_da_garantia(conta, garantia)
-    resposta = (
-        uow.custodiante.consultar(pedido)
-        if solicitacao.enviada_em is not None
-        else _enviar(uow, pedido)
-    )
+    try:
+        resposta = (
+            uow.custodiante.consultar(pedido)
+            if solicitacao.enviada_em is not None
+            else _enviar(uow, pedido)
+        )
+        if resposta.status is not StatusDaResposta.PENDENTE:
+            resultado, eventos = _aplicar_na_conta(
+                uow, parceiro, conta, solicitacao.id, resposta, Canal.POLLING
+            )
+            # Duplicada ou obsoleta ainda precisa de commit: a obsoleta fica registrada.
+            return eventos if resultado is not ResultadoDaResposta.DUPLICADA else None
+    except Exception:
+        # Custodiante fora do ar, ou resposta que não dá para aplicar. Dentro do prazo, o
+        # erro sobe (a rotina conta e registra). Passado o prazo, o pedido expira: falha
+        # do custodiante não pode deixar a garantia esperando para sempre.
+        if not solicitacao.vencida(agora):
+            raise
+        log.warning(
+            "Custodiante falhou e o prazo do pedido venceu: expirando",
+            extra={"custodiante_id": garantia.custodiante_id, "solicitacao_id": solicitacao.id},
+            exc_info=True,
+        )
+        conta.pendencias.limpar()
+        conta.expirar_solicitacao(garantia.id, parceiro.politica, agora, hoje)
+        return _salvar(uow, conta, parceiro)
     if resposta.status is StatusDaResposta.PENDENTE:
         if solicitacao.vencida(agora):
             conta.expirar_solicitacao(garantia.id, parceiro.politica, agora, hoje)
@@ -249,12 +270,7 @@ def acompanhar_garantia(
         if solicitacao.enviada_em is None:
             conta.aceitar_solicitacao(garantia.id, solicitacao.id, agora)
             return _salvar(uow, conta, parceiro)
-        return None
-    resultado, eventos = _aplicar_na_conta(
-        uow, parceiro, conta, solicitacao.id, resposta, Canal.POLLING
-    )
-    # Duplicada ou obsoleta ainda precisa de commit: a resposta obsoleta fica registrada.
-    return eventos if resultado is not ResultadoDaResposta.DUPLICADA else None
+    return None
 
 
 def processar_custodia(
@@ -287,7 +303,12 @@ def processar_custodia(
         except Exception:
             erros += 1
             log.exception(
-                "Falha ao acompanhar garantia no custodiante", extra={"garantia_id": garantia_id}
+                "Falha ao acompanhar garantia no custodiante",
+                extra={
+                    "garantia_id": garantia_id,
+                    "conta_id": conta_id,
+                    "parceiro_de_origem": id_do_parceiro,
+                },
             )
     return processadas, erros, eventos
 

@@ -140,7 +140,12 @@ def receber_callback(
         uow.commit()
     log.info(
         "Callback de custodiante",
-        extra={"custodiante_id": custodiante_id, "resultado": str(resultado)},
+        extra={
+            "custodiante_id": custodiante_id,
+            "evento_id": dados.evento_id,
+            "solicitacao_id": dados.solicitacao_id,
+            "resultado": str(resultado),
+        },
     )
     return esquemas.ResultadoDoCallback(resultado=resultado.value)
 
@@ -159,11 +164,18 @@ def _autenticar(
             tolerancia_em_segundos=recursos.config.custodia_tolerancia_segundos,
             agora=int(recursos.relogio.agora().timestamp()),
         )
-        valida = True
-    except AssinaturaInvalida:
-        valida = False
-    if not (valida and conhecido):
-        log.warning("Callback de custodiante recusado", extra={"custodiante_id": custodiante_id})
+        motivo = None
+    except AssinaturaInvalida as erro:
+        motivo = str(erro)
+    if motivo is not None or not conhecido:
+        # O motivo vai só para o log; quem chamou recebe sempre a mesma resposta.
+        log.warning(
+            "Callback de custodiante recusado",
+            extra={
+                "custodiante_id": custodiante_id,
+                "motivo": motivo or "custodiante sem segredo configurado",
+            },
+        )
         raise ErroDeApi("assinatura_invalida", "Não foi possível autenticar o callback")
 
 

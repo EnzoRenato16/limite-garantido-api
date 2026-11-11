@@ -196,3 +196,14 @@ def test_segredo_de_callback_fraco_nao_sobe_em_producao() -> None:
             custodia_externa="desligada",
             custodia_segredos={"custodiante_agil": "segredo-de-exemplo-com-mais-de-32-letras"},
         )
+
+
+@pytest.mark.parametrize("segredo", ["", "curto"])
+def test_segredo_de_callback_curto_nao_sobe_em_ambiente_nenhum(segredo: str) -> None:
+    with pytest.raises(ValueError, match="segredo de callback"):
+        _config(custodia_segredos={"custodiante_agil": segredo})
+
+
+def test_janela_de_replay_tem_teto() -> None:
+    with pytest.raises(ValueError, match="custodia_tolerancia_segundos"):
+        _config(custodia_tolerancia_segundos=86_400)

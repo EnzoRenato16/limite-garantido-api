@@ -594,3 +594,49 @@ def test_callback_e_polling_simultaneos_tem_um_efeito_so(
     assert _lancamentos_da_garantia(parceiro, conta, garantia_id) == ["bloqueio_garantia"]
     assert parceiro.tipos_de_evento(conta).count("garantia.bloqueada") == 1
     assert _respostas(engine, garantia_id) == 1
+
+
+# ========================================================= achados da revisão
+class _ForaDoAr(SimuladorDeCustodiantes):
+    def consultar(self, pedido):  # type: ignore[no-untyped-def]
+        raise ConnectionError("custodiante fora do ar")
+
+    solicitar_gravame = consultar
+
+
+def test_custodiante_fora_do_ar_ainda_deixa_o_prazo_expirar(
+    config: Configuracao, engine: Engine, relogio: RelogioFixo
+) -> None:
+    app = criar_app(config, engine=engine, relogio=relogio, custodiante=_ForaDoAr(PERFIS, relogio))
+    with TestClient(app) as cliente:
+        parceiro = criar_parceiro(cliente, politica=politica_de_teste())
+        _, garantia_id, _ = _pedir(parceiro, "teste_confirma")
+        resumo = _rotina(cliente, parceiro)
+        assert resumo["contas_com_erro"] == 1  # o erro aparece, não é engolido
+        assert parceiro.garantia(garantia_id)["estado"] == "solicitada"
+        relogio.avancar(minutes=61)
+        resumo = _rotina(cliente, parceiro)
+        assert resumo["contas_com_erro"] == 0
+        assert parceiro.garantia(garantia_id)["estado"] == "gravame_expirado"
+
+
+def test_confirmacao_administrativa_externa_exige_sandbox(
+    config: Configuracao, engine: Engine, relogio: RelogioFixo
+) -> None:
+    from tests.conftest import configuracao_de_teste
+
+    sem_sandbox = configuracao_de_teste(config.database_url, sandbox_habilitado=False)
+    app = criar_app(
+        sem_sandbox,
+        engine=engine,
+        relogio=relogio,
+        custodiante=SimuladorDeCustodiantes(PERFIS, relogio),
+    )
+    with TestClient(app) as cliente:
+        parceiro = criar_parceiro(cliente, politica=politica_de_teste())
+        _, garantia_id, _ = _pedir(parceiro, "teste_mudo")
+        resposta = cliente.post(
+            f"/v1/admin/garantias/{garantia_id}/confirmacao-de-bloqueio", headers=ADMIN
+        )
+        assert resposta.status_code == 409
+        assert parceiro.garantia(garantia_id)["estado"] == "solicitada"

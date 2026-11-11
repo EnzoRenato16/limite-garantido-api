@@ -135,3 +135,24 @@ def test_garantia_gravada_sem_origem_le_como_interna(engine: Engine, parceiro: P
             text("SELECT origem FROM garantias WHERE id = :id"), {"id": garantia_id}
         ).scalar_one()
     assert origem == "interna"
+
+
+def test_violacao_que_nao_e_duplicata_nao_vira_duplicata(
+    engine: Engine, parceiro: Parceiro
+) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    uow = _uow(engine)
+    with pytest.raises(IntegrityError):
+        uow.contas.registrar_resposta(
+            custodiante_id="custodiante_lento",
+            evento_id="evc_sem_pedido",
+            solicitacao_id="sol_que_nao_existe",
+            garantia_id="gar_que_nao_existe",
+            parceiro_id=parceiro.id,
+            status=StatusDaResposta.CONFIRMADA,
+            canal="callback",
+            resultado="aplicada",
+            recebida_em=AGORA,
+        )
+    uow.sessao.close()

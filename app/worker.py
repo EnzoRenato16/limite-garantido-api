@@ -73,17 +73,21 @@ def main() -> None:
     while not parar.is_set():
         try:
             if time.monotonic() >= proxima_custodia:
-                processadas, com_erro, eventos = processar_custodia(abrir_unidade, prazo_legado)
-                if eventos or com_erro:
-                    log.info(
-                        "Custódia acompanhada",
-                        extra={
-                            "garantias_processadas": processadas,
-                            "garantias_com_erro": com_erro,
-                            "eventos_gerados": eventos,
-                        },
-                    )
+                # Etapa separada: uma falha na custódia não pode parar os webhooks.
                 proxima_custodia = time.monotonic() + config.custodia_intervalo_segundos
+                try:
+                    processadas, com_erro, eventos = processar_custodia(abrir_unidade, prazo_legado)
+                    if eventos or com_erro:
+                        log.info(
+                            "Custódia acompanhada",
+                            extra={
+                                "garantias_processadas": processadas,
+                                "garantias_com_erro": com_erro,
+                                "eventos_gerados": eventos,
+                            },
+                        )
+                except Exception:
+                    log.exception("Falha na rotina de custódia do worker")
             resultado = entregador.processar_lote()
             if resultado.total:
                 log.info(

@@ -99,7 +99,11 @@ async function chamar(metodo, caminho, corpo, { idempotente = false } = {}) {
     headers: cabecalhos,
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
   });
-  const dados = resposta.status === 204 ? null : await resposta.json();
+  let dados = null;
+  if (resposta.status !== 204) {
+    // Um 502 do proxy chega em HTML: vira erro legível em vez de quebrar o botão.
+    dados = await resposta.json().catch(() => ({ detail: `Erro HTTP ${resposta.status}` }));
+  }
   return { ok: resposta.ok, status: resposta.status, dados };
 }
 
@@ -624,8 +628,10 @@ async function buscarWebhooks() {
     if (estado.conta && (recebidos.length || (esperando && faz > INTERVALO_DE_RECONSULTA_EM_MS))) {
       await atualizar();
     }
-  } catch {
-    // A API saiu do ar por um instante: tenta de novo na próxima volta.
+  } catch (erro) {
+    // A API saiu do ar por um instante: tenta de novo na próxima volta. Fica no console
+    // para que um erro de desenho não passe despercebido.
+    console.error(erro);
   }
 }
 

@@ -16,7 +16,7 @@ from app.aplicacao import custodia as casos_de_custodia
 from app.aplicacao import parceiros as casos_de_parceiro
 from app.aplicacao import risco as casos_de_risco
 from app.dominio.dinheiro import Dinheiro
-from app.dominio.erros import GarantiaNaoEncontrada
+from app.dominio.erros import GarantiaNaoEncontrada, SolicitacaoDivergente
 from app.dominio.garantia import OrigemGarantia
 from app.dominio.politica import PoliticaRisco
 from app.infra.banco.modelos import GarantiaModelo, LancamentoModelo, PartidaModelo
@@ -124,8 +124,15 @@ def confirmar_bloqueio(
     parceiro = casos_de_parceiro.obter_parceiro(uow, linha.parceiro_id)
     if linha.origem == OrigemGarantia.EXTERNA.value:
         custodiante = recursos.custodiante
-        if not isinstance(custodiante, SimuladorDeCustodiantes):
-            raise GarantiaNaoEncontrada("Garantia não encontrada", garantia_id=garantia_id)
+        if not (
+            recursos.config.sandbox_habilitado and isinstance(custodiante, SimuladorDeCustodiantes)
+        ):
+            # Confirmar no lugar do custodiante é atalho de sandbox, nunca de operação.
+            raise SolicitacaoDivergente(
+                "Garantia externa só é confirmada pelo custodiante (o atalho exige o "
+                "sandbox ligado)",
+                garantia_id=garantia_id,
+            )
         _, conta, garantia = casos_de_custodia.decidir_pelo_custodiante(
             uow,
             garantia_id,

@@ -504,9 +504,13 @@ class RepositorioDeContasSql:
                     )
                 )
         except IntegrityError:
-            raise RespostaDuplicada(
-                "Esta resposta do custodiante já foi recebida", evento_id=evento_id
-            ) from None
+            # Só a chave (custodiante, evento) repetida é duplicata. Qualquer outra
+            # violação (pedido inexistente, campo inválido) é erro e sobe como erro.
+            if self.resposta_ja_registrada(custodiante_id, evento_id):
+                raise RespostaDuplicada(
+                    "Esta resposta do custodiante já foi recebida", evento_id=evento_id
+                ) from None
+            raise
 
     def contas_com_prazo_vencido(
         self, hoje: date, parceiro_id: str | None = None

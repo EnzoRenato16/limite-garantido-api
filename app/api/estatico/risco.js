@@ -29,10 +29,11 @@ async function chamar(metodo, caminho, corpo) {
     headers: { Authorization: `Bearer ${estado.chave}`, "Content-Type": "application/json" },
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
   });
-  const dados = await resposta.json();
+  const dados = await resposta.json().catch(() => ({}));
   if (!resposta.ok) {
+    const detalhe = dados.detail ?? `Erro HTTP ${resposta.status}`;
     const campos = (dados.erros || []).map((e) => e.campo).filter(Boolean).join(", ");
-    throw new Error(campos ? `${dados.detail} (${campos})` : dados.detail);
+    throw new Error(campos ? `${detalhe} (${campos})` : detalhe);
   }
   return dados;
 }
