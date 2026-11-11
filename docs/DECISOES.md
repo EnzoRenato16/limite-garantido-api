@@ -364,6 +364,89 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   fase 2; agora que a fase 2 existe, ele fica por compatibilidade, mas também não
   deixa garantia pendurada.
 
+### 42. O que cada estado externo conta para o limite
+- **Contexto.** A regra pedida: o limite só nasce em `bloqueada`; na liberação ele sai
+  no pedido; em `execucao_solicitada` não há limite novo.
+- **Opções para a garantia em execução.** (a) Tirá-la de tudo, como a que está sendo
+  liberada. (b) Tirá-la do limite, mas deixá-la cobrindo a dívida até a venda.
+- **Decisão.** (b). Ela não entra em `limite_total` nem em `limite_disponivel`, mas
+  entra em `valor_das_garantias` e no cálculo do `deficit`.
+- **Motivo.** O ativo continua penhorado e está sendo vendido justamente para pagar a
+  dívida. Com (a), pedir a execução abriria uma chamada de margem contra o próprio
+  cliente que está sendo executado, e o parceiro receberia um aviso sem sentido.
+
+### 43. Execução externa: o que se pede e o que se abate
+- **Decisão.** No pedido, nada vai para o ledger: só o estado e o valor mandado vender
+  (`valor_em_execucao`), que sai do devido para a rotina não pedir de novo. Na
+  confirmação, um lançamento consome da garantia o valor pedido e abate da dívida o
+  valor efetivamente recebido, limitado à dívida da conta (fatura primeiro, depois o
+  que ainda não foi faturado).
+- **Se a venda render menos**, a diferença continua devida e a rotina do dia seguinte
+  pede só ela. **Se render mais**, o excedente não passa pela plataforma: fica com o
+  cliente no próprio custodiante e aparece no evento `execucao.confirmada`
+  (`valor_devolvido_ao_cliente`).
+- **Motivo.** O ledger registra dinheiro que passou pela plataforma. Abater no pedido
+  seria registrar um recebimento que ainda não aconteceu.
+
+### 44. O pedido sai depois do commit, pelo worker
+- **Contexto.** Pedir o gravame dentro da transação da API parece mais rápido.
+- **Decisão.** A API grava a garantia `solicitada` e responde `202`. Quem envia o
+  pedido é a rotina de custódia, no worker, alguns segundos depois.
+- **Motivo.** Se o pedido saísse antes do commit e o commit falhasse, o custodiante
+  teria um gravame que a plataforma não conhece. Do jeito escolhido, o pior caso é o
+  pedido sair atrasado, e ele é idempotente pelo `solicitacao_id`. É a mesma ideia da
+  outbox dos webhooks.
+
+### 45. Histórico de pedidos e resposta obsoleta
+- **Decisão.** Cada pedido fica gravado em `solicitacoes_de_custodia`, mesmo depois de
+  encerrado. Uma resposta que chega para um pedido que já não está em aberto (por
+  exemplo, uma confirmação depois de a garantia expirar) é reconhecida, registrada como
+  `obsoleta` e não muda nada.
+- **Motivo.** Sem o histórico ela cairia no vazio como "pedido inexistente". Com ele,
+  fica o rastro para a reconciliação. Essa reconciliação (desfazer o gravame que o
+  custodiante confirmou tarde) não está implementada e está em "Próximos passos".
+
+### 46. Segurança do callback
+- **Decisão.**
+  - Autenticação só pela assinatura HMAC-SHA256 do corpo exato, com timestamp e janela
+    de 5 minutos, no mesmo formato dos webhooks de saída.
+  - Comparação em tempo constante; para custodiante desconhecido o HMAC é calculado
+    mesmo assim, com um segredo descartável, para o tempo de resposta não dizer se o
+    id existe.
+  - Qualquer falha de autenticação devolve o mesmo `401 assinatura_invalida`, sem
+    dizer qual foi.
+  - Só depois de autenticado se diz se o pedido existe (`404`), e "não existe" e "é de
+    outro custodiante" respondem igual.
+  - Uma resposta reapresentada dentro da janela é barrada pela idempotência: mesmo
+    `evento_id`, nenhum efeito.
+
+### 47. Simulador determinístico e sem estado
+- **Decisão.** O destino de cada pedido (confirma, recusa ou nunca responde) sai de um
+  SHA-256 da semente do perfil com o id do pedido. A resposta fica pronta quando o
+  relógio injetado passa da latência. O `evento_id` também é derivado do pedido e do
+  desfecho, então o callback e a consulta da mesma resposta têm o mesmo id.
+- **Consequência honesta.** Por não guardar estado, o simulador responde a qualquer id
+  bem formado, até de pedido que nunca recebeu. Um custodiante real guardaria os
+  pedidos. Para o que o simulador precisa mostrar, isso não muda nada.
+- **Sandbox e confirmação administrativa** fabricam a resposta pelo próprio simulador,
+  com o mesmo `evento_id` que ele daria. Se a resposta "de verdade" chegar depois, é a
+  mesma e não é aplicada de novo.
+
+### 48. Simulador fora de produção
+- **Decisão.** Sem `CUSTODIA_EXTERNA` explícito, o simulador fica ligado fora de
+  produção e desligado em produção. Pedir `simulador` em produção impede a aplicação
+  de subir, assim como um segredo de callback curto ou de exemplo.
+- **Motivo.** Um simulador que confirma gravames não pode, por engano, atender
+  parceiros de verdade.
+
+### 49. Liberação ou execução que falham voltam a `bloqueada`
+- **Decisão.** Recusa ou falta de resposta num pedido de liberação ou de execução
+  devolve a garantia para `bloqueada`, com o evento `liberacao.falhou` ou
+  `execucao.falhou`. Na execução, a rotina do dia seguinte pede de novo.
+- **Simplificação.** Uma garantia que estava `parcialmente_executada` também volta a
+  `bloqueada`. As duas geram limite do mesmo jeito; perde-se só o rótulo, e o histórico
+  continua nos eventos.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
