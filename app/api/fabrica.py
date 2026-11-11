@@ -153,7 +153,6 @@ def criar_app(
         description=DESCRICAO,
         openapi_tags=TAGS,
         lifespan=ciclo_de_vida,
-        license_info={"name": "MIT"},
     )
     app.state.recursos = recursos
     app.add_middleware(MiddlewareDeObservabilidade, metricas=metricas)

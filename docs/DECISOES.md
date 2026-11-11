@@ -24,18 +24,19 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   o arquivo, adicionei os três marketplaces e instalei os 20 plugins com
   `--scope project`. Todos aparecem como ativos em `claude plugin list`.
 - **Limitação.** Plugin instalado no meio de uma sessão não vira skill invocável nela.
-  As skills dos plugins (superpowers, fullstack-dev-skills, Trail of Bits,
-  frontend-design) não puderam ser chamadas.
+  Durante quase toda a construção, as skills dos plugins (superpowers,
+  fullstack-dev-skills, Trail of Bits, frontend-design) não puderam ser chamadas.
 - **Decisão.** Não fingir. Li os `SKILL.md` direto do disco e segui o método de cada um
   onde fazia sentido: `writing-plans` para o [plano](plano.md), `property-based-testing`
   para os testes com Hypothesis, `dimensional-analysis` para anotar unidades nas contas
   com dinheiro, `modern-python` para o projeto, `frontend-design` para a página `/demo`.
-  Na revisão final usei as duas skills que esta sessão tinha de fato disponíveis
-  (`security-review` e `code-review`), mais `pip-audit` e as regras de segurança do Ruff.
-- **O que não foi feito.** Não rodei Semgrep nem CodeQL (não estavam instalados), nem o
-  fluxo completo de agentes da `dimensional-analysis`. Não usei o `context7`: conferi as
-  APIs rodando o código contra as versões instaladas, o que pegou duas mudanças reais
-  (ver itens 3 e 4 de [o que os testes pegaram](#o-que-os-testes-pegaram)).
+- **Na revisão final** a sessão foi reiniciada e as skills passaram a estar
+  disponíveis. O que foi usado nessa etapa, e o que cada uma encontrou, está em
+  [Revisão final](#revisao-final).
+- **O que não foi feito.** Não usei o `context7`: conferi as APIs rodando o código
+  contra as versões instaladas, o que pegou duas mudanças reais (ver itens 3 e 4 de
+  [o que os testes pegaram](#o-que-os-testes-pegaram)). Também não rodei o fluxo
+  completo de agentes da `dimensional-analysis`.
 
 ### 3. TDD, com honestidade
 - **Decisão.** No domínio, os testes foram escritos antes ou junto do código. Como

@@ -39,51 +39,51 @@ httpx2, prometheus-client, Rich. Testes com pytest, Hypothesis e Playwright. Ruf
 ## Tarefas
 
 ### 1. Fundação do projeto
-- [ ] `pyproject.toml` com uv, Ruff, mypy (estrito no domínio) e pytest.
-- [ ] Estrutura de pastas das quatro camadas.
+- [x] `pyproject.toml` com uv, Ruff, mypy (estrito no domínio) e pytest.
+- [x] Estrutura de pastas das quatro camadas.
 
 ### 2. Domínio (TDD, sem banco e sem FastAPI)
-- [ ] `dinheiro.py`: `Dinheiro` em centavos, soma, subtração, `aplicar_razao` com arredondamento para baixo. Testes de propriedade (ida e volta, piso).
-- [ ] `politica.py`: `TipoAtivo`, `PoliticaRisco` validada (LTV entre 0 e 1, prazos positivos, ordem de execução).
-- [ ] `ledger.py`: `Lancamento` e `Partida`; um lançamento só existe se débitos = créditos.
-- [ ] `garantia.py`: máquina de estados `pendente → bloqueada → liberada | executada | parcialmente_executada`.
-- [ ] `conta.py`: agregado com bloqueio, remarcação, liberação, compra, fechamento de fatura, pagamento, virada do dia (atraso, execução, prazo da chamada de margem).
-- [ ] `stress.py`: choque por tipo de ativo sobre uma carteira.
-- [ ] Teste com máquina de estados do Hypothesis: limite nunca negativo, ledger sempre fecha, execução nunca passa da dívida.
+- [x] `dinheiro.py`: `Dinheiro` em centavos, soma, subtração, `aplicar_razao` com arredondamento para baixo. Testes de propriedade (ida e volta, piso).
+- [x] `politica.py`: `TipoAtivo`, `PoliticaRisco` validada (LTV entre 0 e 1, prazos positivos, ordem de execução).
+- [x] `ledger.py`: `Lancamento` e `Partida`; um lançamento só existe se débitos = créditos.
+- [x] `garantia.py`: máquina de estados `pendente → bloqueada → liberada | executada | parcialmente_executada`.
+- [x] `conta.py`: agregado com bloqueio, remarcação, liberação, compra, fechamento de fatura, pagamento, virada do dia (atraso, execução, prazo da chamada de margem).
+- [x] `stress.py`: choque por tipo de ativo sobre uma carteira.
+- [x] Teste com máquina de estados do Hypothesis: limite nunca negativo, ledger sempre fecha, execução nunca passa da dívida.
 
 ### 3. Persistência
-- [ ] Modelos SQLAlchemy e migração Alembic inicial.
-- [ ] Repositório da conta: carrega com lock de linha e saldos agregados do ledger; grava lançamentos, eventos (outbox) e versão.
-- [ ] Fixtures de teste para SQLite e, quando `DATABASE_URL_TESTE` aponta para Postgres, para Postgres.
+- [x] Modelos SQLAlchemy e migração Alembic inicial.
+- [x] Repositório da conta: carrega com lock de linha e saldos agregados do ledger; grava lançamentos, eventos (outbox) e versão.
+- [x] Fixtures de teste para SQLite e, quando `DATABASE_URL_TESTE` aponta para Postgres, para Postgres.
 
 ### 4. Aplicação e API
-- [ ] Autenticação por API key (hash), isolamento por parceiro e API administrativa.
-- [ ] Erros RFC 7807 com catálogo de códigos em `/v1/erros`.
-- [ ] Idempotência persistida (expiração, conflito de payload, corrida).
-- [ ] Paginação por cursor, rate limit por parceiro.
-- [ ] Rotas de contas, garantias, compras, faturas, pagamentos, eventos, extrato do ledger.
-- [ ] Testes de integração, incluindo os 6 da 0.1 adaptados.
+- [x] Autenticação por API key (hash), isolamento por parceiro e API administrativa.
+- [x] Erros RFC 7807 com catálogo de códigos em `/v1/erros`.
+- [x] Idempotência persistida (expiração, conflito de payload, corrida).
+- [x] Paginação por cursor, rate limit por parceiro.
+- [x] Rotas de contas, garantias, compras, faturas, pagamentos, eventos, extrato do ledger.
+- [x] Testes de integração, incluindo os 6 da 0.1 adaptados.
 
 ### 5. Webhooks
-- [ ] Evento gravado na mesma transação da operação (outbox).
-- [ ] Worker: assinatura HMAC-SHA256 com timestamp, backoff exponencial, dead letter, reenvio manual.
-- [ ] Validação da URL de destino contra SSRF.
+- [x] Evento gravado na mesma transação da operação (outbox).
+- [x] Worker: assinatura HMAC-SHA256 com timestamp, backoff exponencial, dead letter, reenvio manual.
+- [x] Validação da URL de destino contra SSRF.
 
 ### 6. Risco
-- [ ] Provedor de preços fake e determinístico atrás de uma interface.
-- [ ] Rotina de marcação a mercado e rotina de virada do dia.
-- [ ] Chamada de margem com prazo e bloqueio da conta.
-- [ ] Simulador de stress por endpoint.
-- [ ] Teto de limite por cliente e por parceiro.
+- [x] Provedor de preços fake e determinístico atrás de uma interface.
+- [x] Rotina de marcação a mercado e rotina de virada do dia.
+- [x] Chamada de margem com prazo e bloqueio da conta.
+- [x] Simulador de stress por endpoint.
+- [x] Teto de limite por cliente e por parceiro.
 
 ### 7. Observabilidade e qualidade
-- [ ] Logs JSON com `request_id` e `parceiro_id`; `/health` e `/metrics`.
-- [ ] Teste de concorrência contra Postgres.
-- [ ] Cobertura do domínio acima de 90%, Ruff, mypy, pre-commit, GitHub Actions.
+- [x] Logs JSON com `request_id` e `parceiro_id`; `/health` e `/metrics`.
+- [x] Teste de concorrência contra Postgres.
+- [x] Cobertura do domínio acima de 90%, Ruff, mypy, pre-commit, GitHub Actions.
 
 ### 8. Demonstração e entrega
-- [ ] `demo.py` com Rich e página `/demo`.
-- [ ] Fluxo do `/demo` testado com Playwright, screenshots em `docs/img/`.
-- [ ] Dockerfile, `docker compose` (API, Postgres, worker, seed).
-- [ ] Documentação: README, arquitetura, mercado, roadmap, riscos, decisões, roteiro do vídeo, post.
+- [x] `demo.py` com Rich e página `/demo`.
+- [x] Fluxo do `/demo` testado com Playwright, screenshots em `docs/img/`.
+- [x] Dockerfile, `docker compose` (API, Postgres, worker, seed).
+- [x] Documentação: README, arquitetura, mercado, roadmap, riscos, decisões, roteiro do vídeo, post.
 - [ ] Revisão final (crédito, API, segurança) e correções.

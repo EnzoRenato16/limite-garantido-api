@@ -4,7 +4,6 @@ version = "1.0.0"
 description = "Limite Garantido as a Service: API de limite de crédito garantido por investimento (projeto de estudo)."
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
 authors = [{ name = "Enzo Renato" }]
 dependencies = [
     "alembic>=1.20.1",
