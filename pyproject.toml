@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-settings>=2.16.2",
     "rich>=15.0.0",
     "sqlalchemy>=2",
+    "tzdata>=2026.6",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -60,6 +61,10 @@ ignore = [
     "A002", "A003",                # `id` é o nome natural do campo
     "B008",                        # Depends() em argumento padrão é o jeito do FastAPI
 ]
+
+[tool.ruff.lint.isort]
+# A pasta local `alembic/` (migrações) não é o pacote: o pacote é dependência externa.
+known-third-party = ["alembic"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S311", "DTZ"]

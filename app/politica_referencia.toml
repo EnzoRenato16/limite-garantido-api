@@ -1,0 +1,38 @@
+# Política de risco de referência da plataforma.
+#
+# É o ponto de partida de um parceiro novo. Cada parceiro tem a sua cópia, que o time de
+# risco ajusta pela API administrativa. Os LTVs são referência de mercado para um produto
+# de limite garantido; os tetos são valores ilustrativos de um piloto. Nada disto está no
+# código de domínio.
+
+# Dias de atraso da fatura a partir dos quais a garantia é executada.
+dias_para_execucao = 7
+
+# Dias corridos para o cliente reforçar a garantia ou pagar numa chamada de margem.
+# Passado o prazo, a conta é bloqueada para novas compras.
+prazo_chamada_de_margem_dias = 5
+
+# Na execução, vende primeiro o que está mais à esquerda (o mais líquido).
+ordem_de_execucao = [
+    "deposito",
+    "fundo_di",
+    "tesouro_selic",
+    "cdb",
+    "tesouro_prefixado",
+    "tesouro_ipca",
+    "acoes",
+]
+
+# Tetos ilustrativos de piloto (em reais).
+teto_limite_por_cliente = "50000.00"
+teto_limite_do_parceiro = "5000000.00"
+
+# LTV: quanto de limite cada R$ 1 de garantia libera.
+[ltv_por_ativo]
+deposito = "1.00"           # dinheiro em conta: não oscila
+fundo_di = "0.95"
+tesouro_selic = "0.95"
+cdb = "0.85"
+tesouro_prefixado = "0.80"  # mais volátil: sofre com a curva de juros
+tesouro_ipca = "0.80"
+acoes = "0.60"
