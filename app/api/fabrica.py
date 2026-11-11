@@ -111,7 +111,9 @@ def criar_app(
     configurar_logs(config.log_nivel)
 
     engine_proprio = engine is None
-    engine = engine or criar_engine(config.database_url)
+    engine = engine or criar_engine(
+        config.database_url, config.banco_pool_tamanho, config.banco_pool_excedente
+    )
     fabrica_de_sessoes = criar_fabrica_de_sessoes(engine)
     relogio = relogio or RelogioDoSistema(config.fuso_de_negocio)
     if custodiante is None:

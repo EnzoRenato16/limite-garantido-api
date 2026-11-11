@@ -31,16 +31,31 @@ def contexto_atual() -> dict[str, Any]:
     return contexto if contexto is not None else {}
 
 
+_fabrica_original = logging.getLogRecordFactory()
+
+
+def _fabrica_com_contexto(*args: Any, **kwargs: Any) -> logging.LogRecord:
+    """Carimba request_id e parceiro_id no registro na hora em que ele nasce.
+
+    Assim o dado certo acompanha a linha mesmo que ela só seja formatada depois, fora da
+    requisição (um handler com fila, por exemplo).
+    """
+    registro = _fabrica_original(*args, **kwargs)
+    contexto = contexto_atual()
+    registro.request_id = contexto.get("request_id")
+    registro.parceiro_id = contexto.get("parceiro_id")
+    return registro
+
+
 class FormatadorJson(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        contexto = contexto_atual()
         linha: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
             "nivel": record.levelname,
             "logger": record.name,
             "mensagem": record.getMessage(),
-            "request_id": contexto.get("request_id"),
-            "parceiro_id": contexto.get("parceiro_id"),
+            "request_id": getattr(record, "request_id", None),
+            "parceiro_id": getattr(record, "parceiro_id", None),
         }
         for chave, valor in record.__dict__.items():
             if chave not in _CAMPOS_PADRAO_DO_LOGGING and not chave.startswith("_"):
@@ -51,6 +66,7 @@ class FormatadorJson(logging.Formatter):
 
 
 def configurar_logs(nivel: str = "INFO") -> None:
+    logging.setLogRecordFactory(_fabrica_com_contexto)
     saida = logging.StreamHandler(sys.stdout)
     saida.setFormatter(FormatadorJson())
     raiz = logging.getLogger()

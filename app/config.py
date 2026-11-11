@@ -29,6 +29,8 @@ class Configuracao(BaseSettings):
 
     ambiente: Ambiente = Ambiente.DESENVOLVIMENTO
     database_url: str = "sqlite:///./limite_garantido.db"
+    banco_pool_tamanho: int = Field(default=10, ge=1)
+    banco_pool_excedente: int = Field(default=20, ge=0)
     log_nivel: str = "INFO"
     fuso_de_negocio: str = "America/Sao_Paulo"
 

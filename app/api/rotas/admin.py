@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import BigInteger, case, func, select, type_coerce
 
 from app.api import apresentacao, esquemas
@@ -26,6 +28,12 @@ rotas_de_admin = APIRouter(
         404: {"model": Problema, "description": "Não existe (ou ADMIN_TOKEN não configurado)"},
     },
 )
+
+
+FiltroDeParceiro = Annotated[
+    str | None,
+    Query(description="Roda só para as contas deste parceiro. Sem ele, roda para todos."),
+]
 
 
 def _politica(esquema: esquemas.PoliticaDeRisco) -> PoliticaRisco:
@@ -114,10 +122,14 @@ def confirmar_bloqueio(garantia_id: str, uow: Unidade) -> esquemas.GarantiaComLi
     response_model=esquemas.ResumoDaRotina,
     summary="Rodar a marcação a mercado",
 )
-def rodar_marcacao(recursos: RecursosDaApi) -> esquemas.ResumoDaRotina:
+def rodar_marcacao(
+    recursos: RecursosDaApi, parceiro_id: FiltroDeParceiro = None
+) -> esquemas.ResumoDaRotina:
     """Atualiza o valor de todas as garantias pelo provedor de preços. Em produção isso é
-    agendado; o endpoint existe para operação manual e para demonstração."""
-    resumo = casos_de_risco.marcar_a_mercado(recursos.abrir_unidade, recursos.provedor_de_precos)
+    agendado (`python -m app.rotinas`); o endpoint existe para operação manual."""
+    resumo = casos_de_risco.marcar_a_mercado(
+        recursos.abrir_unidade, recursos.provedor_de_precos, parceiro_id
+    )
     return esquemas.ResumoDaRotina(
         contas_processadas=resumo.contas_processadas,
         contas_com_erro=resumo.contas_com_erro,
@@ -130,10 +142,12 @@ def rodar_marcacao(recursos: RecursosDaApi) -> esquemas.ResumoDaRotina:
     response_model=esquemas.ResumoDaRotina,
     summary="Rodar a rotina diária",
 )
-def rodar_virada_do_dia(recursos: RecursosDaApi) -> esquemas.ResumoDaRotina:
+def rodar_virada_do_dia(
+    recursos: RecursosDaApi, parceiro_id: FiltroDeParceiro = None
+) -> esquemas.ResumoDaRotina:
     """Marca faturas em atraso, executa garantias no prazo da política e vence chamadas
     de margem. Pode rodar mais de uma vez no mesmo dia sem repetir efeito."""
-    resumo = casos_de_risco.virar_o_dia(recursos.abrir_unidade)
+    resumo = casos_de_risco.virar_o_dia(recursos.abrir_unidade, parceiro_id)
     return esquemas.ResumoDaRotina(
         contas_processadas=resumo.contas_processadas,
         contas_com_erro=resumo.contas_com_erro,

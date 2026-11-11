@@ -63,10 +63,16 @@ def obter_parceiro_autenticado(
     prefixo = prefixo_da_chave(chave)
     achado = uow.parceiros.obter_pelo_prefixo(prefixo) if prefixo else None
     if achado is None:
+        uow.rollback()
         # Compara mesmo assim, para o tempo de resposta não revelar se o prefixo existe.
         chave_confere(chave, _HASH_QUE_NUNCA_CONFERE)
         raise nao_autenticado
     parceiro, hash_guardado = achado
+    # Devolve a conexão ao pool já. Esta função e o endpoint rodam em threads
+    # diferentes: segurar a conexão entre uma e outra trava tudo quando chegam mais
+    # requisições do que o pool tem de conexões (as threads ficam esperando conexão e
+    # quem tem conexão fica esperando thread).
+    uow.rollback()
     if not chave_confere(chave, hash_guardado):
         raise nao_autenticado
     contexto_atual()["parceiro_id"] = parceiro.id

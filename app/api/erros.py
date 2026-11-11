@@ -300,9 +300,3 @@ def registrar_tratadores(app: FastAPI) -> None:
             media_type=TIPO_DE_MIDIA,
             headers=dict(erro.headers) if erro.headers else None,
         )
-
-    @app.exception_handler(Exception)
-    async def _inesperado(request: Request, erro: Exception) -> JSONResponse:
-        # O detalhe técnico vai para o log, nunca para quem chamou.
-        log.exception("Erro inesperado", exc_info=erro)
-        return resposta_de_problema("erro_interno", CATALOGO["erro_interno"][2], request.url.path)

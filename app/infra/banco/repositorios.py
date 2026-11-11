@@ -94,12 +94,14 @@ class RepositorioDeContasSql:
         )
 
     def obter_para_atualizar(self, parceiro_id: str, conta_id: str) -> Conta | None:
-        # SELECT ... FOR UPDATE: a segunda transação espera a primeira terminar e só
-        # então lê o saldo. No SQLite a cláusula é ignorada; lá quem protege é a versão.
+        # Trava de linha: a segunda transação espera a primeira terminar e só então lê o
+        # saldo. No Postgres vira FOR NO KEY UPDATE, que é o modo de quem não vai mudar a
+        # chave: bloqueia outra escrita na conta, mas não as checagens de chave
+        # estrangeira. No SQLite a cláusula é ignorada; lá quem protege é a versão.
         return self._carregar(
             select(ContaModelo)
             .where(ContaModelo.id == conta_id, ContaModelo.parceiro_id == parceiro_id)
-            .with_for_update()
+            .with_for_update(key_share=True)
         )
 
     def obter_pela_garantia_para_atualizar(
@@ -315,8 +317,9 @@ class RepositorioDeContasSql:
         return Dinheiro(int(total))
 
     def carteira_para_stress(self, parceiro_id: str) -> list[ContaNaCarteira]:
-        dividas: dict[str, int] = dict(
-            self._sessao.execute(
+        dividas: dict[str, int] = {
+            conta_id: int(total)
+            for conta_id, total in self._sessao.execute(
                 select(PartidaModelo.conta_id, _DEBITOS_MENOS_CREDITOS)
                 .where(
                     PartidaModelo.parceiro_id == parceiro_id,
@@ -324,9 +327,7 @@ class RepositorioDeContasSql:
                 )
                 .group_by(PartidaModelo.conta_id)
             )
-            .tuples()
-            .all()
-        )
+        }
         garantias: dict[str, list[GarantiaNaCarteira]] = {}
         linhas = self._sessao.execute(
             select(GarantiaModelo.conta_id, GarantiaModelo.tipo_ativo, _DEBITOS_MENOS_CREDITOS)
@@ -346,7 +347,7 @@ class RepositorioDeContasSql:
         return [
             ContaNaCarteira(
                 conta_id=conta_id,
-                divida=Dinheiro(int(dividas.get(conta_id, 0))),
+                divida=Dinheiro(dividas.get(conta_id, 0)),
                 garantias=tuple(garantias.get(conta_id, ())),
             )
             for conta_id in sorted(set(dividas) | set(garantias))
@@ -454,8 +455,13 @@ class RepositorioDeParceirosSql:
         )
 
     def travar(self, parceiro_id: str) -> None:
+        # FOR NO KEY UPDATE, e não FOR UPDATE: a transação já tem um KEY SHARE nesta
+        # linha (a chave de idempotência aponta para o parceiro). Pedir FOR UPDATE por
+        # cima disso faz duas compras simultâneas se travarem uma na outra (deadlock).
         self._sessao.execute(
-            select(ParceiroModelo.id).where(ParceiroModelo.id == parceiro_id).with_for_update()
+            select(ParceiroModelo.id)
+            .where(ParceiroModelo.id == parceiro_id)
+            .with_for_update(key_share=True)
         )
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 
-def criar_engine(database_url: str) -> Engine:
+def criar_engine(database_url: str, pool_tamanho: int = 10, pool_excedente: int = 20) -> Engine:
     if database_url.startswith("sqlite"):
         argumentos: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
         if ":memory:" in database_url:
@@ -24,7 +24,9 @@ def criar_engine(database_url: str) -> Engine:
             cursor.close()
 
         return engine
-    return create_engine(database_url, pool_pre_ping=True, pool_size=10, max_overflow=20)
+    return create_engine(
+        database_url, pool_pre_ping=True, pool_size=pool_tamanho, max_overflow=pool_excedente
+    )
 
 
 def criar_fabrica_de_sessoes(engine: Engine) -> sessionmaker[Session]:
