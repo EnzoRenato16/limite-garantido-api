@@ -681,7 +681,29 @@ function preencherCustodiantes() {
   $("nota-externa").hidden = !externa;
 }
 
+// Os tratadores são ligados antes de qualquer chamada à API: um clique que chegue cedo
+// demais não pode virar envio nativo do formulário (que recarregaria a página).
+function quandoPronta(acao) {
+  return (evento) => {
+    evento?.preventDefault?.();
+    if (document.body.dataset.pronta === "true") return acao(evento);
+    return undefined;
+  };
+}
+
+function ligarTratadores() {
+  $("form-garantia").addEventListener("submit", quandoPronta(guardarGarantia));
+  $("form-compra").addEventListener("submit", quandoPronta(comprar));
+  $("derrubar").addEventListener("click", quandoPronta(derrubarAtivo));
+  $("fechar-fatura").addEventListener("click", quandoPronta(fecharFatura));
+  $("passar-dia").addEventListener("click", quandoPronta(passarDia));
+  $("pagar").addEventListener("click", quandoPronta(pagarFatura));
+  $("recomecar").addEventListener("click", quandoPronta(recomecar));
+  $("origem").addEventListener("change", preencherCustodiantes);
+}
+
 async function iniciar() {
+  ligarTratadores();
   const config = await fetch("/demo/config");
   if (!config.ok) {
     $("aviso").hidden = false;
@@ -704,7 +726,6 @@ async function iniciar() {
   const custodiantes = await chamar("GET", "/custodiantes");
   estado.custodiantes = custodiantes.ok ? custodiantes.dados : [];
   preencherCustodiantes();
-  $("origem").addEventListener("change", preencherCustodiantes);
   [...$("dias").children].forEach((dia, indice) => {
     dia.hidden = indice >= diasParaExecucao();
   });
@@ -714,16 +735,9 @@ async function iniciar() {
   if (!estado.contaId) await abrirConta();
   $("conta-atual").textContent = estado.contaId;
 
-  $("form-garantia").addEventListener("submit", guardarGarantia);
-  $("form-compra").addEventListener("submit", comprar);
-  $("derrubar").addEventListener("click", derrubarAtivo);
-  $("fechar-fatura").addEventListener("click", fecharFatura);
-  $("passar-dia").addEventListener("click", passarDia);
-  $("pagar").addEventListener("click", pagarFatura);
-  $("recomecar").addEventListener("click", recomecar);
-
   await atualizar();
   await buscarWebhooks();
+  document.body.dataset.pronta = "true";
   setInterval(buscarWebhooks, INTERVALO_DOS_WEBHOOKS_EM_MS);
 }
 

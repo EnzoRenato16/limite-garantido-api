@@ -48,6 +48,7 @@ def test_historia_completa_na_pagina_de_demonstracao(endereco: str) -> None:
             return pagina.locator("#eventos .evento-tipo", has_text=tipo)
 
         pagina.goto(f"{endereco}/demo")
+        esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
         esperar(pagina.locator("#tipo-ativo")).to_have_value("cdb")
         esperar(pagina.locator("#disponivel")).to_have_text("R$ 0,00")
         esperar(pagina.locator("#trilho-vazio")).to_be_visible()

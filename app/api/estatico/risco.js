@@ -132,8 +132,7 @@ async function escolherCenario(cenario) {
   await simular({ cenario: cenario.id });
 }
 
-async function simularComControles(evento) {
-  evento.preventDefault();
+async function simularComControles() {
   try {
     const corpo = lerControles();
     estado.cenarioAtual = null;
@@ -273,6 +272,11 @@ function mostrarPremissas(p) {
 
 // ------------------------------------------------------------------------ início
 async function iniciar() {
+  // Ligado antes de tudo: um envio cedo demais não pode recarregar a página.
+  $("controles").addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    if (document.body.dataset.pronta === "true") simularComControles(evento);
+  });
   const config = await fetch("/demo/config");
   if (!config.ok) {
     $("erro").textContent = "Demonstração sem parceiro de exemplo. Rode python -m app.seed.";
@@ -284,8 +288,8 @@ async function iniciar() {
     chamar("GET", "/custodiantes"),
   ]);
   montarControles();
-  $("controles").addEventListener("submit", simularComControles);
   await escolherCenario(estado.cenarios[0]);
+  document.body.dataset.pronta = "true";
 }
 
 let redesenho = null;

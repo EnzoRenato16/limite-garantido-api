@@ -129,114 +129,114 @@ cima.
 - [x] Suíte de partida: ruff, mypy e 277 testes no Postgres passando; e2e passa com
   `CHROMIUM_EXECUTAVEL=/opt/pw-browsers/chromium` (o Playwright do projeto pede outra
   revisão do navegador do que a instalada nesta máquina).
-- [ ] DECISOES 39 a 41: pedido, como a execução foi conduzida, `pendente`.
+- [x] DECISOES 39 a 41: pedido, como a execução foi conduzida, `pendente`.
 
 ### 2. Domínio: máquina da garantia externa
 **Arquivos:** `app/dominio/garantia.py`, `tests/unidade/test_garantia_externa.py`.
-- [ ] Testes: cada transição válida da tabela acima passa; cada par inválido (produto
+- [x] Testes: cada transição válida da tabela acima passa; cada par inválido (produto
   cartesiano menos as válidas) levanta `TransicaoInvalida`; `externa` sem
   `custodiante_id` levanta `ValorInvalido`; interna mantém a tabela antiga.
-- [ ] `OrigemGarantia(StrEnum)`: `interna`, `externa`. Novos estados em
+- [x] `OrigemGarantia(StrEnum)`: `interna`, `externa`. Novos estados em
   `EstadoGarantia`. `TRANSICOES_INTERNAS`, `TRANSICOES_EXTERNAS`. Na `Garantia`:
   `origem`, `custodiante_id`, `solicitacao: Solicitacao | None`, `valor_em_execucao`,
   `motivo`; propriedades `gera_limite`, `cobre_divida`, `aguardando_custodiante`.
   `Solicitacao(id, tipo: TipoSolicitacao, criada_em, prazo_ate, enviada_em)`.
-- [ ] Commit.
+- [x] Commit.
 
 ### 3. Domínio: fluxos externos na conta
 **Arquivos:** `app/dominio/conta.py`, `app/dominio/eventos.py`,
 `tests/unidade/test_conta_externa.py`, `tests/propriedade/test_custodia_externa_prop.py`.
-- [ ] Testes de unidade: limite zero até a confirmação; confirmação gera o mesmo
+- [x] Testes de unidade: limite zero até a confirmação; confirmação gera o mesmo
   lançamento de bloqueio da interna; recusa e expiração sem lançamento; liberação tira
   o limite no pedido e só lança na confirmação; falha de liberação devolve o limite;
   execução pede só o devido, não abate dívida no pedido, abate o valor recebido na
   confirmação, nunca pede de novo o que já está pedido; venda acima da dívida não
   credita além dela.
-- [ ] Teste de propriedade (máquina de estados do Hypothesis): qualquer sequência de
+- [x] Teste de propriedade (máquina de estados do Hypothesis): qualquer sequência de
   respostas do custodiante, válidas ou não, deixa limite zero antes da confirmação e o
   ledger fechando em zero.
-- [ ] `Conta.registrar_garantia(..., custodiante_id=None, prazo_ate=None)`;
+- [x] `Conta.registrar_garantia(..., custodiante_id=None, prazo_ate=None)`;
   `aceitar_solicitacao`, `confirmar_gravame`, `recusar_gravame`, `expirar_solicitacao`,
   `solicitar_liberacao`, `confirmar_liberacao`, `falhar_solicitacao`,
   `confirmar_execucao`. Execução externa dentro de `_executar_garantias`.
-- [ ] Eventos novos: `gravame.solicitado`, `gravame.confirmado`, `gravame.recusado`,
+- [x] Eventos novos: `gravame.solicitado`, `gravame.confirmado`, `gravame.recusado`,
   `gravame.expirado`, `liberacao.solicitada`, `liberacao.confirmada`,
   `liberacao.falhou`, `execucao.solicitada`, `execucao.confirmada`, `execucao.falhou`.
   Os eventos antigos continuam saindo nos mesmos momentos lógicos e com o mesmo formato.
-- [ ] Commit.
+- [x] Commit.
 
 ### 4. Porta e simulador de custodiantes
 **Arquivos:** `app/aplicacao/portas.py`, `app/infra/custodia.py`,
 `app/custodiantes_simulados.toml`, `tests/unidade/test_custodia_simulada.py`.
-- [ ] Testes: mesmo pedido, mesmo destino; antes da latência, pendente; depois,
+- [x] Testes: mesmo pedido, mesmo destino; antes da latência, pendente; depois,
   confirmada ou recusada; "sem resposta" nunca responde; `evento_id` estável;
   proporções de recusa próximas do perfil em 2.000 pedidos; perfil inválido recusado.
-- [ ] Dois perfis: `custodiante_agil` ("Custodiante Ágil (simulador)": latência 5 s,
+- [x] Dois perfis: `custodiante_agil` ("Custodiante Ágil (simulador)": latência 5 s,
   0% de recusa, 0% sem resposta) e `custodiante_lento` ("Custodiante Lento
   (simulador)": latência 6 h, 15% de recusa, 10% sem resposta, prazo 24 h). Números
   ilustrativos.
-- [ ] Commit.
+- [x] Commit.
 
 ### 5. Persistência
 **Arquivos:** `app/infra/banco/modelos.py`, `alembic/versions/0002_custodia_externa.py`,
 `app/infra/banco/repositorios.py`, testes de banco.
-- [ ] Colunas novas em `garantias` (origem com padrão `interna`, custodiante, dados da
+- [x] Colunas novas em `garantias` (origem com padrão `interna`, custodiante, dados da
   solicitação, valor em execução, motivo) e a tabela `respostas_de_custodiante` com
   chave `(custodiante_id, evento_id)`.
-- [ ] Repositório: carrega e grava os campos novos; `obter_pela_solicitacao_para_atualizar`;
+- [x] Repositório: carrega e grava os campos novos; `obter_pela_solicitacao_para_atualizar`;
   `garantias_aguardando_custodiante`; `registrar_resposta` (levanta `RespostaDuplicada`).
-- [ ] Teste: migração sobe no Postgres e uma garantia antiga lê como `interna`.
-- [ ] Commit.
+- [x] Teste: migração sobe no Postgres e uma garantia antiga lê como `interna`.
+- [x] Commit.
 
 ### 6. Casos de uso e rotina
 **Arquivos:** `app/aplicacao/custodia.py`, `app/aplicacao/contas.py`,
 `app/aplicacao/risco.py`, `app/rotinas.py`, `app/worker.py`.
-- [ ] `despachar_solicitacao`, `aplicar_resposta(canal=callback|polling|sandbox|admin)`,
+- [x] `despachar_solicitacao`, `aplicar_resposta(canal=callback|polling|sandbox|admin)`,
   `processar_custodia` (envia o que ficou em `solicitada`, consulta o que espera, expira
   o que passou do prazo, uma conta por transação).
-- [ ] Commit.
+- [x] Commit.
 
 ### 7. API
 **Arquivos:** `app/api/rotas/custodia.py`, `app/api/esquemas.py`,
 `app/api/apresentacao.py`, `app/api/erros.py`, `app/config.py`, `.env.example`.
-- [ ] Testes de integração: fluxo feliz, recusa, timeout, callback duplicado, callback
+- [x] Testes de integração: fluxo feliz, recusa, timeout, callback duplicado, callback
   e polling da mesma confirmação, assinatura inválida, timestamp fora da janela,
   custodiante desconhecido igual a assinatura errada, liberação externa, execução
   externa, atalho administrativo pelo mesmo caso de uso, fase 1 inalterada.
-- [ ] Concorrência no Postgres: dois callbacks iguais ao mesmo tempo, um efeito.
-- [ ] Commit.
+- [x] Concorrência no Postgres: dois callbacks iguais ao mesmo tempo, um efeito.
+- [x] Commit.
 
 ### 8. Painel de risco: cálculo
 **Arquivos:** `app/dominio/stress.py`, `app/infra/carteira_sintetica.py`,
 `app/carteira_sintetica.toml`, testes.
-- [ ] Propriedades: perda entre zero e a exposição; choque mais forte nunca diminui a
+- [x] Propriedades: perda entre zero e a exposição; choque mais forte nunca diminui a
   perda; custodiante fora do ar só mexe na parcela externa; choque zero não põe em
   chamada quem estava saudável; mesma seed, mesmo resultado; seed diferente, carteira
   diferente; 1.000 clientes em menos de 1 s.
-- [ ] Commit.
+- [x] Commit.
 
 ### 9. Painel de risco: API e `/risco`
-- [ ] `POST /v1/risco/simulacoes-de-carteira` com cenários prontos em
+- [x] `POST /v1/risco/simulacoes-de-carteira` com cenários prontos em
   `GET /v1/risco/cenarios`; erro 422 RFC 7807 para choque fora de ±100% e carteira
   acima de 5.000 clientes.
-- [ ] Página `/risco` (HTML, CSS e JS sem framework, gráficos em SVG à mão).
-- [ ] Commit.
+- [x] Página `/risco` (HTML, CSS e JS sem framework, gráficos em SVG à mão).
+- [x] Commit.
 
 ### 10. `/demo`
-- [ ] Opção "Investimento em outra instituição" com escolha do custodiante, linha do
+- [x] Opção "Investimento em outra instituição" com escolha do custodiante, linha do
   tempo do gravame, botões de sandbox (confirma, recusa, não responde) para gravame,
   liberação e execução; avisos antigos somem quando o estado muda; resumo fixo no topo.
-- [ ] E2E: fase 2 com confirmação, recusa e timeout; aviso de chamada de margem some
+- [x] E2E: fase 2 com confirmação, recusa e timeout; aviso de chamada de margem some
   depois da execução; `/risco` com os 4 cenários conferidos contra a API.
-- [ ] Commit.
+- [x] Commit.
 
 ### 11. `fatura.em_atraso` uma vez
-- [ ] Teste: vários dias de atraso, um evento só. DECISOES com o porquê.
+- [x] Teste: vários dias de atraso, um evento só. DECISOES com o porquê.
 
 ### 12. Documentação
-- [ ] README, arquitetura (Mermaid), riscos, mercado (trilhos reais), roteiro, plano.
+- [x] README, arquitetura (Mermaid), riscos, mercado (trilhos reais), roteiro, plano.
 
 ### 13. Verificação e revisão
-- [ ] Suíte completa, `scripts/dev.sh`, Playwright pelo `/demo` e `/risco`, screenshots.
+- [x] Suíte completa, `scripts/dev.sh`, Playwright pelo `/demo` e `/risco`, screenshots.
 - [ ] Revisões pedidas; correções; o resto em "Próximos passos".
 - [ ] Push, PR.

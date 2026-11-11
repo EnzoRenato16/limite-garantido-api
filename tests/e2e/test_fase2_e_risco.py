@@ -51,7 +51,7 @@ def _fotografar(pagina: Any, nome: str) -> None:
 
 def _abrir_demo(pagina: Any) -> None:
     pagina.goto(f"{pagina.endereco}/demo")
-    _esperar()(pagina.locator("#tipo-ativo")).to_have_value("cdb")
+    _esperar()(pagina.locator("body[data-pronta=true]")).to_have_count(1)
     # Conta nova a cada teste: a sessão do navegador é a mesma do servidor.
     pagina.get_by_role("button", name="Começar de novo").click()
     _esperar()(pagina.locator("#disponivel")).to_have_text("R$ 0,00")
@@ -197,6 +197,7 @@ def test_painel_de_risco_mostra_os_numeros_da_api(pagina: Any) -> None:
     esperar = _esperar()
     chave = pagina.request.get(f"{pagina.endereco}/demo/config").json()["api_key"]
     pagina.goto(f"{pagina.endereco}/risco")
+    esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
     for cenario in CENARIOS:
         pagina.locator(f"#cenario-{cenario}").click()
         esperar(pagina.locator(f"#cenario-{cenario}")).to_have_attribute("aria-pressed", "true")
@@ -234,7 +235,7 @@ def test_painel_de_risco_mostra_os_numeros_da_api(pagina: Any) -> None:
 def test_painel_de_risco_recusa_choque_invalido(pagina: Any) -> None:
     esperar = _esperar()
     pagina.goto(f"{pagina.endereco}/risco")
-    esperar(pagina.locator("#cenario-dia_normal")).to_have_attribute("aria-pressed", "true")
+    esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
     pagina.locator("#choque-acoes").fill("-150")
     pagina.get_by_role("button", name="Simular com estes valores").click()
     esperar(pagina.locator("#erro")).not_to_have_text("")
