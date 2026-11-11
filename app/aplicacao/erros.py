@@ -43,3 +43,17 @@ class RequisicaoEmAndamento(ErroDominio):
 
 class SemFaturaEmAberto(ErroDominio):
     codigo = "sem_fatura_em_aberto"
+
+
+class RespostaDuplicada(ErroDominio):
+    """A mesma resposta do custodiante (mesmo evento) já foi registrada."""
+
+    codigo = "resposta_duplicada"
+
+
+class CustodianteNaoConfigurado(ErroDominio):
+    codigo = "custodiante_nao_configurado"
+
+
+class SolicitacaoNaoEncontrada(ErroDominio):
+    codigo = "solicitacao_nao_encontrada"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from sqlalchemy import (
@@ -19,7 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.aplicacao.erros import ConflitoDeConcorrencia, ContaJaExiste
+from app.aplicacao.erros import ConflitoDeConcorrencia, ContaJaExiste, RespostaDuplicada
+from app.aplicacao.portas import StatusDaResposta
 from app.dominio.conta import (
     ChamadaDeMargem,
     Conta,
@@ -30,7 +32,16 @@ from app.dominio.conta import (
     MotivoBloqueio,
 )
 from app.dominio.dinheiro import Dinheiro
-from app.dominio.garantia import ESTADOS_ATIVOS, EstadoGarantia, Garantia
+from app.dominio.garantia import (
+    ESTADOS_AGUARDANDO_CUSTODIANTE,
+    ESTADOS_ATIVOS,
+    ESTADOS_FINAIS,
+    EstadoGarantia,
+    Garantia,
+    OrigemGarantia,
+    Solicitacao,
+    TipoSolicitacao,
+)
 from app.dominio.ids import novo_id
 from app.dominio.ledger import ChaveDeSaldo, ContaContabil, Saldos, Sentido
 from app.dominio.parceiro import Parceiro
@@ -49,16 +60,18 @@ from app.infra.banco.modelos import (
     PagamentoModelo,
     ParceiroModelo,
     PartidaModelo,
+    RespostaDeCustodianteModelo,
+    SolicitacaoDeCustodiaModelo,
 )
 
 ESTADO_DE_ENTREGA_PENDENTE = "pendente"
 ESTADO_DE_ENTREGA_ENTREGUE = "entregue"
 ESTADO_DE_ENTREGA_MORTA = "morta"
 
-_GARANTIAS_VIVAS = [
-    EstadoGarantia.PENDENTE.value,
-    EstadoGarantia.BLOQUEADA.value,
-    EstadoGarantia.PARCIALMENTE_EXECUTADA.value,
+# Tudo o que ainda pode mudar entra no agregado; as encerradas ficam de fora.
+_GARANTIAS_VIVAS = [estado.value for estado in EstadoGarantia if estado not in ESTADOS_FINAIS]
+_GARANTIAS_AGUARDANDO = [
+    estado.value for estado in ESTADOS_AGUARDANDO_CUSTODIANTE | {EstadoGarantia.PENDENTE}
 ]
 _GARANTIAS_ATIVAS = [estado.value for estado in ESTADOS_ATIVOS]
 _FATURAS_EM_ABERTO = [EstadoFatura.FECHADA.value, EstadoFatura.EM_ATRASO.value]
@@ -78,6 +91,18 @@ _DEBITOS_MENOS_CREDITOS = func.coalesce(
     ),
     0,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class LocalDaSolicitacao:
+    """Onde mora um pedido feito ao custodiante."""
+
+    solicitacao_id: str
+    parceiro_id: str
+    conta_id: str
+    garantia_id: str
+    custodiante_id: str
+    tipo: TipoSolicitacao
 
 
 class RepositorioDeContasSql:
@@ -123,7 +148,7 @@ class RepositorioDeContasSql:
             # poder responder com o erro de transição certo.
             modelo = self._sessao.get(GarantiaModelo, garantia_id)
             if modelo is not None:
-                conta.garantias.append(_garantia_do_modelo(modelo))
+                conta.garantias.append(_garantia_do_modelo(modelo, {}))
         return conta
 
     def _carregar(self, consulta: Select[ContaModelo]) -> Conta | None:
@@ -140,6 +165,19 @@ class RepositorioDeContasSql:
             )
             .order_by(GarantiaModelo.id)
         ).all()
+        ids_de_pedidos = [g.solicitacao_id for g in garantias if g.solicitacao_id]
+        pedidos = (
+            {
+                pedido.id: pedido
+                for pedido in self._sessao.scalars(
+                    select(SolicitacaoDeCustodiaModelo).where(
+                        SolicitacaoDeCustodiaModelo.id.in_(ids_de_pedidos)
+                    )
+                )
+            }
+            if ids_de_pedidos
+            else {}
+        )
         faturas = self._sessao.scalars(
             select(FaturaModelo).where(
                 FaturaModelo.conta_id == modelo.id, FaturaModelo.estado.in_(_FATURAS_EM_ABERTO)
@@ -160,7 +198,7 @@ class RepositorioDeContasSql:
             motivo_bloqueio=MotivoBloqueio(modelo.motivo_bloqueio)
             if modelo.motivo_bloqueio
             else None,
-            garantias=[_garantia_do_modelo(g) for g in garantias],
+            garantias=[_garantia_do_modelo(g, pedidos) for g in garantias],
             faturas=[_fatura_do_modelo(f) for f in faturas],
             chamadas=[_chamada_do_modelo(c) for c in chamadas],
             saldos=self._saldos(modelo.id),
@@ -218,6 +256,27 @@ class RepositorioDeContasSql:
 
         for garantia in conta.garantias:
             self._sessao.merge(_modelo_da_garantia(garantia, conta.parceiro_id))
+        self._sessao.flush()
+        for garantia in conta.garantias:
+            # O pedido é gravado uma vez, quando nasce, e não muda mais.
+            pedido = garantia.solicitacao
+            if (
+                pedido is not None
+                and self._sessao.get(SolicitacaoDeCustodiaModelo, pedido.id) is None
+            ):
+                assert garantia.custodiante_id is not None  # noqa: S101 - só a externa pede
+                self._sessao.add(
+                    SolicitacaoDeCustodiaModelo(
+                        id=pedido.id,
+                        garantia_id=garantia.id,
+                        conta_id=conta.id,
+                        parceiro_id=conta.parceiro_id,
+                        custodiante_id=garantia.custodiante_id,
+                        tipo=pedido.tipo.value,
+                        criada_em=pedido.criada_em,
+                        prazo_ate=pedido.prazo_ate,
+                    )
+                )
         for fatura in conta.faturas:
             self._sessao.merge(_modelo_da_fatura(fatura, conta.parceiro_id))
         for chamada in conta.chamadas:
@@ -382,6 +441,79 @@ class RepositorioDeContasSql:
             consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
         return [(linha[0], linha[1]) for linha in self._sessao.execute(consulta)]
 
+    # ------------------------------------------------------------- custódia
+    def localizar_solicitacao(self, solicitacao_id: str) -> LocalDaSolicitacao | None:
+        modelo = self._sessao.get(SolicitacaoDeCustodiaModelo, solicitacao_id)
+        if modelo is None:
+            return None
+        return LocalDaSolicitacao(
+            solicitacao_id=modelo.id,
+            parceiro_id=modelo.parceiro_id,
+            conta_id=modelo.conta_id,
+            garantia_id=modelo.garantia_id,
+            custodiante_id=modelo.custodiante_id,
+            tipo=TipoSolicitacao(modelo.tipo),
+        )
+
+    def garantias_aguardando_custodiante(
+        self, parceiro_id: str | None = None
+    ) -> Sequence[tuple[str, str, str]]:
+        """Trios (parceiro_id, conta_id, garantia_id) que esperam resposta de custódia."""
+        consulta = (
+            select(GarantiaModelo.parceiro_id, GarantiaModelo.conta_id, GarantiaModelo.id)
+            .where(GarantiaModelo.estado.in_(_GARANTIAS_AGUARDANDO))
+            .order_by(GarantiaModelo.id)
+        )
+        if parceiro_id is not None:
+            consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
+        return [(linha[0], linha[1], linha[2]) for linha in self._sessao.execute(consulta)]
+
+    def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool:
+        return (
+            self._sessao.get(RespostaDeCustodianteModelo, (custodiante_id, evento_id)) is not None
+        )
+
+    def registrar_resposta(
+        self,
+        *,
+        custodiante_id: str,
+        evento_id: str,
+        solicitacao_id: str,
+        garantia_id: str,
+        parceiro_id: str,
+        status: StatusDaResposta,
+        canal: str,
+        resultado: str,
+        recebida_em: datetime,
+        valor_obtido: Dinheiro | None = None,
+        motivo: str | None = None,
+    ) -> None:
+        """Grava a resposta. Levanta `RespostaDuplicada` se o evento já foi registrado.
+
+        A inserção roda num savepoint: a duplicata desfaz só ela, e a transação segue.
+        """
+        try:
+            with self._sessao.begin_nested():
+                self._sessao.add(
+                    RespostaDeCustodianteModelo(
+                        custodiante_id=custodiante_id,
+                        evento_id=evento_id,
+                        solicitacao_id=solicitacao_id,
+                        garantia_id=garantia_id,
+                        parceiro_id=parceiro_id,
+                        status=status.value,
+                        canal=canal,
+                        resultado=resultado,
+                        valor_obtido=valor_obtido,
+                        motivo=motivo,
+                        recebida_em=recebida_em,
+                    )
+                )
+        except IntegrityError:
+            raise RespostaDuplicada(
+                "Esta resposta do custodiante já foi recebida", evento_id=evento_id
+            ) from None
+
     def contas_com_prazo_vencido(
         self, hoje: date, parceiro_id: str | None = None
     ) -> Sequence[tuple[str, str]]:
@@ -522,7 +654,10 @@ def _parceiro_do_modelo(modelo: ParceiroModelo) -> Parceiro:
     )
 
 
-def _garantia_do_modelo(modelo: GarantiaModelo) -> Garantia:
+def _garantia_do_modelo(
+    modelo: GarantiaModelo, pedidos: dict[str, SolicitacaoDeCustodiaModelo]
+) -> Garantia:
+    pedido = pedidos.get(modelo.solicitacao_id) if modelo.solicitacao_id else None
     return Garantia(
         id=modelo.id,
         conta_id=modelo.conta_id,
@@ -531,6 +666,19 @@ def _garantia_do_modelo(modelo: GarantiaModelo) -> Garantia:
         estado=EstadoGarantia(modelo.estado),
         criada_em=modelo.criada_em,
         marcada_em=modelo.marcada_em,
+        origem=OrigemGarantia(modelo.origem or OrigemGarantia.INTERNA.value),
+        custodiante_id=modelo.custodiante_id,
+        solicitacao=None
+        if pedido is None
+        else Solicitacao(
+            id=pedido.id,
+            tipo=TipoSolicitacao(pedido.tipo),
+            criada_em=pedido.criada_em,
+            prazo_ate=pedido.prazo_ate,
+            enviada_em=modelo.solicitacao_enviada_em,
+        ),
+        valor_em_execucao=modelo.valor_em_execucao,
+        motivo=modelo.motivo,
     )
 
 
@@ -544,6 +692,12 @@ def _modelo_da_garantia(garantia: Garantia, parceiro_id: str) -> GarantiaModelo:
         estado=garantia.estado.value,
         marcada_em=garantia.marcada_em,
         criada_em=garantia.criada_em,
+        origem=garantia.origem.value,
+        custodiante_id=garantia.custodiante_id,
+        solicitacao_id=garantia.solicitacao.id if garantia.solicitacao else None,
+        solicitacao_enviada_em=garantia.solicitacao.enviada_em if garantia.solicitacao else None,
+        valor_em_execucao=garantia.valor_em_execucao,
+        motivo=garantia.motivo,
     )
 
 
