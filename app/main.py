@@ -20,6 +20,7 @@ def _json(dados: Any) -> Any:
     """Serializa a resposta. Dinheiro sai como texto ("4250.00"), nunca como float."""
     return jsonable_encoder(dados, custom_encoder={Decimal: str})
 
+
 ChaveIdempotencia = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
