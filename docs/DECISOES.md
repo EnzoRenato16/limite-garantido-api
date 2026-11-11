@@ -447,6 +447,80 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   `bloqueada`. As duas geram limite do mesmo jeito; perde-se só o rótulo, e o histórico
   continua nos eventos.
 
+### 50. Carteira sintética e premissas ilustrativas
+- **Decisão.** O painel `/risco` usa uma carteira gerada em memória a partir de uma
+  semente (1.000 clientes por padrão, até 5.000), com a política de referência. Ela
+  não lê nem grava nada do banco de nenhum parceiro. A mistura de ativos, as faixas de
+  valor, o uso do limite, a fração de garantia externa, os descontos por dia de espera
+  e os cenários estão em `app/carteira_sintetica.toml`.
+- **Os números são ilustrativos.** Nada ali é dado de mercado: foram escolhidos para a
+  carteira ter uma mistura plausível e para os cenários mostrarem o efeito de cada
+  choque. A tela e a resposta da API dizem isso.
+- **Determinismo.** Dinheiro sorteado em centavos inteiros, com `random.Random(semente)`
+  e listas em ordem fixa. As probabilidades são comparadas em pontos-base inteiros.
+
+### 51. Como a perda é separada entre interna e externa
+- **Contexto.** O pedido era a perda não coberta depois de executar as garantias,
+  separando interna e externa.
+- **Opções.** (a) Classificar cada cliente como "interno" ou "externo" pela maioria da
+  garantia. (b) Calcular a perda duas vezes: uma com toda a garantia vendida na hora ao
+  preço estressado, outra com as premissas da garantia externa; a diferença é o que a
+  garantia externa acrescenta.
+- **Decisão.** (b). A resposta traz `perda_com_execucao_imediata`,
+  `perda_adicional_externa` e a soma. Cada uma é a dívida descoberta vezes a taxa de
+  clientes que não reforçam, arredondada para cima.
+- **Motivo.** Um cliente com garantia nos dois lugares não cabe numa classificação.
+  Com (b), "custodiante fora do ar" mexe só na segunda parcela, o que um teste de
+  propriedade confere.
+- **Modelo da garantia externa.** Custodiante indisponível recupera zero dentro do
+  horizonte (premissa conservadora). Prazo extra aplica um desconto linear por dia, por
+  ativo, sobre o valor estressado.
+
+### 52. Os quatro cenários
+- **Dia normal:** ações −2%, prefixado e IPCA+ −0,5%; 10% dos descobertos não
+  reforçam; venda externa leva 2 dias a mais.
+- **Crash da bolsa:** ações −30%, o resto parado; 30% não reforçam.
+- **Alta de juros:** prefixado −10%, o resto parado; 30% não reforçam.
+- **Custodiante fora do ar:** o mercado do dia normal, mas o Custodiante Lento não
+  executa nenhuma garantia dentro do horizonte (o que está com ele não recupera nada)
+  e a venda nos outros custodiantes externos atrasa 10 dias; 30% não reforçam.
+- **O que o resultado mostra.** Com os LTVs da política de referência, o crash de 30%
+  aparece como chamada de margem (de 9 para 43 clientes na semente padrão), não como
+  perda: 60% de LTV em ações absorve a queda. A perda só aparece no cenário do
+  custodiante fora do ar, e inteira na parcela externa. Não ajustei os parâmetros para
+  forçar perda nos outros cenários.
+
+### 53. `fatura.em_atraso` sai uma vez
+- **Contexto.** O pedido era emitir o evento na transição para `em_atraso`, e não todo
+  dia.
+- **O que encontrei.** O código da v1.0 já fazia assim: o evento só sai quando a fatura
+  passa de `fechada` para `em_atraso`. Faltava um teste que travasse a regra; ele foi
+  escrito e passou de primeira, porque o comportamento já existia.
+- **Motivo.** O parceiro já tem o estado pela API; repetir o evento todo dia geraria
+  ruído e entregas duplicadas a tratar do lado dele.
+- **Como o parceiro acompanha os dias.** `GET /v1/contas/{id}` traz
+  `fatura_em_aberto.dias_em_atraso`, calculado na hora pela data de negócio. O próprio
+  evento informa `execucao_a_partir_de`, e os eventos seguintes (`garantia.executada`,
+  `execucao.solicitada`) marcam o que acontece no prazo.
+
+### 54. Avisos do `/demo` presos ao estado em que nasceram
+- **Contexto.** Uma mensagem como "chamada de margem aberta" ficava na tela depois da
+  execução da garantia.
+- **Decisão.** Cada mensagem guarda uma "foto" do estado da conta (situação, chamada,
+  fatura, dívida, garantias) no momento em que o efeito da ação aparece. Quando a foto
+  muda, a mensagem some. O aviso do topo já era derivado do estado e continua assim.
+
+### 55. Resumo fixo também no celular, em versão compacta
+- **Decisão.** A régua (limite disponível, garantia, limite, usado) fica presa no topo
+  em qualquer largura. No celular ela encolhe: número menor, trilho mais baixo,
+  legenda numa linha.
+
+### 56. O `/demo` reconsulta a conta enquanto um pedido espera o custodiante
+- **Contexto.** O aceite do pedido pelo custodiante não gera webhook, e a página só se
+  redesenhava quando chegava um.
+- **Decisão.** Enquanto alguma garantia tem pedido em aberto, a página reconsulta a
+  conta a cada 1,5 s. Sem pedido em aberto, volta a depender só dos webhooks.
+
 <a id="revisao-final"></a>
 ## Revisão final
 

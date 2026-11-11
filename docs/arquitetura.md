@@ -117,9 +117,50 @@ stateDiagram-v2
 Só `bloqueada` e `parcialmente_executada` contam para o limite. Qualquer transição fora
 do desenho responde `409 transicao_de_estado_invalida`, com o estado atual e o pedido.
 
-`pendente` existe por causa das fases 2 e 3 do [roadmap](roadmap.md): quando o
-investimento está fora de casa, o gravame é confirmado por um terceiro e pode demorar.
-Dentro de casa a confirmação é imediata e a garantia já nasce `bloqueada` na resposta.
+Esta é a garantia **interna** (fase 1). Dentro de casa a confirmação é imediata e a
+garantia já nasce `bloqueada` na resposta. O `pendente` só chega ao banco no modo legado
+`CUSTODIA_MODO=assincrona`; nesse caso, sem confirmação no prazo, a rotina de custódia
+leva a garantia para `gravame_expirado` ([DECISOES 41](DECISOES.md)).
+
+### Garantia em custodiante externo (fase 2, simulada)
+
+```mermaid
+stateDiagram-v2
+    [*] --> solicitada: pedido gravado (API responde 202)
+    solicitada --> gravame_pendente: custodiante aceita o pedido
+    solicitada --> gravame_recusado: recusa
+    solicitada --> gravame_expirado: prazo vence
+    gravame_pendente --> gravame_confirmado: confirma
+    gravame_pendente --> gravame_recusado: recusa
+    gravame_pendente --> gravame_expirado: prazo vence sem resposta
+    gravame_confirmado --> bloqueada: lançamento de bloqueio (o limite nasce aqui)
+    bloqueada --> liberacao_pendente: resgate pedido (o limite sai aqui)
+    liberacao_pendente --> liberada: custodiante confirma (lançamento de liberação)
+    liberacao_pendente --> bloqueada: recusa ou prazo vence
+    bloqueada --> execucao_solicitada: 7º dia de atraso (venda pedida)
+    execucao_solicitada --> parcialmente_executada: venda confirmada, sobrou garantia
+    execucao_solicitada --> executada: venda confirmada, acabou a garantia
+    execucao_solicitada --> bloqueada: recusa ou prazo vence (pede de novo no dia seguinte)
+    parcialmente_executada --> liberacao_pendente
+    parcialmente_executada --> execucao_solicitada
+    gravame_recusado --> [*]
+    gravame_expirado --> [*]
+    liberada --> [*]
+    executada --> [*]
+```
+
+| Estado | Gera limite | Cobre a dívida | Espera o custodiante |
+|---|---|---|---|
+| `solicitada`, `gravame_pendente` | não | não | sim |
+| `gravame_confirmado` | não (estado de passagem) | não | não |
+| `bloqueada`, `parcialmente_executada` | sim | sim | não |
+| `liberacao_pendente` | não, já no pedido | não | sim |
+| `execucao_solicitada` | não | sim, até a venda ser confirmada | sim |
+| `gravame_recusado`, `gravame_expirado`, `liberada`, `executada` | não | não | não |
+
+A tabela de transições é separada por origem: uma garantia interna não alcança nenhum
+estado externo, e uma externa não pula de `bloqueada` para `liberada` sem passar pelo
+pedido. Recusa e expiração nunca geram lançamento.
 
 ### Fatura, chamada de margem e conta
 
@@ -264,6 +305,96 @@ menos uma vez", e por isso todo evento tem um `id` estável para o receptor reco
 repetição. A requisição HTTP acontece fora de qualquer transação: o worker reserva,
 envia e só então grava o resultado, sem segurar conexão do banco durante a chamada.
 
+### 5. Gravame externo, caminho feliz (callback e consulta de reserva)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Parceiro
+    participant A as API
+    participant D as Domínio
+    participant B as Banco
+    participant W as Worker (rotina de custódia)
+    participant C as Custodiante (simulado)
+    P->>A: POST /v1/contas/{id}/garantias {custodiante_id}
+    A->>D: registrar_garantia (nasce solicitada, com pedido e prazo)
+    A->>B: garantia + pedido + evento gravame.solicitado (mesma transação)
+    A-->>P: 202, garantia solicitada, limite 0
+    Note over W,C: O pedido sai depois do commit: nunca há gravame lá sem registro aqui
+    W->>C: solicitar_gravame(solicitacao_id)
+    C-->>W: pendente (aceito)
+    W->>B: garantia gravame_pendente
+    alt o callback chega
+        C->>A: POST /v1/custodiantes/{id}/callbacks (assinado)
+        A->>A: confere HMAC e janela do timestamp
+    else o callback não chega
+        W->>C: consultar(solicitacao_id)
+        C-->>W: confirmada, evento_id
+    end
+    A->>B: trava a conta; (custodiante, evento_id) já existe?
+    alt primeira vez
+        A->>D: confirmar_gravame: gravame_confirmado, depois bloqueada
+        A->>B: lançamento de bloqueio + resposta registrada + eventos
+        B-->>P: webhooks gravame.confirmado, garantia.bloqueada, limite.atualizado
+    else mesma resposta de novo (callback repetido ou já obtida na consulta)
+        A-->>C: 200 {"resultado": "duplicada"}, nada muda
+    end
+```
+
+### 6. Gravame externo recusado
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant C as Custodiante (simulado)
+    participant A as API / caso de uso
+    participant B as Banco
+    participant P as Parceiro
+    W->>C: consultar(solicitacao_id)
+    C-->>W: recusada, motivo
+    W->>A: aplicar_resposta (canal polling)
+    A->>B: garantia gravame_recusado, sem lançamento
+    B-->>P: webhook gravame.recusado {motivo}
+```
+
+### 7. Gravame externo sem resposta (timeout)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker
+    participant C as Custodiante (simulado)
+    participant B as Banco
+    participant P as Parceiro
+    loop a cada CUSTODIA_INTERVALO_SEGUNDOS
+        W->>C: consultar(solicitacao_id)
+        C-->>W: pendente
+    end
+    Note over W: agora > prazo_ate do pedido
+    W->>B: garantia gravame_expirado, sem lançamento
+    B-->>P: webhook gravame.expirado
+    Note over B: Se a confirmação chegar depois, é registrada como obsoleta e não muda nada
+```
+
+## Onde entraria o trilho real
+
+A fase 2 deste projeto para na porta `Custodiante` (`app/aplicacao/portas.py`). O
+simulador (`app/infra/custodia.py`) é uma implementação dela; um trilho real seria
+outra, com os mesmos métodos: pedir gravame, liberação e execução e consultar o status
+de um pedido, mais a rota de callback se o trilho avisar por chamada.
+
+| Ativo | Trilho que existe | O que as fontes públicas dizem | O que eu não sei |
+|---|---|---|---|
+| Tesouro Direto | TD Garantia | Anunciado em 25/11/2024 por B3, Tesouro Nacional e Banco Central; permite ao investidor pessoa física usar títulos do Tesouro Direto como garantia. O Selic passou a permitir o registro de gravames desses títulos (fonte secundária). | Quem pode receber a garantia e como a instituição se habilita, o protocolo, se há callback ou só consulta, os prazos. |
+| Previdência, seguro de pessoas, capitalização | Lei 14.652/2023 e Resolução Conjunta CNSP/CMN nº 12/2024 | O direito de resgate desses planos pode ser dado em garantia de operações de crédito. | O processo operacional nas seguradoras e a existência de um registro de garantias na B3 por API: não encontrei fonte pública para nenhum dos dois. |
+
+As fontes, e o que foi confirmado em fonte oficial ou só em fonte secundária, estão em
+[mercado.md](mercado.md#trilhos-regulados-que-já-existem). Nada nesta tabela descreve o
+funcionamento interno desses trilhos: o desenho da porta (pedido idempotente, resposta
+assíncrona, prazo, confirmação por evento) é uma suposição minha sobre o que qualquer
+integração desse tipo precisa, não uma descrição de como eles funcionam.
+
 ## Concorrência
 
 O risco clássico de um autorizador é duas compras lerem o mesmo limite e as duas
@@ -283,6 +414,15 @@ encontrou os dois problemas descritos em [DECISOES.md](DECISOES.md): um deadlock
 
 Ordem das travas, sempre a mesma para não haver deadlock: parceiro (só quando a política
 tem teto de carteira) e depois conta.
+
+**Respostas do custodiante.** Callback e consulta de reserva podem trazer a mesma
+confirmação ao mesmo tempo, e o custodiante pode repetir o callback. As duas defesas
+aqui são a trava de linha da conta (quem chega depois espera e já enxerga a resposta
+registrada) e a chave primária `(custodiante_id, evento_id)` em
+`respostas_de_custodiante`, gravada num savepoint. Um teste dispara dez callbacks
+iguais ao mesmo tempo contra Postgres e exige uma resposta `aplicada`, nove
+`duplicada` e um único lançamento; outro mistura callbacks e rodadas da rotina de
+consulta.
 
 ## Multi-tenant
 

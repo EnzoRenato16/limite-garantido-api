@@ -239,6 +239,46 @@ ol, ul { list-style: none; }
 .garantias .estado { color: var(--tinta-suave); }
 .garantias .estado.executada { color: var(--deficit); }
 .garantias button { margin-left: auto; }
+.garantias .acoes { display: flex; flex-wrap: wrap; gap: 0.35rem; width: 100%; }
+.garantias .acoes button { margin-left: 0; }
+.garantias .custodiante { color: var(--tinta-suave); font-size: 0.82rem; }
+
+/* Linha do tempo do pedido ao custodiante externo: o limite só existe no último passo. */
+.linha-do-tempo {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 0;
+  font-size: 0.8rem;
+  counter-reset: etapa;
+}
+
+.linha-do-tempo li {
+  position: relative;
+  padding: 0.15rem 0.9rem 0.15rem 1.1rem;
+  color: var(--tinta-suave);
+}
+
+.linha-do-tempo li::before {
+  content: "";
+  position: absolute;
+  left: 0.2rem;
+  top: 0.5rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--linha);
+  background: var(--superficie);
+}
+
+.linha-do-tempo li.feito { color: var(--tinta); }
+.linha-do-tempo li.feito::before { background: var(--limite); border-color: var(--limite); }
+.linha-do-tempo li.atual { color: var(--tinta); font-variation-settings: "wght" 600; }
+.linha-do-tempo li.atual::before { border-color: var(--usado); background: var(--usado); }
+.linha-do-tempo li.falhou { color: var(--deficit); font-variation-settings: "wght" 600; }
+.linha-do-tempo li.falhou::before { background: var(--deficit); border-color: var(--deficit); }
+
+.nota-externa { color: var(--tinta-suave); font-size: 0.86rem; max-width: 36rem; margin-top: 0.6rem; }
 
 /* -------------------------------------------------------------------- passos */
 .passos {
@@ -505,12 +545,21 @@ button.pequeno { font-size: 0.82rem; padding: 0.25rem 0.6rem; }
   .palco { grid-template-columns: 1fr; }
   .app { justify-self: stretch; max-width: none; }
   .bastidores { position: static; height: auto; max-height: none; }
-  .regua { position: static; }
   .eventos { max-height: 28rem; }
 }
 
 @media (max-width: 34rem) {
   html { font-size: 16px; }
+  /* No celular a régua continua presa no topo, em versão compacta: limite, garantia e
+     usado sempre à vista, sem tomar a tela. */
+  .regua { padding: 0.6rem 0 0.7rem; }
+  .regua .rotulo { font-size: 0.82rem; }
+  .numero { font-size: 2rem; }
+  .trilho { height: 2.2rem; margin: 2.2rem 0 0.6rem; }
+  .legenda { margin-top: 0.4rem; gap: 0.2rem 0.9rem; }
+  .legenda dt { font-size: 0.72rem; }
+  .legenda dd { font-size: 0.85rem; }
+  .aviso { margin-top: 0.5rem; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
   .cabecalho { flex-direction: column; }
   .passos > li { padding-left: 0; padding-top: 2.7rem; }
   input, select, .linha button { width: 100%; min-width: 0; }
