@@ -290,9 +290,11 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   então as imagens-base vieram de espelhos públicos. E o build precisou passar pelo
   proxy deste ambiente, com uma variante local do Dockerfile que só acrescenta o
   certificado do proxy.
-- **O que falta.** O `Dockerfile` do repositório, baixando do Docker Hub, é exercitado
-  pelo job `compose` do CI. **Rode `docker compose up --build` uma vez na sua máquina**
-  antes de gravar o vídeo.
+- **No GitHub.** O job `Docker Compose` do CI passou: ele constrói o `Dockerfile` do
+  repositório exatamente como está, baixando do Docker Hub, sobe tudo e roda o teste de
+  fumaça até o webhook ser entregue.
+- **O que falta.** Só a sua máquina. **Rode `docker compose up --build` uma vez** antes
+  de gravar o vídeo.
 
 ### 37. Imagens por tag, actions por SHA
 - **Decisão.** As GitHub Actions estão fixadas pelo hash do commit, conferido no
@@ -314,6 +316,40 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
     reconciliação de gravames com entrega prevista para 2026. Não achei base para 2027.
   - O site do Planalto bloqueou o acesso daqui; três dispositivos de lei foram lidos em
     repositório não oficial e estão resumidos, não transcritos.
+
+<a id="revisao-final"></a>
+## Revisão final
+
+O briefing pedia uma revisão com as skills de revisão e de segurança. Parte dela foi
+feita, parte foi interrompida. Fica registrado o que é cada coisa.
+
+**O que rodou até o fim**
+
+- **Revisão própria**, com olhar de crédito e de API. Dela saíram o teto de 64 kB para
+  o corpo da requisição, os cabeçalhos `Cache-Control: no-store` e
+  `X-Content-Type-Options: nosniff`, a remoção dos parâmetros de SQL dos logs de erro e
+  a lista de "Próximos passos" do README.
+- **`pip-audit`**: nenhuma vulnerabilidade conhecida nas dependências.
+- **Semgrep** (regras `python`, `security-audit`, `secrets`, `dockerfile` e
+  `github-actions`): dois achados, os dois em `scripts/fumaca.py`, sobre `urllib` com
+  URL dinâmica. A URL ali vem de quem roda o script de fumaça, na linha de comando.
+  Aceito como está.
+- **Regras de segurança do Ruff** em todo o código, sem pendências.
+- **CI do GitHub** verde nos quatro jobs: lint e tipos, testes em SQLite e Postgres,
+  navegador com Playwright e Docker Compose.
+
+**O que foi disparado e não terminou**
+
+- As skills `security-review` e `pr-review-toolkit:review-pr` (revisão geral de código
+  e caça a falhas silenciosas) e o analisador `sharp-edges` chegaram a ser lançados,
+  mas os agentes foram interrompidos pelo limite de uso da conta antes de entregar
+  relatório. **Nenhum achado deles entrou no projeto.**
+- Não rodei `claude-security`, `insecure-defaults:audit`, `supply-chain-risk-auditor`
+  nem `code-review:code-review`.
+
+A decisão de parar aqui e entregar foi do dono do projeto, com a suíte e o CI verdes.
+Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
+`/security-review` e `/insecure-defaults:audit`.
 
 ## O que os testes pegaram
 

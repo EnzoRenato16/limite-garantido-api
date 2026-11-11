@@ -86,4 +86,6 @@ httpx2, prometheus-client, Rich. Testes com pytest, Hypothesis e Playwright. Ruf
 - [x] Fluxo do `/demo` testado com Playwright, screenshots em `docs/img/`.
 - [x] Dockerfile, `docker compose` (API, Postgres, worker, seed).
 - [x] Documentação: README, arquitetura, mercado, roadmap, riscos, decisões, roteiro do vídeo, post.
-- [ ] Revisão final (crédito, API, segurança) e correções.
+- [x] Revisão final (crédito, API, segurança) e correções. Feita em parte: revisão
+  própria, Semgrep e `pip-audit` concluídos; as revisões por agentes foram
+  interrompidas (ver [DECISOES.md](DECISOES.md#revisao-final)).
