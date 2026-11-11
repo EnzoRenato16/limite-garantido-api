@@ -124,3 +124,83 @@ def test_campos_extras_entram_na_linha_e_podem_informar_o_parceiro(
     assert linha["contas_processadas"] == 7
     assert linha["request_id"] is None
     assert not [campo for campo in linha if campo.startswith("ctx_")]  # nada de campo interno
+
+
+def test_respostas_da_api_nao_ficam_em_cache_e_nao_sao_farejadas(
+    parceiro: Parceiro, cliente: TestClient
+) -> None:
+    conta = parceiro.abrir_conta()
+    for resposta in (parceiro.get(f"/v1/contas/{conta}"), cliente.get("/v1/contas")):
+        assert resposta.headers["Cache-Control"] == "no-store"
+        assert resposta.headers["X-Content-Type-Options"] == "nosniff"
+    assert cliente.get("/health").headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_corpo_gigante_e_recusado_antes_de_chegar_na_aplicacao(parceiro: Parceiro) -> None:
+    conta = parceiro.abrir_conta()
+    gigante = {"valor": "10.00", "descricao": "x" * 70_000}
+    resposta = parceiro.post(f"/v1/contas/{conta}/compras", gigante)
+    assert resposta.status_code == 413
+    assert resposta.headers["content-type"] == "application/problem+json"
+    assert resposta.json()["codigo"] == "corpo_grande_demais"
+    assert resposta.json()["request_id"] == resposta.headers["X-Request-Id"]
+
+    # Content-Length mentiroso ou ausente não fura o teto: os bytes são contados.
+    def em_pedacos():  # type: ignore[no-untyped-def]
+        for _ in range(70):
+            yield b"x" * 1024
+
+    sem_tamanho = parceiro.http.post(
+        f"/v1/contas/{conta}/compras",
+        content=em_pedacos(),
+        headers={**parceiro.cabecalhos, "Content-Type": "application/json", "Idempotency-Key": "k"},
+    )
+    assert sem_tamanho.status_code == 413
+    assert sem_tamanho.json()["codigo"] == "corpo_grande_demais"
+
+    # O caso perigoso: um JSON válido seguido de lixo. Se o corpo fosse só cortado, a
+    # compra seria executada e o cliente receberia 413. Não pode executar.
+    parceiro.bloquear(conta, "deposito", "100.00")
+
+    def valido_e_depois_lixo():  # type: ignore[no-untyped-def]
+        yield b'{"valor": "10.00", "descricao": "compra escondida"}'
+        for _ in range(70):
+            yield b" " * 1024
+
+    escondida = parceiro.http.post(
+        f"/v1/contas/{conta}/compras",
+        content=valido_e_depois_lixo(),
+        headers={
+            **parceiro.cabecalhos,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "k2",
+        },
+    )
+    assert escondida.status_code == 413
+    assert parceiro.limite(conta)["divida_total"] == "0.00"
+    assert "compra.aprovada" not in parceiro.tipos_de_evento(conta)
+
+
+def test_erro_de_banco_nao_leva_dado_de_cliente_para_o_log(
+    parceiro: Parceiro, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy import text
+
+    from app.infra.banco.repositorios import RepositorioDeContasSql
+
+    segredo = "cliente-que-nao-pode-aparecer-no-log"
+
+    def consulta_quebrada(self: RepositorioDeContasSql, parceiro_id: str, conta_id: str) -> None:
+        self._sessao.execute(
+            text("SELECT * FROM tabela_que_nao_existe WHERE x = :x"), {"x": segredo}
+        )
+
+    monkeypatch.setattr(RepositorioDeContasSql, "obter", consulta_quebrada)
+    with caplog.at_level(logging.ERROR, logger="app.erros"):
+        resposta = parceiro.get("/v1/contas/cta_qualquer")
+    assert resposta.status_code == 500
+    assert segredo not in resposta.text
+    (registro,) = [r for r in caplog.records if r.name == "app.erros"]
+    linha = FormatadorJson().format(registro)
+    assert "tabela_que_nao_existe" in linha  # o comando aparece, para depurar
+    assert segredo not in linha  # o valor do parâmetro, não

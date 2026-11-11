@@ -15,7 +15,7 @@ def criar_engine(database_url: str, pool_tamanho: int = 10, pool_excedente: int 
         if ":memory:" in database_url:
             # Um banco em memória só existe dentro de uma conexão: todo mundo usa a mesma.
             argumentos["poolclass"] = StaticPool
-        engine = create_engine(database_url, **argumentos)
+        engine = create_engine(database_url, hide_parameters=True, **argumentos)
 
         @event.listens_for(engine, "connect")
         def _ligar_chaves_estrangeiras(conexao: Any, _: Any) -> None:
@@ -25,7 +25,13 @@ def criar_engine(database_url: str, pool_tamanho: int = 10, pool_excedente: int 
 
         return engine
     return create_engine(
-        database_url, pool_pre_ping=True, pool_size=pool_tamanho, max_overflow=pool_excedente
+        database_url,
+        pool_pre_ping=True,
+        pool_size=pool_tamanho,
+        max_overflow=pool_excedente,
+        # Uma exceção de SQL traz junto os parâmetros da consulta. Com isto eles não vão
+        # parar no log: lá ficam o comando e o erro, sem dado de cliente.
+        hide_parameters=True,
     )
 
 

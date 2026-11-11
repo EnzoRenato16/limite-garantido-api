@@ -62,7 +62,8 @@ class PosicaoDeLimite(BaseModel):
         description="Parte da dívida que já está em fatura fechada"
     )
     limite_disponivel: ValorDeSaida = Field(
-        description="Quanto ainda dá para comprar. Nunca negativo; zero com a conta bloqueada"
+        description="Limite ainda não tomado por dívida. Nunca negativo; zero com a conta "
+        "bloqueada. Com fatura em atraso as compras também ficam suspensas, mesmo havendo saldo"
     )
     deficit: ValorDeSaida = Field(
         description="Quanto a dívida passa do limite garantido. Maior que zero = chamada de margem"

@@ -24,6 +24,18 @@ CABECALHO_DE_REQUEST_ID = "X-Request-Id"
 _REQUEST_ID_ACEITAVEL = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 _ROTAS_SEM_LOG = frozenset({"/health", "/metrics"})
 _STATUS_DE_ERRO_DO_SERVIDOR = 500
+# Nenhuma requisição legítima desta API passa de alguns kB. O teto corta cedo quem tenta
+# ocupar memória com um corpo gigante. (O proxy na frente da API deve ter o seu também.)
+TAMANHO_MAXIMO_DO_CORPO = 64 * 1024
+_PREFIXO_DA_API = "/v1"
+
+
+def _tamanho_declarado_passa_do_teto(scope: Scope) -> bool:
+    declarado = dict(scope["headers"]).get(b"content-length")
+    try:
+        return declarado is not None and int(declarado) > TAMANHO_MAXIMO_DO_CORPO
+    except ValueError:
+        return True
 
 
 class MiddlewareDeObservabilidade:
@@ -47,20 +59,59 @@ class MiddlewareDeObservabilidade:
         inicio = time.perf_counter()
         status = _STATUS_DE_ERRO_DO_SERVIDOR
         resposta_iniciada = False
+        corpo_estourou = False
+        bytes_recebidos = 0
 
-        async def enviar(mensagem: Message) -> None:
+        async def encaminhar(mensagem: Message) -> None:
             nonlocal status, resposta_iniciada
             if mensagem["type"] == "http.response.start":
                 resposta_iniciada = True
                 status = mensagem["status"]
                 cabecalhos = MutableHeaders(scope=mensagem)
                 cabecalhos[CABECALHO_DE_REQUEST_ID] = request_id
+                cabecalhos.setdefault("X-Content-Type-Options", "nosniff")
+                if scope["path"].startswith(_PREFIXO_DA_API):
+                    # Resposta com dado financeiro não fica guardada em cache nenhum.
+                    cabecalhos.setdefault("Cache-Control", "no-store")
                 for nome, valor in contexto["cabecalhos"].items():
                     cabecalhos[nome] = valor
             await send(mensagem)
 
+        async def enviar(mensagem: Message) -> None:
+            # Depois que o corpo estourou, o que a aplicação tentar responder é descartado:
+            # quem responde é o middleware, com 413.
+            if corpo_estourou and not resposta_iniciada:
+                return
+            await encaminhar(mensagem)
+
+        async def receber() -> Message:
+            """Conta os bytes que chegam de fato: Content-Length pode faltar ou mentir."""
+            nonlocal bytes_recebidos, corpo_estourou
+            mensagem = await receive()
+            if mensagem["type"] == "http.request":
+                bytes_recebidos += len(mensagem.get("body", b""))
+                if bytes_recebidos > TAMANHO_MAXIMO_DO_CORPO:
+                    corpo_estourou = True
+                    # Para a aplicação, é como se o cliente tivesse desligado no meio do
+                    # envio: a leitura do corpo falha e o endpoint nem chega a rodar.
+                    # Entregar o corpo cortado seria perigoso: um JSON válido seguido de
+                    # lixo seria executado, e o cliente receberia 413 mesmo assim.
+                    return {"type": "http.disconnect"}
+            return mensagem
+
+        async def recusar_corpo() -> None:
+            resposta = resposta_de_problema(
+                "corpo_grande_demais", CATALOGO["corpo_grande_demais"][2], scope["path"]
+            )
+            await resposta(scope, receive, encaminhar)
+
         try:
-            await self._app(scope, receive, enviar)
+            if _tamanho_declarado_passa_do_teto(scope):
+                await recusar_corpo()
+            else:
+                await self._app(scope, receber, enviar)
+                if corpo_estourou and not resposta_iniciada:
+                    await recusar_corpo()
         except Exception:
             # Erro que ninguém previu. Tratado aqui, e não no tratador genérico do
             # framework, porque aqui o request_id e o parceiro ainda estão no contexto:
@@ -72,7 +123,7 @@ class MiddlewareDeObservabilidade:
             resposta = resposta_de_problema(
                 "erro_interno", CATALOGO["erro_interno"][2], scope["path"]
             )
-            await resposta(scope, receive, enviar)
+            await resposta(scope, receive, encaminhar)
         finally:
             duracao = time.perf_counter() - inicio
             # O template da rota (/v1/contas/{conta_id}), não o caminho real: senão cada

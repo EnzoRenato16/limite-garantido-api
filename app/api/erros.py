@@ -89,6 +89,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Método não permitido",
         "O caminho existe, mas não com este método.",
     ),
+    "corpo_grande_demais": (
+        413,
+        "Corpo grande demais",
+        "O corpo da requisição passa do tamanho máximo aceito pela API (64 kB).",
+    ),
     # 409
     "conta_ja_existe": (
         409,
