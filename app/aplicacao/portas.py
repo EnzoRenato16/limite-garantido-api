@@ -73,6 +73,18 @@ class InfoDoCustodiante:
     prazo_de_resposta: timedelta
 
 
+@dataclass(frozen=True, slots=True)
+class LocalDaSolicitacao:
+    """Onde mora um pedido feito ao custodiante (aberto ou já encerrado)."""
+
+    solicitacao_id: str
+    parceiro_id: str
+    conta_id: str
+    garantia_id: str
+    custodiante_id: str
+    tipo: TipoSolicitacao
+
+
 class CustodianteDesconhecido(Exception):
     """Pedido para um custodiante que não está configurado."""
 
@@ -145,6 +157,38 @@ class RepositorioDeContas(Protocol):
         self, hoje: date, parceiro_id: str | None = None
     ) -> Sequence[tuple[str, str]]:
         """Pares (parceiro_id, conta_id) com fatura vencida ou chamada de margem vencida."""
+        ...
+
+    def localizar_solicitacao(self, solicitacao_id: str) -> LocalDaSolicitacao | None: ...
+
+    def garantias_aguardando_custodiante(
+        self, parceiro_id: str | None = None
+    ) -> Sequence[tuple[str, str, str]]:
+        """Trios (parceiro_id, conta_id, garantia_id) que esperam resposta de custódia."""
+        ...
+
+    def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool: ...
+
+    def registrar_resposta(
+        self,
+        *,
+        custodiante_id: str,
+        evento_id: str,
+        solicitacao_id: str,
+        garantia_id: str,
+        parceiro_id: str,
+        status: StatusDaResposta,
+        canal: str,
+        resultado: str,
+        recebida_em: datetime,
+        valor_obtido: Dinheiro | None = None,
+        motivo: str | None = None,
+    ) -> None:
+        """Grava a resposta. Levanta `RespostaDuplicada` se o evento já foi registrado."""
+        ...
+
+    def antecipar_prazo(self, solicitacao_id: str, prazo_ate: datetime) -> None:
+        """Só o sandbox usa: faz o prazo de um pedido vencer agora."""
         ...
 
 

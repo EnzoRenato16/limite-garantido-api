@@ -19,6 +19,11 @@ from app.api.rotas.contas import (
     rotas_de_faturas,
     rotas_de_garantias,
 )
+from app.api.rotas.custodia import (
+    rotas_de_callback,
+    rotas_de_custodiantes,
+    rotas_de_sandbox_de_custodia,
+)
 from app.api.rotas.eventos import rotas_de_eventos
 from app.api.rotas.operacao import rotas_de_operacao
 from app.api.rotas.risco import rotas_de_risco, rotas_de_sandbox
@@ -26,7 +31,7 @@ from app.aplicacao.portas import Custodiante, ProvedorDePrecos, Relogio
 from app.config import Configuracao, obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
-from app.infra.custodia import CustodiaAssincrona, CustodiaInterna
+from app.infra.custodia import montar_custodiante
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
@@ -75,14 +80,24 @@ TAGS = [
     },
     {
         "name": "Garantias",
-        "description": "O investimento bloqueado. Estados: `pendente → bloqueada → liberada | "
-        "executada | parcialmente_executada`.",
+        "description": "O investimento bloqueado. Interna: `pendente → bloqueada → liberada | "
+        "executada | parcialmente_executada`. Externa (simulada): `solicitada → "
+        "gravame_pendente → gravame_confirmado → bloqueada`, com desvios `gravame_recusado` "
+        "e `gravame_expirado`; liberação e execução passam por `liberacao_pendente` e "
+        "`execucao_solicitada`.",
     },
     {"name": "Compras", "description": "Autorização de compras contra o limite disponível."},
     {"name": "Faturas e pagamentos", "description": "Fechamento de fatura e recebimento."},
     {
         "name": "Eventos e webhooks",
         "description": "Log de eventos, configuração do webhook, entregas e reenvio manual.",
+    },
+    {
+        "name": "Custodiantes (simulados)",
+        "description": "Fase 2: investimento em outra instituição. **Não há integração "
+        "real**: os custodiantes são simuladores com perfis fictícios. O gravame é "
+        "assíncrono e pode ser recusado ou ficar sem resposta; a resposta chega por "
+        "callback assinado (HMAC) ou pela consulta de reserva da rotina de custódia.",
     },
     {"name": "Risco", "description": "Política de risco do parceiro e simulador de stress."},
     {
@@ -117,8 +132,11 @@ def criar_app(
     fabrica_de_sessoes = criar_fabrica_de_sessoes(engine)
     relogio = relogio or RelogioDoSistema(config.fuso_de_negocio)
     if custodiante is None:
-        custodiante = (
-            CustodiaInterna() if config.custodia_modo == "interna" else CustodiaAssincrona()
+        custodiante = montar_custodiante(
+            config.custodia_modo,
+            config.custodia_externa_efetiva,
+            relogio,
+            config.custodia_perfis_arquivo,
         )
 
     metricas = Metricas()
@@ -164,8 +182,11 @@ def criar_app(
         rotas_de_compras,
         rotas_de_faturas,
         rotas_de_eventos,
+        rotas_de_custodiantes,
+        rotas_de_callback,
         rotas_de_risco,
         rotas_de_sandbox,
+        rotas_de_sandbox_de_custodia,
         rotas_de_admin,
         rotas_de_operacao,
     ):

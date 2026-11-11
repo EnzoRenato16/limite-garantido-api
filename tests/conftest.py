@@ -35,6 +35,14 @@ from app.infra.relogio import RelogioFixo
 
 RAIZ = Path(__file__).resolve().parent.parent
 ADMIN_TOKEN = "token-administrativo-so-para-os-testes-0001"
+# Segredos de callback dos custodiantes simulados, só para os testes.
+SEGREDOS_DE_CUSTODIA = {
+    "custodiante_agil": "segredo-de-callback-do-agil-para-testes-01",
+    "custodiante_lento": "segredo-de-callback-do-lento-para-testes-1",
+    "teste_confirma": "segredo-de-callback-teste-confirma-000001",
+    "teste_recusa": "segredo-de-callback-teste-recusa-00000001",
+    "teste_mudo": "segredo-de-callback-teste-mudo-0000000001",
+}
 INSTANTE_INICIAL = datetime(2026, 3, 2, 15, 0, tzinfo=UTC)
 
 
@@ -92,6 +100,7 @@ def configuracao_de_teste(url_do_banco: str, **mudancas: Any) -> Configuracao:
         "sandbox_habilitado": True,
         "webhook_permitir_rede_interna": True,
         "log_nivel": "WARNING",
+        "custodia_segredos": SEGREDOS_DE_CUSTODIA,
     }
     valores.update(mudancas)
     return Configuracao(_env_file=None, **valores)  # type: ignore[call-arg]
@@ -173,6 +182,23 @@ class Parceiro:
 
     def remarcar(self, garantia_id: str, **corpo: str) -> Response:
         return self.post(f"/v1/sandbox/garantias/{garantia_id}/remarcacao", corpo)
+
+    def bloquear_externa(
+        self, conta_id: str, tipo_ativo: str, valor: str, custodiante_id: str
+    ) -> dict[str, Any]:
+        resposta = self.post(
+            f"/v1/contas/{conta_id}/garantias",
+            {"tipo_ativo": tipo_ativo, "valor": valor, "custodiante_id": custodiante_id},
+        )
+        assert resposta.status_code == 202, resposta.text
+        corpo: dict[str, Any] = resposta.json()
+        return corpo
+
+    def garantia(self, garantia_id: str) -> dict[str, Any]:
+        resposta = self.get(f"/v1/garantias/{garantia_id}")
+        assert resposta.status_code == 200, resposta.text
+        corpo: dict[str, Any] = resposta.json()
+        return corpo
 
     def avancar_dias(self, conta_id: str, dias: int) -> Response:
         return self.post(f"/v1/sandbox/contas/{conta_id}/avanco-de-dias", {"dias": dias})

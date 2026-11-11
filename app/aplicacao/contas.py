@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.aplicacao.erros import ContaJaExiste, ContaNaoEncontrada
+from app.aplicacao.custodia import prazo_de_resposta
+from app.aplicacao.erros import ContaJaExiste, ContaNaoEncontrada, CustodianteNaoConfigurado
 from app.aplicacao.portas import UnidadeDeTrabalho
 from app.dominio.conta import Compra, Conta, Fatura, Pagamento
 from app.dominio.dinheiro import Dinheiro
@@ -58,10 +59,33 @@ def solicitar_garantia(
     conta_id: str,
     tipo_ativo: TipoAtivo,
     valor: Dinheiro,
+    custodiante_id: str | None = None,
 ) -> tuple[Conta, Garantia]:
-    """Aplica o dinheiro do cliente e pede o gravame. Dentro de casa, já sai bloqueada."""
+    """Aplica o dinheiro do cliente e pede o gravame. Dentro de casa, já sai bloqueada.
+
+    Com `custodiante_id`, o investimento está em outro custodiante: a garantia nasce
+    `solicitada` e o pedido é enviado pela rotina de custódia (o worker), depois do
+    commit. Enviar dentro da transação arriscaria um pedido no custodiante sem registro
+    do nosso lado, se o commit falhasse.
+    """
     conta = _conta_para_atualizar(uow, parceiro, conta_id)
     agora, hoje = uow.relogio.agora(), uow.relogio.hoje()
+    if custodiante_id is not None:
+        if not uow.custodiante.conhece(custodiante_id):
+            raise CustodianteNaoConfigurado(
+                "Custodiante não configurado", custodiante_id=custodiante_id
+            )
+        garantia = conta.registrar_garantia(
+            tipo_ativo,
+            valor,
+            parceiro.politica,
+            agora,
+            hoje,
+            custodiante_id=custodiante_id,
+            prazo_ate=agora + prazo_de_resposta(uow, custodiante_id),
+        )
+        uow.contas.salvar(conta, parceiro)
+        return conta, garantia
     garantia = conta.registrar_garantia(tipo_ativo, valor, parceiro.politica, agora, hoje)
     if uow.custodiante.solicitar_bloqueio(garantia):
         conta.confirmar_bloqueio(garantia.id, parceiro.politica, agora, hoje)
@@ -84,10 +108,21 @@ def confirmar_bloqueio(
 def liberar_garantia(
     uow: UnidadeDeTrabalho, parceiro: Parceiro, garantia_id: str
 ) -> tuple[Conta, Garantia]:
+    """Interna: devolve na hora. Externa: pede ao custodiante, e o limite sai já no pedido."""
     conta = _conta_da_garantia(uow, garantia_id, parceiro.id)
-    garantia = conta.liberar(
-        garantia_id, parceiro.politica, uow.relogio.agora(), uow.relogio.hoje()
-    )
+    agora, hoje = uow.relogio.agora(), uow.relogio.hoje()
+    garantia = conta.garantia(garantia_id)
+    if garantia.externa:
+        assert garantia.custodiante_id is not None  # noqa: S101 - garantia externa
+        conta.solicitar_liberacao(
+            garantia_id,
+            parceiro.politica,
+            agora,
+            hoje,
+            prazo_ate=agora + prazo_de_resposta(uow, garantia.custodiante_id),
+        )
+    else:
+        conta.liberar(garantia_id, parceiro.politica, agora, hoje)
     uow.contas.salvar(conta, parceiro)
     return conta, garantia
 

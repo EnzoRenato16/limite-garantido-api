@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
@@ -106,12 +106,39 @@ class ContaResposta(BaseModel):
 
 
 # ---------------------------------------------------------------- garantias
+IdDeCustodiante = Annotated[
+    str,
+    Field(
+        pattern=r"^[a-z0-9_]{1,40}$",
+        description="Id do custodiante externo (veja GET /v1/custodiantes)",
+        examples=["custodiante_agil"],
+    ),
+]
+
+
 class NovaGarantia(Esquema):
     tipo_ativo: TipoAtivo = Field(description="Tipo do investimento que vira garantia")
     valor: ValorDeEntrada
+    custodiante_id: IdDeCustodiante | None = Field(
+        default=None,
+        description="Só para investimento em outra instituição (fase 2, simulada). Sem ele, "
+        "o investimento fica dentro de casa e o bloqueio é imediato.",
+    )
 
     model_config = ConfigDict(
         extra="forbid", json_schema_extra={"example": {"tipo_ativo": "cdb", "valor": "5000.00"}}
+    )
+
+
+class SolicitacaoResposta(BaseModel):
+    """Pedido em aberto no custodiante externo."""
+
+    id: str = Field(examples=["sol_01JCD3N8X5T9Q0W2R4Y6U8I0PZ"])
+    tipo: str = Field(description="gravame, liberacao ou execucao")
+    criada_em: datetime
+    prazo_ate: datetime = Field(description="Sem resposta até aqui, o pedido expira")
+    enviada_em: datetime | None = Field(
+        description="Quando o custodiante aceitou o pedido. Nulo enquanto não foi enviado."
     )
 
 
@@ -121,7 +148,9 @@ class GarantiaResposta(BaseModel):
     tipo_ativo: TipoAtivo
     estado: str = Field(
         examples=["bloqueada"],
-        description="pendente, bloqueada, parcialmente_executada, liberada ou executada",
+        description="Interna: pendente, bloqueada, parcialmente_executada, liberada ou "
+        "executada. Externa também: solicitada, gravame_pendente, gravame_confirmado, "
+        "gravame_recusado, gravame_expirado, liberacao_pendente e execucao_solicitada.",
     )
     valor_aplicado: ValorDeSaida = Field(description="Quanto o cliente aplicou")
     valor_de_mercado: ValorDeSaida = Field(description="Quanto a garantia vale hoje")
@@ -129,6 +158,20 @@ class GarantiaResposta(BaseModel):
     limite_gerado: ValorDeSaida = Field(description="Limite que esta garantia libera hoje")
     marcada_em: date = Field(description="Data da última marcação a mercado")
     criada_em: datetime
+    origem: str = Field(
+        default="interna",
+        description="interna (fase 1) ou externa (custodiante externo, simulado)",
+    )
+    custodiante_id: str | None = Field(default=None, description="Só na garantia externa")
+    solicitacao: SolicitacaoResposta | None = Field(
+        default=None, description="Pedido em aberto no custodiante externo, se houver"
+    )
+    valor_em_execucao: ValorDeSaida | None = Field(
+        default=None, description="Quanto foi mandado vender e ainda não teve confirmação"
+    )
+    motivo: str | None = Field(
+        default=None, description="Motivo da última recusa ou falha do custodiante"
+    )
 
 
 class GarantiaComLimite(BaseModel):
@@ -371,3 +414,71 @@ class CatalogoDeErro(BaseModel):
     status: int
     titulo: str
     descricao: str
+
+
+# -------------------------------------------------------------- custódia
+class CustodianteResposta(BaseModel):
+    id: str = Field(examples=["custodiante_agil"])
+    nome: str = Field(examples=["Custodiante Ágil (simulador)"])
+    descricao: str
+    simulado: bool = Field(
+        description="Sempre true neste projeto: não há integração com custodiante real"
+    )
+    prazo_de_resposta_minutos: int = Field(
+        description="Sem resposta neste prazo, o pedido expira e o parceiro é avisado"
+    )
+
+
+class CallbackDoCustodiante(Esquema):
+    """Resposta do custodiante a um pedido. Chega assinada (HMAC-SHA256)."""
+
+    evento_id: str = Field(
+        pattern=r"^[A-Za-z0-9_.:-]{1,80}$",
+        description="Id do evento do lado do custodiante. A mesma resposta enviada de novo "
+        "(ou já obtida por consulta) tem o mesmo id e não é aplicada duas vezes.",
+    )
+    solicitacao_id: str = Field(
+        pattern=r"^[A-Za-z0-9_]{1,40}$", description="Id do pedido que está sendo respondido"
+    )
+    status: Literal["confirmada", "recusada"]
+    valor_obtido: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+        description="Só na confirmação de execução: quanto a venda rendeu",
+    )
+    motivo: str | None = Field(default=None, max_length=200, description="Motivo da recusa")
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "evento_id": "evc_3f9a1c7d2b8e4a6f0c1d2e3f4a",
+                "solicitacao_id": "sol_01JCD3N8X5T9Q0W2R4Y6U8I0PZ",
+                "status": "confirmada",
+            }
+        },
+    )
+
+
+class ResultadoDoCallback(BaseModel):
+    resultado: Literal["aplicada", "duplicada", "obsoleta"] = Field(
+        description="aplicada: mudou a garantia. duplicada: já recebida antes. obsoleta: o "
+        "pedido não esperava mais esta resposta (expirou ou foi encerrado); nada mudou."
+    )
+
+
+class DecisaoNoSandbox(Esquema):
+    acao: Literal["confirmar", "recusar", "nao_responder"] = Field(
+        description="O que o custodiante simulado faz com o pedido em aberto. "
+        "nao_responder vence o prazo agora e expira o pedido."
+    )
+    valor_obtido: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+        description="Só ao confirmar uma execução: quanto a venda rendeu. Sem ele, usa o "
+        "preço do perfil do custodiante.",
+    )

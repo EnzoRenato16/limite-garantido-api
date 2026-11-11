@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import date, datetime
 
 from sqlalchemy import (
@@ -21,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.aplicacao.erros import ConflitoDeConcorrencia, ContaJaExiste, RespostaDuplicada
-from app.aplicacao.portas import StatusDaResposta
+from app.aplicacao.portas import LocalDaSolicitacao, StatusDaResposta
 from app.dominio.conta import (
     ChamadaDeMargem,
     Conta,
@@ -91,18 +90,6 @@ _DEBITOS_MENOS_CREDITOS = func.coalesce(
     ),
     0,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class LocalDaSolicitacao:
-    """Onde mora um pedido feito ao custodiante."""
-
-    solicitacao_id: str
-    parceiro_id: str
-    conta_id: str
-    garantia_id: str
-    custodiante_id: str
-    tipo: TipoSolicitacao
 
 
 class RepositorioDeContasSql:
@@ -467,6 +454,13 @@ class RepositorioDeContasSql:
         if parceiro_id is not None:
             consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
         return [(linha[0], linha[1], linha[2]) for linha in self._sessao.execute(consulta)]
+
+    def antecipar_prazo(self, solicitacao_id: str, prazo_ate: datetime) -> None:
+        self._sessao.execute(
+            update(SolicitacaoDeCustodiaModelo)
+            .where(SolicitacaoDeCustodiaModelo.id == solicitacao_id)
+            .values(prazo_ate=prazo_ate)
+        )
 
     def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool:
         return (

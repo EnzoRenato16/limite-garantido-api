@@ -253,6 +253,20 @@ def evento_id_do_custodiante(
     return f"evc_{resumo[:26]}"
 
 
+def montar_custodiante(
+    modo_da_fase_1: str,
+    externa: str,
+    relogio: Relogio,
+    arquivo_de_perfis: Path | None = None,
+) -> Custodiante:
+    """O custodiante que a aplicação e o worker usam, a partir da configuração."""
+    fase_1: Custodiante = CustodiaInterna() if modo_da_fase_1 == "interna" else CustodiaAssincrona()
+    if externa != "simulador":
+        return fase_1
+    perfis = carregar_perfis(arquivo_de_perfis or ARQUIVO_DE_PERFIS)
+    return SimuladorDeCustodiantes(perfis, relogio, fase_1=fase_1)
+
+
 def _confere_o_protocolo(
     a: CustodiaInterna, b: CustodiaAssincrona, c: SimuladorDeCustodiantes
 ) -> Sequence[Custodiante]:

@@ -168,3 +168,31 @@ def test_coluna_de_instante_exige_fuso_e_devolve_utc() -> None:
     # O SQLite devolve sem fuso: o tipo recoloca UTC.
     lido = tipo.process_result_value(datetime(2026, 3, 2, 12, 0), None)  # type: ignore[arg-type]
     assert lido == datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
+
+
+def test_simulador_de_custodiantes_fica_fora_da_producao() -> None:
+    assert _config().custodia_externa_efetiva == "simulador"
+    producao = _config(
+        ambiente="producao",
+        database_url="postgresql+psycopg://app@banco/lg",
+        admin_token=TOKEN_FORTE,
+    )
+    assert producao.custodia_externa_efetiva == "desligada"
+    with pytest.raises(ValueError, match="CUSTODIA_EXTERNA=simulador"):
+        _config(
+            ambiente="producao",
+            database_url="postgresql+psycopg://app@banco/lg",
+            admin_token=TOKEN_FORTE,
+            custodia_externa="simulador",
+        )
+
+
+def test_segredo_de_callback_fraco_nao_sobe_em_producao() -> None:
+    with pytest.raises(ValueError, match="segredo de callback de custodiante_agil"):
+        _config(
+            ambiente="producao",
+            database_url="postgresql+psycopg://app@banco/lg",
+            admin_token=TOKEN_FORTE,
+            custodia_externa="desligada",
+            custodia_segredos={"custodiante_agil": "segredo-de-exemplo-com-mais-de-32-letras"},
+        )
