@@ -555,6 +555,52 @@ A decisão de parar aqui e entregar foi do dono do projeto, com a suíte e o CI 
 Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
 `/security-review` e `/insecure-defaults:audit`.
 
+### Revisão final da fase 2
+
+**O que rodou até o fim**
+
+- Suíte completa: ruff, mypy (estrito no domínio), 653 testes em SQLite e 667 em
+  Postgres, cobertura do domínio acima de 90%, e os 10 testes de navegador do `/demo` e
+  do `/risco`, três rodadas seguidas verdes.
+- `scripts/dev.sh` e `docker compose` subiram e foram exercitados: fumaça da v1.0, a
+  confirmação pelo worker, callback assinado aceito e callback com segredo errado
+  recusado, e o ledger fechando. O Docker Hub recusou o download daqui (429); as imagens
+  vieram do espelho `mirror.gcr.io`, e o build usou uma cópia do Dockerfile com o
+  certificado do proxy deste ambiente, fora do repositório.
+- Três revisões por agentes: revisão de código, caça a falhas silenciosas e sharp
+  edges. Os achados aceitos foram corrigidos no commit "achados da revisão por agentes":
+  duplicata de resposta que escondia outros erros de integridade, custodiante fora do
+  ar impedindo a expiração, worker que parava os webhooks quando a custódia falhava,
+  segredo de callback fraco aceito fora de produção, janela de replay sem teto, atalho
+  administrativo sem exigir o sandbox, logs sem contexto e erros de rede engolidos no
+  navegador.
+- Conferência de segurança manual: o callback só aplica resposta a pedido do próprio
+  custodiante, o sandbox filtra pelo parceiro autenticado, o front não usa `innerHTML`
+  nem `eval`, e as consultas são todas pelo ORM.
+
+**Achados não aceitos, com o motivo**
+
+- A expiração do `pendente` legado foi apontada como mudança da fase 1. Ela é o que
+  resolve o "pendente para sempre" pedido nesta entrega, e só age no modo legado
+  `CUSTODIA_MODO=assincrona` (item 41).
+
+**Achados que ficaram para depois** (estão em "Próximos passos" no README)
+
+- A assinatura usa o mesmo formato nos webhooks de saída e nos callbacks de entrada, sem
+  separar o contexto no HMAC.
+- `AMBIENTE` tem padrão `desenvolvimento`: um deploy que esqueça a variável liga o
+  simulador. Herdado da v1.0.
+- A rota de callback não tem rate limit próprio.
+
+**O que não rodou**
+
+- A busca de vulnerabilidades da `security-review` foi interrompida pelo limite de
+  uso da conta; a parte que ela ia conferir foi feita à mão (acima).
+- Por decisão do dono do projeto, para encerrar a entrega, ficaram de fora
+  `claude-security`, `insecure-defaults:audit`, `supply-chain-risk-auditor`,
+  `/code-review` e as demais revisões pendentes da v1.0. Nesta entrega não entrou
+  nenhuma dependência nova.
+
 ## O que os testes pegaram
 
 1. **`Decimal` virando `float`.** Na reconstrução da 0.1, o `jsonable_encoder` do
@@ -579,6 +625,13 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
 9. **Corpo cortado é pior que corpo recusado.** A primeira versão do teto de tamanho
    cortava o corpo: um JSON válido seguido de lixo seria executado e o cliente
    receberia 413. Agora a leitura falha inteira e o endpoint não roda.
+10. **Clique antes da página ficar pronta.** Na fase 2, o `/demo` passou a fazer mais
+    uma chamada antes de ligar os tratadores, e um clique cedo enviava o formulário de
+    forma nativa e recarregava a página. O teste de navegador pegou de forma
+    intermitente; agora os tratadores entram primeiro.
+11. **Custodiante fora do ar travava o prazo.** A revisão por agente apontou, e um teste
+    confirmou antes da correção: se a consulta ao custodiante falhava, a garantia nunca
+    expirava.
 
 <a id="o-que-ficou-para-voce-decidir"></a>
 ## O que ficou para você decidir

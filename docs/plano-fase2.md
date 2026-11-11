@@ -238,5 +238,5 @@ cima.
 
 ### 13. Verificação e revisão
 - [x] Suíte completa, `scripts/dev.sh`, Playwright pelo `/demo` e `/risco`, screenshots.
-- [ ] Revisões pedidas; correções; o resto em "Próximos passos".
+- [x] Revisões essenciais; correções; o resto em "Próximos passos" (ver DECISOES, Revisão final da fase 2).
 - [ ] Push, PR.

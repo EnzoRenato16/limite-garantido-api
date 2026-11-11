@@ -326,6 +326,11 @@ O que um especialista criticaria, e que não está resolvido aqui.
 - A API administrativa tem um token único: sem usuários, papéis nem trilha de auditoria.
 - API keys não expiram, não têm escopo e não têm restrição de origem.
 - A validação anti-SSRF do webhook não fecha a janela entre resolver o DNS e conectar.
+- A assinatura HMAC tem o mesmo formato nos webhooks de saída e nos callbacks de
+  custodiante; falta separar o contexto (prefixo no que é assinado).
+- `AMBIENTE` tem padrão `desenvolvimento`: um deploy que esqueça a variável liga o
+  simulador de custodiantes. Deveria ser obrigatória.
+- A rota de callback dos custodiantes não tem rate limit próprio.
 - As imagens Docker estão fixadas por tag, não por digest.
 
 Os riscos de produto, crédito, jurídico, operacional e tecnológico, com a resposta de
