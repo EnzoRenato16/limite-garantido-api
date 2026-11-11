@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol
 
 from app.dominio.conta import Conta
 from app.dominio.dinheiro import Dinheiro
-from app.dominio.garantia import Garantia
+from app.dominio.garantia import Garantia, TipoSolicitacao
 from app.dominio.parceiro import Parceiro
 from app.dominio.politica import TipoAtivo
 from app.dominio.stress import ContaNaCarteira
@@ -26,9 +28,81 @@ class Relogio(Protocol):
         ...
 
 
+class StatusDaResposta(StrEnum):
+    # Pedido aceito, resposta ainda por vir.
+    PENDENTE = "pendente"
+    CONFIRMADA = "confirmada"
+    RECUSADA = "recusada"
+
+
+@dataclass(frozen=True, slots=True)
+class PedidoAoCustodiante:
+    """O que vai para o custodiante. `solicitacao_id` torna o pedido idempotente: o
+    mesmo id enviado duas vezes é o mesmo pedido."""
+
+    solicitacao_id: str
+    custodiante_id: str
+    tipo: TipoSolicitacao
+    garantia_id: str
+    tipo_ativo: TipoAtivo
+    # Gravame e liberação: o valor da garantia. Execução: quanto vender.
+    valor: Dinheiro
+    criado_em: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RespostaDoCustodiante:
+    solicitacao_id: str
+    status: StatusDaResposta
+    # Id do evento do lado do custodiante. É a chave de idempotência das respostas:
+    # a mesma confirmação, por callback ou por consulta, tem o mesmo id.
+    evento_id: str | None = None
+    # Execução confirmada: quanto a venda rendeu.
+    valor_obtido: Dinheiro | None = None
+    motivo: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InfoDoCustodiante:
+    id: str
+    nome: str
+    descricao: str
+    # Todos os custodiantes externos deste projeto são simulados.
+    simulado: bool
+    # Quanto ele tem para responder a um pedido antes de o pedido expirar.
+    prazo_de_resposta: timedelta
+
+
+class CustodianteDesconhecido(Exception):
+    """Pedido para um custodiante que não está configurado."""
+
+
 class Custodiante(Protocol):
+    """Quem coloca e tira o gravame do investimento.
+
+    `solicitar_bloqueio` é a fase 1 (investimento dentro de casa). O resto é a fase 2:
+    custodiante externo, que responde depois e pode recusar ou não responder.
+    """
+
     def solicitar_bloqueio(self, garantia: Garantia) -> bool:
         """Pede o gravame do ativo. `True` se já saiu confirmado; `False` se fica pendente."""
+        ...
+
+    def custodiantes(self) -> Sequence[InfoDoCustodiante]:
+        """Custodiantes externos disponíveis."""
+        ...
+
+    def conhece(self, custodiante_id: str) -> bool: ...
+
+    def solicitar_gravame(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
+
+    def solicitar_liberacao(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
+
+    def solicitar_execucao(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
+
+    def consultar(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante:
+        """Situação de um pedido já feito. É o caminho de reserva quando o callback
+        não chega."""
         ...
 
 
