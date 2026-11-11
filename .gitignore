@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Ferramentas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Ambiente local (segredos nunca entram no repositório)
+.env
+*.db
+*.sqlite3
+
+# Postgres local de desenvolvimento
+.pgdata/
+
+# Editor / SO
+.idea/
+.vscode/
+.DS_Store
