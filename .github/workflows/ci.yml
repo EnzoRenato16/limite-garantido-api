@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# O workflow só lê o código: não precisa de mais nenhuma permissão.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1" # usa exatamente o uv.lock; se ele estiver desatualizado, falha
+
+jobs:
+  qualidade:
+    name: Lint e tipos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Ruff (lint)
+        run: uv run ruff check .
+      - name: Ruff (formatação)
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy app
+      - name: Dependências com vulnerabilidade conhecida
+        run: uv run pip-audit --progress-spinner off
+
+  testes:
+    name: Testes (SQLite e Postgres)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lg
+          POSTGRES_PASSWORD: lg
+          POSTGRES_DB: lg_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lg -d lg_teste"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Testes em SQLite, com cobertura
+        run: uv run pytest --cov=app --cov-report=term
+      - name: Cobertura do domínio (mínimo de 90%)
+        run: uv run coverage report --include="app/dominio/*" --fail-under=90
+      - name: Testes em Postgres (inclui concorrência e gatilhos do ledger)
+        env:
+          DATABASE_URL_TESTE: postgresql+psycopg://lg:lg@localhost:5432/lg_teste
+        run: uv run pytest
+
+  e2e:
+    name: Navegador (Playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run playwright install --with-deps chromium
+      - name: História completa na página /demo
+        run: uv run pytest -m e2e
+
+  compose:
+    name: Docker Compose
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sobe Postgres, migrações, API e worker
+        run: docker compose up --build --detach --wait
+      - name: Teste de fumaça (da API ao webhook entregue)
+        run: python3 scripts/fumaca.py http://localhost:8000
+      - name: Logs, se algo falhar
+        if: failure()
+        run: docker compose logs --no-color --tail 200

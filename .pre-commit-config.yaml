@@ -1,0 +1,41 @@
+# Instale uma vez com:  uv run pre-commit install
+#
+# Ruff e mypy rodam pelo `uv run`, ou seja, na versão travada no uv.lock: o que passa
+# aqui é exatamente o que passa no CI.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=600]
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff (lint)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff (formatação)
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy (estrito no domínio)
+        entry: uv run mypy app
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: testes-do-dominio
+        name: testes do domínio
+        entry: uv run pytest tests/unidade -q
+        language: system
+        types: [python]
+        pass_filenames: false

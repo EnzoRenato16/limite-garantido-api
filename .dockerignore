@@ -1,0 +1,9 @@
+# Só entra na imagem o que o Dockerfile copia de propósito; o resto fica de fora.
+*
+!pyproject.toml
+!uv.lock
+!alembic.ini
+!alembic/
+!app/
+**/__pycache__/
+**/*.pyc
