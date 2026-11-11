@@ -23,6 +23,8 @@ _CAMPOS_PADRAO_DO_LOGGING = frozenset(logging.LogRecord("", 0, "", 0, "", (), No
     "message",
     "asctime",
     "taskName",
+    "ctx_request_id",
+    "ctx_parceiro_id",
 }
 
 
@@ -42,8 +44,9 @@ def _fabrica_com_contexto(*args: Any, **kwargs: Any) -> logging.LogRecord:
     """
     registro = _fabrica_original(*args, **kwargs)
     contexto = contexto_atual()
-    registro.request_id = contexto.get("request_id")
-    registro.parceiro_id = contexto.get("parceiro_id")
+    # Nomes próprios, para não colidir com um `extra={"parceiro_id": ...}` de quem loga.
+    registro.ctx_request_id = contexto.get("request_id")
+    registro.ctx_parceiro_id = contexto.get("parceiro_id")
     return registro
 
 
@@ -54,8 +57,8 @@ class FormatadorJson(logging.Formatter):
             "nivel": record.levelname,
             "logger": record.name,
             "mensagem": record.getMessage(),
-            "request_id": getattr(record, "request_id", None),
-            "parceiro_id": getattr(record, "parceiro_id", None),
+            "request_id": getattr(record, "ctx_request_id", None),
+            "parceiro_id": getattr(record, "ctx_parceiro_id", None),
         }
         for chave, valor in record.__dict__.items():
             if chave not in _CAMPOS_PADRAO_DO_LOGGING and not chave.startswith("_"):

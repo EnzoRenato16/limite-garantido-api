@@ -136,14 +136,19 @@ def test_segredo_de_webhook_e_longo_e_unico() -> None:
 
 
 def test_ids_tem_prefixo_e_ordenam_por_criacao() -> None:
-    ids = [novo_id("gar") for _ in range(200)]
+    ids = [novo_id("gar") for _ in range(2000)]
     assert all(i.startswith("gar_") and len(i) == 30 for i in ids)
-    assert len(set(ids)) == 200
-    import time
+    assert len(set(ids)) == 2000
+    # Monotônico: mesmo gerando vários no mesmo milissegundo, a ordem é a de criação.
+    assert ids == sorted(ids)
 
-    antes = novo_id("x")
-    time.sleep(0.002)
-    assert antes < novo_id("x")
+
+def test_ids_continuam_em_ordem_com_varias_threads() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        ids = list(executor.map(lambda _: novo_id("evt"), range(4000)))
+    assert len(set(ids)) == 4000
 
 
 # ------------------------------------------------------------ tipos de coluna

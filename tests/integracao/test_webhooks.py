@@ -166,6 +166,29 @@ def test_worker_entrega_com_assinatura_hmac_que_o_parceiro_consegue_conferir(
     assert {e["ultimo_status_http"] for e in entregas} == {200}
 
 
+def test_entrega_segue_a_ordem_em_que_os_eventos_aconteceram(
+    parceiro: Parceiro, entregador: Entregador, destino: Destino
+) -> None:
+    _configurar(parceiro)
+    conta = parceiro.abrir_conta()
+    parceiro.bloquear(conta, "deposito", "100.00")
+    for _ in range(5):
+        parceiro.comprar(conta, "10.00")
+    parceiro.comprar(conta, "999.00")
+    _esvaziar(entregador)
+    entregues = [json.loads(r.content)["id"] for r in destino.recebidas]
+    assert entregues == [evento["id"] for evento in parceiro.eventos()]
+    # Dentro de uma mesma operação a ordem também é a do domínio.
+    tipos = [json.loads(r.content)["tipo"] for r in destino.recebidas]
+    assert tipos[:4] == [
+        "garantia.bloqueada",
+        "limite.atualizado",
+        "compra.aprovada",
+        "limite.atualizado",
+    ]
+    assert tipos[-1] == "compra.negada"
+
+
 def test_falha_reagenda_com_backoff_exponencial_ate_virar_dead_letter(
     url_do_banco: str, engine: Engine, relogio: RelogioFixo, destino: Destino
 ) -> None:

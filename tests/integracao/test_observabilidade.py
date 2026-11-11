@@ -108,3 +108,19 @@ def test_log_de_acesso_sai_em_json_com_request_id_e_parceiro_id(
     assert linha["request_id"] == resposta.headers["X-Request-Id"]
     assert linha["parceiro_id"] == parceiro.id
     assert parceiro.api_key not in json.dumps(linha)
+
+
+def test_campos_extras_entram_na_linha_e_podem_informar_o_parceiro(
+    app: FastAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Fora de uma requisição (seed, worker, rotinas) quem loga informa o parceiro."""
+    with caplog.at_level(logging.INFO, logger="app.teste"):
+        logging.getLogger("app.teste").info(
+            "Rotina concluída", extra={"parceiro_id": "par_123", "contas_processadas": 7}
+        )
+    linha = json.loads(FormatadorJson().format(caplog.records[-1]))
+    assert linha["mensagem"] == "Rotina concluída"
+    assert linha["parceiro_id"] == "par_123"
+    assert linha["contas_processadas"] == 7
+    assert linha["request_id"] is None
+    assert not [campo for campo in linha if campo.startswith("ctx_")]  # nada de campo interno

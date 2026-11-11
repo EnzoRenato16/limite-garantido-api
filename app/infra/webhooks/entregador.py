@@ -148,7 +148,8 @@ class Entregador:
                         EntregaDeWebhookModelo.reservada_ate <= agora,
                     ),
                 )
-                .order_by(EntregaDeWebhookModelo.proxima_tentativa_em, EntregaDeWebhookModelo.id)
+                # Dentro do mesmo instante, vale a ordem em que os eventos aconteceram.
+                .order_by(EntregaDeWebhookModelo.proxima_tentativa_em, EventoModelo.sequencia)
                 .limit(tamanho)
                 .with_for_update(of=EntregaDeWebhookModelo, skip_locked=True)
             ).all()

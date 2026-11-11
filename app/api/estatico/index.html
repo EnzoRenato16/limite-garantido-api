@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Carteira Exemplo · demonstração do Limite Garantido</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/demo/estatico/demo.css">
+  <script type="module" src="/demo/estatico/demo.js"></script>
+</head>
+<body>
+  <div class="palco">
+
+    <main class="app" aria-label="App do parceiro">
+      <header class="cabecalho">
+        <div>
+          <p class="marca">Carteira Exemplo</p>
+          <p class="nota">App de um parceiro fictício. Ele só chama a API; quem guarda o
+            investimento e libera o limite é a plataforma.</p>
+        </div>
+        <button type="button" class="discreto" id="recomecar">Começar de novo</button>
+      </header>
+
+      <section class="regua" aria-labelledby="titulo-regua">
+        <h1 id="titulo-regua">
+          <span class="rotulo">Limite disponível no cartão</span>
+          <span class="numero" id="disponivel">R$ 0,00</span>
+        </h1>
+
+        <div class="trilho" id="trilho" role="img" aria-label="Garantia, limite e uso">
+          <p class="trilho-vazio" id="trilho-vazio">Sem garantia ainda. O limite nasce do que você guardar.</p>
+          <div class="aplicado" id="barra-aplicado"></div>
+          <div class="garantia" id="barra-garantia"></div>
+          <div class="usado" id="barra-usado"></div>
+          <div class="deficit" id="barra-deficit"></div>
+          <div class="marco" id="marco-limite"><span id="marco-texto">limite</span></div>
+        </div>
+
+        <dl class="legenda">
+          <div><dt><i class="cor cor-garantia"></i>Garantia hoje</dt><dd id="valor-garantia">R$ 0,00</dd></div>
+          <div><dt><i class="cor cor-limite"></i>Limite</dt><dd id="valor-limite">R$ 0,00</dd></div>
+          <div><dt><i class="cor cor-usado"></i>Usado</dt><dd id="valor-usado">R$ 0,00</dd></div>
+          <div id="caixa-deficit" hidden><dt><i class="cor cor-deficit"></i>Acima do limite</dt><dd id="valor-deficit">R$ 0,00</dd></div>
+        </dl>
+
+        <p class="aviso" id="aviso" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <ol class="passos">
+        <li>
+          <h2>Guardar dinheiro e ganhar limite</h2>
+          <p>O dinheiro vai para um investimento que continua rendendo e fica bloqueado como garantia.</p>
+          <form id="form-garantia" class="linha">
+            <label>Onde investir
+              <select id="tipo-ativo" name="tipo_ativo"></select>
+            </label>
+            <label>Quanto
+              <input id="valor-da-garantia" name="valor" inputmode="decimal" value="5.000,00" autocomplete="off">
+            </label>
+            <button type="submit">Guardar como garantia</button>
+          </form>
+          <p class="resultado" id="resultado-garantia" role="status" aria-live="polite"></p>
+          <ul class="garantias" id="garantias" aria-label="Investimentos em garantia"></ul>
+        </li>
+
+        <li>
+          <h2>Comprar no cartão</h2>
+          <p>Cada compra é autorizada contra o limite disponível.</p>
+          <form id="form-compra" class="linha">
+            <label>Valor
+              <input id="valor-da-compra" name="valor" inputmode="decimal" value="4.000,00" autocomplete="off">
+            </label>
+            <label>Onde
+              <input id="descricao-da-compra" name="descricao" value="Mercado Exemplo" maxlength="60" autocomplete="off">
+            </label>
+            <button type="submit">Comprar</button>
+          </form>
+          <p class="resultado" id="resultado-compra" role="status" aria-live="polite"></p>
+        </li>
+
+        <li class="simulacao">
+          <h2>E se o investimento cair?</h2>
+          <p>Simulação. Na vida real quem faz isso é o mercado, todo dia, na marcação a mercado.</p>
+          <div class="linha">
+            <button type="button" id="derrubar">Derrubar o ativo em 10%</button>
+          </div>
+          <p class="resultado" id="resultado-queda" role="status" aria-live="polite"></p>
+        </li>
+
+        <li class="simulacao">
+          <h2>E se a fatura atrasar?</h2>
+          <p>Simulação. Feche a fatura e faça os dias passarem. No 7º dia de atraso a garantia é executada.</p>
+          <div class="linha">
+            <button type="button" id="fechar-fatura">Fechar a fatura</button>
+            <button type="button" id="passar-dia" disabled>Passar 1 dia</button>
+            <button type="button" id="pagar" class="discreto" disabled>Pagar a fatura</button>
+          </div>
+          <ol class="dias" id="dias" aria-label="Dias de atraso">
+            <li>1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li><li class="execucao">7</li>
+          </ol>
+          <p class="resultado" id="resultado-fatura" role="status" aria-live="polite"></p>
+        </li>
+      </ol>
+    </main>
+
+    <aside class="bastidores" aria-label="Bastidores">
+      <header>
+        <h2>O que o parceiro recebe</h2>
+        <p>Webhooks de verdade: gravados na mesma transação da operação, entregues por um
+          worker e assinados com HMAC-SHA256. Esta coluna confere a assinatura de cada um.</p>
+      </header>
+      <p class="vazio" id="vazio">Nenhum evento ainda. Guarde um investimento para começar.</p>
+      <ol class="eventos" id="eventos" aria-live="polite"></ol>
+      <footer>
+        <span id="conta-atual"></span>
+        <a href="/docs">Documentação da API</a>
+      </footer>
+    </aside>
+
+  </div>
+</body>
+</html>

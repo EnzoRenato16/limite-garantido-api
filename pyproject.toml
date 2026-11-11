@@ -68,7 +68,9 @@ known-third-party = ["alembic"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S311", "DTZ"]
-"demo.py" = ["T20", "S101"]
+# Frases de tela ficam mais legíveis inteiras do que quebradas em três pedaços.
+"tests/e2e/**" = ["S101", "S105", "S106", "E501"]
+"demo.py" = ["S101", "S105", "E501"]
 "scripts/**" = ["T20"]
 
 [tool.mypy]
@@ -90,7 +92,8 @@ disallow_any_explicit = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+# Os testes de navegador ficam fora do `pytest` comum; rode com `pytest -m e2e`.
+addopts = "-ra --strict-markers -m 'not e2e'"
 markers = [
     "postgres: precisa de um Postgres de verdade (DATABASE_URL_TESTE)",
     "e2e: abre navegador com Playwright",
