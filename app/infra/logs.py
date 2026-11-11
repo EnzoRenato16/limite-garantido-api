@@ -75,6 +75,8 @@ def configurar_logs(nivel: str = "INFO") -> None:
     raiz = logging.getLogger()
     raiz.handlers = [saida]
     raiz.setLevel(nivel.upper())
+    # Uma linha por chamada HTTP de saída é barulho; o worker já registra cada lote.
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
     # O log de acesso é nosso (com request_id e parceiro_id); o do uvicorn seria repetido.
     logging.getLogger("uvicorn.access").disabled = True
     for nome in ("uvicorn", "uvicorn.error"):

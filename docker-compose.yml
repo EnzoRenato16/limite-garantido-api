@@ -1,0 +1,86 @@
+# Ambiente local completo: Postgres, migrações + parceiro de exemplo, API e worker.
+#
+#   docker compose up --build
+#   abra http://localhost:8000/demo
+#
+# Tudo aqui é de DESENVOLVIMENTO: senhas e chaves são fictícias e estão à vista de
+# propósito. Com AMBIENTE=producao a aplicação se recusa a subir com estes valores.
+
+name: limite-garantido
+
+x-aplicacao: &aplicacao
+  image: limite-garantido-api:local
+  build:
+    context: .
+    args:
+      # Troque por um espelho se o Docker Hub estiver limitando os downloads.
+      IMAGEM_PYTHON: ${IMAGEM_PYTHON:-python:3.12-slim}
+  environment:
+    AMBIENTE: desenvolvimento
+    DATABASE_URL: postgresql+psycopg://lg:lg@db:5432/lg
+    ADMIN_TOKEN: token-de-exemplo-troque-antes-de-usar-0000
+    SANDBOX_HABILITADO: "true"
+    DEMO_HABILITADO: "true"
+    DEMO_API_KEY: lgk_exemplo000000_chave-ficticia-so-para-a-demonstracao
+    DEMO_WEBHOOK_SEGREDO: whsec_exemplo-segredo-ficticio-so-para-a-demonstracao
+    # O worker entrega para a própria API, pela rede interna do compose.
+    DEMO_WEBHOOK_URL: http://api:8000/demo/webhooks
+    WEBHOOK_PERMITIR_REDE_INTERNA: "true"
+    WEBHOOK_BACKOFF_BASE_SEGUNDOS: "2"
+    WORKER_INTERVALO_SEGUNDOS: "0.5"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  db:
+    image: ${IMAGEM_POSTGRES:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: lg
+      POSTGRES_PASSWORD: lg
+      POSTGRES_DB: lg
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lg -d lg"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Roda uma vez e sai: aplica as migrações e cria o parceiro de exemplo.
+  preparo:
+    <<: *aplicacao
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *aplicacao
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      preparo:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *aplicacao
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      preparo:
+        condition: service_completed_successfully
+
+volumes:
+  dados:

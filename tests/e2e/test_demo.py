@@ -7,6 +7,8 @@ temporário, e percorre a mesma história do vídeo: guardar, comprar, compra ne
 queda do ativo, atraso e execução no 7º dia, conferindo os webhooks que chegam.
 
 Variáveis opcionais:
+- `E2E_ENDERECO`: em vez de subir tudo, testa um ambiente que já está no ar
+  (por exemplo `http://localhost:8000` depois de um `docker compose up`);
 - `CHROMIUM_EXECUTAVEL`: caminho de um Chromium já instalado (senão, usa o do Playwright);
 - `SALVAR_TELAS`: pasta onde gravar os screenshots (é assim que `docs/img/` é gerada).
 """
@@ -38,6 +40,10 @@ def _porta_livre() -> int:
 
 @pytest.fixture(scope="module")
 def endereco(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    ja_no_ar = os.environ.get("E2E_ENDERECO")
+    if ja_no_ar:
+        yield ja_no_ar.rstrip("/")
+        return
     pasta = tmp_path_factory.mktemp("e2e")
     porta = _porta_livre()
     base = f"http://127.0.0.1:{porta}"
