@@ -58,3 +58,13 @@ class VencimentoInvalido(ErroDominio):
 
 class PagamentoExcedeDivida(ErroDominio):
     codigo = "pagamento_excede_divida"
+
+
+class SolicitacaoDivergente(ErroDominio):
+    """A resposta do custodiante não corresponde ao pedido em aberto da garantia."""
+
+    codigo = "solicitacao_divergente"
+
+
+class SolicitacaoNoPrazo(ErroDominio):
+    codigo = "solicitacao_no_prazo"
