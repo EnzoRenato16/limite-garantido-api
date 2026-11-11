@@ -482,3 +482,134 @@ class DecisaoNoSandbox(Esquema):
         description="Só ao confirmar uma execução: quanto a venda rendeu. Sem ele, usa o "
         "preço do perfil do custodiante.",
     )
+
+
+# ----------------------------------------------------------- painel de risco
+Choque = Annotated[Decimal, Field(ge=-1, le=1, max_digits=6, decimal_places=4)]
+Taxa = Annotated[Decimal, Field(ge=0, le=1, max_digits=5, decimal_places=4)]
+
+
+class CenarioDoPainel(BaseModel):
+    id: str = Field(examples=["crash_da_bolsa"])
+    nome: str = Field(examples=["Crash da bolsa (ações -30%)"])
+    descricao: str
+    choques: dict[TipoAtivo, str] = Field(examples=[{"acoes": "-0.30"}])
+    taxa_sem_reforco: str = Field(examples=["0.30"])
+    dias_extra_de_execucao: int
+    custodiantes_indisponiveis: list[str]
+
+
+class SimulacaoDeCarteira(Esquema):
+    """Entrada do painel. Com `cenario`, parte dele; o que vier explícito substitui."""
+
+    cenario: str | None = Field(
+        default=None,
+        pattern=r"^[a-z_]{1,40}$",
+        description="Id de um cenário pronto (GET /v1/risco/cenarios)",
+        examples=["crash_da_bolsa"],
+    )
+    choques: dict[TipoAtivo, Choque] | None = Field(
+        default=None,
+        description="Variação de preço por ativo, de -1 (perda total) a 1 (+100%). "
+        "Ativo ausente não varia.",
+        examples=[{"acoes": "-0.30", "tesouro_prefixado": "-0.10"}],
+    )
+    taxa_sem_reforco: Taxa | None = Field(
+        default=None,
+        description="Fração dos clientes descobertos que não reforçam a garantia nem pagam "
+        "(é a probabilidade de inadimplência do simulador de stress).",
+        examples=["0.30"],
+    )
+    custodiantes_indisponiveis: list[Annotated[str, Field(pattern=r"^[a-z0-9_]{1,40}$")]] | None = (
+        Field(
+            default=None,
+            max_length=20,
+            description="Custodiantes externos que não executam dentro do horizonte: o que "
+            "está com eles não recupera nada.",
+        )
+    )
+    dias_extra_de_execucao: int | None = Field(
+        default=None,
+        ge=0,
+        le=365,
+        description="Quanto a venda de garantia externa demora a mais que a interna",
+    )
+    tamanho: int = Field(
+        default=1000, ge=1, le=5000, description="Quantos clientes sintéticos (até 5.000)"
+    )
+    semente: int = Field(
+        default=42,
+        ge=0,
+        le=2**31 - 1,
+        description="Mesma semente, mesma carteira. Troque para ver outra carteira.",
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"cenario": "crash_da_bolsa", "tamanho": 1000}},
+    )
+
+
+class FotoDaCarteiraResposta(BaseModel):
+    contas_em_chamada: int = Field(description="Clientes com dívida acima do limite garantido")
+    valor_das_garantias: ValorDeSaida
+    limite_total: ValorDeSaida = Field(description="Soma do limite de cada cliente (com teto)")
+    limite_utilizado: ValorDeSaida = Field(description="Dívida da carteira (exposição)")
+    limite_disponivel: ValorDeSaida
+    utilizacao_percentual: str = Field(
+        examples=["49.13"], description="Limite utilizado / limite total, em %"
+    )
+
+
+class PerdaDoPainelResposta(BaseModel):
+    exposicao: ValorDeSaida = Field(description="Dívida total: o máximo que dá para perder")
+    descoberta_com_execucao_imediata: ValorDeSaida = Field(
+        description="Dívida acima do que a venda imediata de todas as garantias rende"
+    )
+    descoberta_com_premissas_externas: ValorDeSaida = Field(
+        description="A mesma conta, com custodiante indisponível e prazo extra"
+    )
+    perda_com_execucao_imediata: ValorDeSaida = Field(
+        description="Perda que existiria mesmo vendendo tudo na hora (descoberta x taxa)"
+    )
+    perda_adicional_externa: ValorDeSaida = Field(
+        description="O que a garantia externa acrescenta à perda"
+    )
+    perda_esperada_total: ValorDeSaida
+
+
+class FatiaDeConcentracaoResposta(BaseModel):
+    chave: str
+    valor_antes: ValorDeSaida
+    valor_depois: ValorDeSaida
+    percentual_antes: str = Field(description="Parte do valor total das garantias, em %")
+    garantias: int
+    contas: int
+
+
+class CarteiraSinteticaResposta(BaseModel):
+    sintetica: bool = Field(description="Sempre true: não é a carteira de nenhum parceiro")
+    tamanho: int
+    semente: int
+    aviso: str
+
+
+class PremissasResposta(BaseModel):
+    choques: dict[TipoAtivo, str]
+    taxa_sem_reforco: str
+    custodiantes_indisponiveis: list[str]
+    dias_extra_de_execucao: int
+    desconto_diario_por_ativo: dict[TipoAtivo, str] = Field(
+        description="Perda por dia de espera na venda externa (ilustrativa)"
+    )
+
+
+class ResultadoDoPainel(BaseModel):
+    carteira: CarteiraSinteticaResposta
+    cenario: str | None
+    premissas: PremissasResposta
+    antes: FotoDaCarteiraResposta
+    depois: FotoDaCarteiraResposta
+    perda: PerdaDoPainelResposta
+    concentracao_por_ativo: list[FatiaDeConcentracaoResposta]
+    concentracao_por_custodiante: list[FatiaDeConcentracaoResposta]

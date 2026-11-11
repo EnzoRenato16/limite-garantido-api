@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends
 
 from app.api import apresentacao, esquemas
@@ -9,6 +11,10 @@ from app.api.dependencias import ParceiroAutenticado, Unidade, exigir_sandbox
 from app.api.rotas.contas import ERROS_COMUNS, IdDaConta, IdDaGarantia
 from app.aplicacao import risco as casos
 from app.dominio.dinheiro import Dinheiro
+from app.dominio.erros import ValorInvalido
+from app.dominio.stress import PremissasDaGarantiaExterna, simular_painel
+from app.infra.carteira_sintetica import carregar_parametros, gerar_carteira
+from app.infra.politica_referencia import carregar_politica_de_referencia
 
 rotas_de_risco = APIRouter(prefix="/v1", tags=["Risco"], responses=ERROS_COMUNS)
 rotas_de_sandbox = APIRouter(
@@ -51,6 +57,79 @@ def simular_stress(
         uow, parceiro, corpo.choques, corpo.probabilidade_de_inadimplencia
     )
     return apresentacao.stress(resultado, detalhar=corpo.detalhar_contas)
+
+
+@rotas_de_risco.get(
+    "/risco/cenarios",
+    response_model=list[esquemas.CenarioDoPainel],
+    summary="Cenários prontos do painel de risco",
+)
+def listar_cenarios(_: ParceiroAutenticado) -> list[esquemas.CenarioDoPainel]:
+    """Os cenários prontos do painel: dia normal, crash da bolsa, alta de juros e
+    custodiante fora do ar. Os números são ilustrativos, não previsões."""
+    return [apresentacao.cenario(c) for c in carregar_parametros().cenarios.values()]
+
+
+@rotas_de_risco.post(
+    "/risco/simulacoes-de-carteira",
+    response_model=esquemas.ResultadoDoPainel,
+    summary="Simular choques numa carteira sintética (painel de risco)",
+)
+def simular_carteira(
+    corpo: esquemas.SimulacaoDeCarteira, _: ParceiroAutenticado
+) -> esquemas.ResultadoDoPainel:
+    """Gera uma carteira **sintética** (por padrão 1.000 clientes, sempre a mesma para a
+    mesma `semente`) e aplica um cenário. Não lê nem altera a carteira do parceiro; para
+    estressar a carteira real, use `POST /v1/risco/simulacoes-de-stress`.
+
+    Responde, antes e depois do choque: clientes em chamada de margem, valor das
+    garantias, limite total, utilizado e disponível. E a perda esperada não coberta
+    depois de executar as garantias, em duas parcelas:
+
+    - **com execução imediata**: o que se perderia mesmo vendendo toda a garantia na
+      hora, ao preço estressado;
+    - **adicional da garantia externa**: o que piora porque parte da garantia está em
+      outro custodiante (indisponível, ou vendendo com dias de atraso).
+
+    As premissas usadas voltam na resposta. Todas são ilustrativas.
+    """
+    parametros = carregar_parametros()
+    base = None
+    if corpo.cenario is not None:
+        base = parametros.cenarios.get(corpo.cenario)
+        if base is None:
+            raise ValorInvalido(
+                "Cenário desconhecido. Veja GET /v1/risco/cenarios", cenario=corpo.cenario
+            )
+    choques = dict(corpo.choques if corpo.choques is not None else (base.choques if base else {}))
+    taxa = (
+        corpo.taxa_sem_reforco
+        if corpo.taxa_sem_reforco is not None
+        else (base.taxa_sem_reforco if base else Decimal("0.30"))
+    )
+    padrao = base.premissas if base else PremissasDaGarantiaExterna()
+    premissas = PremissasDaGarantiaExterna(
+        custodiantes_indisponiveis=frozenset(corpo.custodiantes_indisponiveis)
+        if corpo.custodiantes_indisponiveis is not None
+        else padrao.custodiantes_indisponiveis,
+        dias_extra_de_execucao=corpo.dias_extra_de_execucao
+        if corpo.dias_extra_de_execucao is not None
+        else padrao.dias_extra_de_execucao,
+        desconto_diario_por_ativo=parametros.desconto_diario_por_ativo,
+    )
+    carteira = gerar_carteira(parametros, corpo.tamanho, corpo.semente)
+    resultado = simular_painel(
+        carteira, choques, carregar_politica_de_referencia(), taxa, premissas
+    )
+    return apresentacao.painel(
+        resultado,
+        tamanho=corpo.tamanho,
+        semente=corpo.semente,
+        cenario=corpo.cenario,
+        choques=choques,
+        taxa_sem_reforco=taxa,
+        premissas=premissas,
+    )
 
 
 @rotas_de_sandbox.post(
