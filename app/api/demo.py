@@ -106,6 +106,19 @@ def montar_demo(app: FastAPI, recursos: Recursos) -> None:
             },
         )
 
+    @app.get("/risco", include_in_schema=False)
+    def painel_de_risco() -> FileResponse:
+        """Painel de risco sobre a carteira sintética, no mesmo estilo do /demo."""
+        return FileResponse(
+            PASTA / "risco.html",
+            headers={
+                "Content-Security-Policy": POLITICA_DE_SEGURANCA,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Cache-Control": "no-store",
+            },
+        )
+
     @rotas.get("/config", response_model=ConfiguracaoDaDemo)
     def configuracao() -> ConfiguracaoDaDemo:
         if config.demo_api_key is None:

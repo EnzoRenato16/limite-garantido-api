@@ -178,11 +178,30 @@ def _ponte(cliente: TestClient):  # type: ignore[no-untyped-def]
     return aplicacao
 
 
+def test_painel_de_risco_e_servido_com_a_mesma_politica(cliente: TestClient) -> None:
+    resposta = cliente.get("/risco")
+    assert resposta.status_code == 200
+    assert "Painel de risco da carteira" in resposta.text
+    assert "sintética" in resposta.text
+    csp = resposta.headers["Content-Security-Policy"]
+    assert "unsafe-inline" not in csp
+    assert "script-src 'self'" in csp
+    assert "http://" not in resposta.text
+    assert "https://" not in resposta.text
+
+
 def test_sem_demo_habilitada_a_pagina_nao_existe(
     url_do_banco: str, engine: Engine, relogio: RelogioFixo
 ) -> None:
     app = criar_app(configuracao_de_teste(url_do_banco), engine=engine, relogio=relogio)
     with TestClient(app) as cliente:
-        for caminho in ("/demo", "/demo/config", "/demo/webhooks", "/demo/estatico/demo.js"):
+        for caminho in (
+            "/demo",
+            "/demo/config",
+            "/demo/webhooks",
+            "/demo/estatico/demo.js",
+            "/risco",
+            "/demo/estatico/risco.js",
+        ):
             assert cliente.get(caminho).status_code == 404
         assert cliente.post("/demo/webhooks", content=b"{}").status_code == 404
