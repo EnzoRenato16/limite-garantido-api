@@ -317,6 +317,53 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   - O site do Planalto bloqueou o acesso daqui; três dispositivos de lei foram lidos em
     repositório não oficial e estão resumidos, não transcritos.
 
+## Fase 2: garantia em custodiante externo (simulado) e painel de risco
+
+<a id="39-fase-2-pedido-e-ponto-de-partida"></a>
+### 39. Fase 2: pedido e ponto de partida
+- **Contexto.** Depois da v1.0 (PR #1) e do ajuste de plugins (PR #2), o pedido foi:
+  garantia em custodiante externo, assíncrona e que pode falhar, com callback assinado,
+  polling de reserva e prazo; um painel de risco sobre carteira sintética em `/risco`;
+  três ajustes pequenos no `/demo` e na emissão de `fatura.em_atraso`. Tudo simulado,
+  sem integração real. O plano está em [plano-fase2.md](plano-fase2.md).
+- **Branch.** O branch de trabalho foi reiniciado a partir do `main` atualizado, sem
+  reaproveitar o histórico já mergeado.
+- **Suíte de partida.** Ruff, mypy e pytest verdes (265 testes em SQLite, 277 em
+  Postgres), cobertura do domínio em 99%. O teste de navegador falhou na primeira
+  execução por ambiente, não por código: o Playwright 1.65 do projeto procura uma
+  revisão do Chromium que esta máquina não tem. Com `CHROMIUM_EXECUTAVEL` apontando
+  para o Chromium instalado, passou.
+
+### 40. Como a construção foi conduzida
+- **Contexto.** O pedido previa as skills de brainstorming e de plano antes de codar e
+  depois desenvolvimento por subagentes com TDD.
+- **O que foi feito.** O brainstorming termina quando o dono do projeto dispensa as
+  perguntas, que foi o caso: as decisões de desenho foram tomadas por mim e estão
+  aqui e no plano. O plano seguiu a skill de plano. A implementação foi feita nesta
+  sessão, tarefa a tarefa, com teste antes do código; os subagentes ficaram para as
+  revisões independentes no fim.
+- **Motivo.** As tarefas do núcleo dependem muito umas das outras (estado da garantia,
+  ledger, porta do custodiante, repositório e rota mudam juntos), e a construção da
+  v1.0 perdeu as revisões por agentes no limite de uso da conta. Gastar esse limite na
+  revisão, que é onde um olhar de fora mais acrescenta, me pareceu a melhor troca.
+- **Context7.** Não estava autenticado nesta sessão. Para documentação de bibliotecas,
+  conferi rodando contra as versões instaladas, como na v1.0.
+
+### 41. O que acontece com o `pendente`
+- **Contexto.** A garantia interna nasce `pendente` e, com a custódia interna, vira
+  `bloqueada` na mesma transação. Com `CUSTODIA_MODO=assincrona` ela ficava `pendente`
+  até a confirmação administrativa, para sempre se ninguém confirmasse (item 13).
+- **Opções.** (a) Migrar a interna para os estados novos. (b) Manter o `pendente` só
+  para a interna e dar à externa a máquina completa. (c) Fazer o `pendente` virar
+  sinônimo de `gravame_pendente`.
+- **Decisão.** (b), com uma saída nova: `pendente → gravame_expirado`, aplicada pela
+  rotina de custódia quando o prazo padrão passa. A fase 1 com custódia interna não
+  muda, porque o `pendente` nunca chega ao banco.
+- **Motivo.** Migrar estados persistidos de uma fase que funciona traz risco sem
+  ganho, e mudaria o que os parceiros já leem. O modo `assincrona` era um ensaio da
+  fase 2; agora que a fase 2 existe, ele fica por compatibilidade, mas também não
+  deixa garantia pendurada.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
