@@ -643,7 +643,10 @@ class SimulacaoDeNegocio(Esquema):
     )
     receitas_ligadas: dict[FonteDeReceita, bool] | None = Field(
         default=None,
-        description="Liga ou desliga cada fonte de receita, sobrescrevendo o conjunto",
+        description="Liga (true) ou desliga (false) fontes de receita. Sobrescreve só as "
+        "fontes enviadas; as ausentes seguem o conjunto; premissas de fonte desligada não "
+        "entram na conta.",
+        examples=[{"fee_gravame": False}],
     )
     cenario_de_risco: str | None = Field(
         default=None,
@@ -762,9 +765,24 @@ class InternaXExternaResposta(BaseModel):
     margem_interna: ValorDeSaida
     margem_externa: ValorDeSaida
     custo_a_mais_da_externa: ValorDeSaida
-    fee_de_gravame_externo_para_empatar: ValorDeSaida | None
-    gasto_para_empatar: ValorDeSaida | None
-    gasto_cabe_no_limite: bool | None
+    fee_de_gravame_externo_para_empatar: ValorDeSaida | None = Field(
+        description="Fee de gravame externo com que a externa empata; nulo com `motivo_fee`"
+    )
+    motivo_fee: str | None = Field(
+        description="Por que não há fee para empatar: a externa não custa mais, não há "
+        "gravame, a fonte de fee de gravame está desligada ou nenhum valor da faixa aceita "
+        "empata. Nulo quando há fee."
+    )
+    gasto_para_empatar: ValorDeSaida | None = Field(
+        description="Gasto mensal com que a externa empata; nulo com `motivo_gasto`"
+    )
+    motivo_gasto: str | None = Field(
+        description="Por que não há gasto para empatar: a externa não custa mais ou nenhum "
+        "valor da faixa aceita empata. Nulo quando há gasto."
+    )
+    gasto_cabe_no_limite: bool | None = Field(
+        description="Se o gasto que empata cabe em saldo x LTV; nulo sem gasto"
+    )
     parceiro_interna: ValorDeSaida
     parceiro_externa: ValorDeSaida
 

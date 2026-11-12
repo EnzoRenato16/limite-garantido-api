@@ -33,6 +33,7 @@ from app.config import Configuracao, obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
 from app.infra.custodia import montar_custodiante
+from app.infra.economia import carregar_parametros_da_economia
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
@@ -130,6 +131,8 @@ def criar_app(
 ) -> FastAPI:
     config = config or obter_configuracao()
     configurar_logs(config.log_nivel)
+    # O TOML do modelo econômico é lido e validado aqui: quebrado, a aplicação não sobe.
+    carregar_parametros_da_economia()
 
     engine_proprio = engine is None
     engine = engine or criar_engine(

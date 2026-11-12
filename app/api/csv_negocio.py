@@ -135,7 +135,9 @@ def gerar_csv(
         so_plataforma(
             "Fee de gravame externo para empatar", opcional(ix.fee_de_gravame_externo_para_empatar)
         ),
+        so_plataforma("Por que não há fee para empatar", t(ix.motivo_fee or "")),
         so_plataforma("Gasto mensal para empatar", opcional(ix.gasto_para_empatar)),
+        so_plataforma("Por que não há gasto para empatar", t(ix.motivo_gasto or "")),
         so_plataforma("Gasto que empata cabe no limite", _sim_nao(ix.gasto_cabe_no_limite)),
     ]
     secao("Resultados", ["indicador", "plataforma", "parceiro", "arranjo"], resultados)
