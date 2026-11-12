@@ -4,6 +4,9 @@
 - Plataforma + parceiro = arranjo.
 - Mais perda, mais CDI ou mais spread nunca aumentam a margem da plataforma.
 - Mais intercâmbio nunca diminui a receita da plataforma nem a do parceiro.
+- O ponto de equilíbrio N paga o custo fixo e N − 1 não paga.
+- Cada barra do tornado contém a base e usa extremos válidos e coerentes.
+- O empate da interna x externa confere quando recalculado.
 
 Nas propriedades de monotonia o aumento é estritamente positivo e a alavanca mexe de
 verdade na conta: a fonte fica ligada e o saldo financiado é positivo.
@@ -14,6 +17,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import Decimal
 
+from app.dominio.economia.analises import (
+    analisar_tornado,
+    comparar_interna_externa,
+    ponto_de_equilibrio,
+)
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
@@ -25,8 +33,10 @@ from app.dominio.economia.calculo import (
     TaxasDePerda,
     calcular_mes,
 )
-from app.dominio.economia.premissas import FonteDeReceita, Premissas
+from app.dominio.economia.premissas import FonteDeReceita, Premissas, montar_premissas
+from app.dominio.economia.premissas import NomeDaPremissa as N
 from app.dominio.taxas import Fracao, FrequenciaAoAno, TaxaAoAno
+from tests.economia_base import ESQUEMA
 from tests.propriedade.estrategias_economia import (
     CASAS,
     premissas_validas,
@@ -157,3 +167,81 @@ def test_mais_intercambio_nunca_diminui_a_receita_da_plataforma_nem_a_do_parceir
     depois = calcular_mes(p.com(taxa_de_intercambio=Fracao(maior)), perdas)
     assert depois.plataforma.receita >= antes.plataforma.receita
     assert depois.parceiro.receita >= antes.parceiro.receita
+
+
+# ------------------------------------------------------------------- análises
+
+
+@PROPRIEDADE
+@given(
+    st.integers(min_value=-(10**6), max_value=10**6),
+    st.integers(min_value=0, max_value=10**10),
+)
+def test_equilibrio_n_paga_e_n_menos_1_nao(margem: int, custo_fixo: int) -> None:
+    equilibrio = ponto_de_equilibrio(Dinheiro(margem), Dinheiro(custo_fixo))
+    if margem <= 0:
+        assert equilibrio.clientes is None
+        assert equilibrio.motivo
+        return
+    n = equilibrio.clientes
+    assert n is not None
+    assert equilibrio.motivo is None
+    assert n * margem - custo_fixo >= 0
+    if custo_fixo == 0:
+        assert n == 0
+    else:
+        assert (n - 1) * margem - custo_fixo < 0
+
+
+ANALISE = settings(max_examples=40, deadline=None)
+
+
+@ANALISE
+@given(premissas_validas(), taxas_de_perda())
+def test_tornado_contem_a_base(p: Premissas, perdas: TaxasDePerda) -> None:
+    base = calcular_mes(p, perdas).plataforma.margem
+    barras = analisar_tornado(p, perdas, ESQUEMA)
+    assert len(barras) == 33
+    for barra in barras:
+        assert barra.minimo <= base <= barra.maximo
+        assert barra.minimo <= barra.margem_no_baixo <= barra.maximo
+        assert barra.minimo <= barra.margem_no_alto <= barra.maximo
+        assert barra.amplitude == barra.maximo - barra.minimo
+        # Os extremos usados respeitam a validação e a coerência das premissas.
+        for valor in (barra.valor_baixo, barra.valor_alto):
+            valores = p.valores()
+            valores[barra.premissa] = valor
+            if barra.premissa is N.fracao_externa:
+                valores[N.fracao_interna] = 1 - valor
+            montar_premissas(valores, p.receitas_ligadas, p.cenario_de_risco, ESQUEMA)
+    amplitudes = [barra.amplitude for barra in barras]
+    assert amplitudes == sorted(amplitudes, reverse=True)
+
+
+@ANALISE
+@given(premissas_validas(), taxas_de_perda())
+def test_empate_da_interna_x_externa_confere(p: Premissas, perdas: TaxasDePerda) -> None:
+    c = comparar_interna_externa(p, perdas, ESQUEMA)
+    assert c.custo_a_mais_da_externa == c.margem_interna - c.margem_externa
+    externa = p.com(fracao_interna=Fracao(Decimal(0)), fracao_externa=Fracao(Decimal(1)))
+
+    def margem(premissas: Premissas) -> Dinheiro:
+        return calcular_mes(premissas, perdas).plataforma.margem
+
+    if not c.custo_a_mais_da_externa.positivo:
+        assert c.fee_de_gravame_externo_para_empatar is None
+        assert c.gasto_para_empatar is None
+    fee = c.fee_de_gravame_externo_para_empatar
+    if fee is not None:
+        assert margem(externa.com(fee_gravame_externa=fee)) >= c.margem_interna
+        if fee.positivo:
+            antes = externa.com(fee_gravame_externa=fee - Dinheiro(1))
+            assert margem(antes) < c.margem_interna
+    gasto = c.gasto_para_empatar
+    assert (gasto is None) == (c.gasto_cabe_no_limite is None)
+    if gasto is not None:
+        assert margem(externa.com(gasto_mensal=gasto)) >= c.margem_interna
+        if gasto.positivo:
+            assert margem(externa.com(gasto_mensal=gasto - Dinheiro(1))) < c.margem_interna
+        limite = p.saldo_em_garantia.aplicar_razao(p.ltv_medio.valor)
+        assert c.gasto_cabe_no_limite == (gasto <= limite)

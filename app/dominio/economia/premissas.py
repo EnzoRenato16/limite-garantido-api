@@ -210,7 +210,8 @@ def _erro_do_valor(valor: Decimal, esquema: EsquemaDaPremissa) -> str | None:
     return None
 
 
-def _converter(valor: Decimal, tipo: TipoDaPremissa) -> object:
+def converter_para_o_campo(valor: Decimal, tipo: TipoDaPremissa) -> object:
+    """Valor cru (dinheiro em reais) no tipo do campo de `Premissas`. Não valida faixa."""
     match tipo:
         case TipoDaPremissa.dinheiro:
             return Dinheiro.de_decimal(valor)
@@ -261,7 +262,10 @@ def montar_premissas(
             erros=erros,
         )
 
-    campos = {nome.value: _converter(validos[nome], esquema[nome].tipo) for nome in NomeDaPremissa}
+    campos = {
+        nome.value: converter_para_o_campo(validos[nome], esquema[nome].tipo)
+        for nome in NomeDaPremissa
+    }
     return Premissas(
         **campos,  # type: ignore[arg-type]
         receitas_ligadas=frozenset(receitas_ligadas),
