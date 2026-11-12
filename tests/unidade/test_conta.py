@@ -558,3 +558,22 @@ def test_ledger_fecha_depois_de_uma_historia_completa() -> None:
     assert ledger_fecha(conta.pendencias.lancamentos)
     assert conta.saldos.debitos_menos_creditos() == reais("0.00")
     assert conta.saldos.saldo_total(ContaContabil.GARANTIAS_CUSTODIADAS) == reais("0.00")
+
+
+def test_fatura_em_atraso_e_avisada_uma_vez_so() -> None:
+    """O evento sai na transição para em_atraso, não a cada dia de atraso."""
+    pol = politica(dias_para_execucao=30)
+    conta = nova_conta()
+    bloquear(conta, TipoAtivo.DEPOSITO, "1000.00", pol)
+    conta.autorizar_compra(reais("500.00"), "loja", pol, AGORA, HOJE)
+    conta.fechar_fatura(HOJE, AGORA, HOJE)
+    conta.pendencias.limpar()
+    for dia in range(1, 11):
+        conta.virar_o_dia(pol, AGORA + timedelta(days=dia), HOJE + timedelta(days=dia))
+    avisos = [e for e in conta.pendencias.eventos if e.tipo is TipoEvento.FATURA_EM_ATRASO]
+    assert len(avisos) == 1
+    assert avisos[0].dados["dias_em_atraso"] == 1
+    # Os dias de atraso seguem disponíveis na conta (a API mostra em fatura_em_aberto).
+    fatura = conta.fatura_em_aberto
+    assert fatura is not None
+    assert fatura.dias_em_atraso(HOJE + timedelta(days=10)) == 10

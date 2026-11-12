@@ -1,89 +1,99 @@
-# Roteiro do vídeo (2 minutos)
+# Roteiro do vídeo (até 2 min 30 s)
 
-Gravação de tela da página `/demo`, com a minha voz por cima. A coluna da esquerda é o
-app de um parceiro fictício; a da direita mostra os webhooks chegando.
+Gravação de tela das páginas `/demo` e `/risco`, falada em primeira pessoa. No `/demo`, a
+coluna da esquerda é o app de um parceiro fictício; a da direita mostra os webhooks
+chegando.
 
 **Antes de gravar**
 
-- `docker compose up --build` (ou `./scripts/dev.sh`) e abrir `http://localhost:8000/demo`.
+- `docker compose up --build` (ou `./scripts/dev.sh`) e abrir
+  `http://localhost:8000/demo` numa aba e `http://localhost:8000/risco` em outra.
 - Janela do navegador em 1440 × 900, zoom em 100%. A régua fica presa no topo, então dá
   para rolar a página sem perder os números.
-- Clicar em **Começar de novo** para sair de uma conta zerada.
-- Falar devagar. Os tempos abaixo somam dois minutos com folga para respirar.
+- No `/demo`, clicar em **Começar de novo** para sair de uma conta zerada.
+- Falar devagar. Os tempos abaixo somam 2 min 25 s.
 
 ---
 
 ### 0:00 a 0:15 · O problema
 
-**Na tela:** a página parada, limite em R$ 0,00.
+**Na tela:** o `/demo` parado, limite em R$ 0,00.
 
-> Oi, eu sou o Enzo. Hoje, se você tem dinheiro investido e quer limite no cartão, isso
-> só funciona no banco onde o investimento está. Quem não é banco não consegue oferecer.
-> Eu montei um protótipo de como isso poderia virar um serviço: uma API.
+> Hoje, se você tem dinheiro investido e quer limite no cartão, isso só funciona no
+> banco onde o investimento está. Eu montei um protótipo de como isso poderia virar um
+> serviço que uma plataforma oferece para quem não é banco: uma API.
 
-### 0:15 a 0:35 · Guardar e ganhar limite
+### 0:15 a 0:35 · Fase 1, dentro de casa (20 segundos)
 
-**Na tela:** clicar em **Guardar como garantia** (CDB, R$ 5.000,00).
+**Na tela:** **Guardar como garantia** (CDB, R$ 5.000,00), depois **Comprar**
+(R$ 4.000,00).
 
-> Este é o app de um parceiro qualquer, uma fintech ou um varejista. O cliente guarda
-> cinco mil reais num CDB. O dinheiro continua rendendo, só que fica bloqueado como
-> garantia, e na mesma hora vira quatro mil duzentos e cinquenta de limite. Oitenta e
-> cinco por cento, que é a margem de segurança desse tipo de ativo.
+> O cliente guarda cinco mil num CDB. O dinheiro continua rendendo, fica bloqueado como
+> garantia e vira quatro mil duzentos e cinquenta de limite na hora. Compra de quatro
+> mil, aprovada. Do lado direito, o parceiro recebe cada evento, assinado.
 
-**Apontar para a direita:**
+### 0:35 a 1:00 · Fase 2: investimento em outra instituição
 
-> Aqui do lado é o que o parceiro recebe: um aviso para cada coisa que acontece,
-> assinado, para ele ter certeza de que veio da plataforma.
+**Na tela:** **Começar de novo**. Em "Onde está o investimento", escolher **Investimento
+em outra instituição** e **Custodiante Lento (simulador)**; Tesouro Selic, R$ 10.000,00;
+**Guardar como garantia**. Esperar a linha do tempo chegar em "Custodiante analisando".
 
-### 0:35 a 0:55 · Comprar
+> Agora o investimento está em outro lugar. Aqui o bloqueio não é meu: eu peço a quem
+> guarda o ativo, e ele responde quando quiser. Neste projeto esse custodiante é um
+> simulador, não tem integração com ninguém de verdade. O pedido saiu, ele está
+> analisando, e repara no limite: continua zero. Ele só nasce quando o bloqueio for
+> confirmado.
 
-**Na tela:** clicar em **Comprar** (R$ 4.000,00). Trocar o valor para `500,00` e clicar
-de novo.
+### 1:00 a 1:20 · A recusa
 
-> Compra de quatro mil: aprovada, e a barra amarela mostra o limite sendo usado. Agora
-> uma de quinhentos. Só sobraram duzentos e cinquenta, então ela é negada. E repara que
-> a negativa também fica registrada do lado de lá.
+**Na tela:** clicar em **Custodiante recusa**. Apontar a linha do tempo e o webhook
+`gravame.recusado` na direita.
 
-### 0:55 a 1:20 · O investimento cai
+> E se ele recusar? Por exemplo, porque o título já está dado em garantia em outro
+> lugar. A garantia termina recusada, nenhum centavo entra no livro contábil, e o
+> parceiro é avisado com o motivo. Se o custodiante simplesmente não responder, o pedido
+> expira no prazo, com o mesmo cuidado.
 
-**Na tela:** clicar em **Derrubar o ativo em 10%**.
+### 1:20 a 1:35 · A confirmação
 
-> Agora o que nenhum demo de crédito costuma mostrar: e se o investimento perder valor?
-> Caiu dez por cento. A garantia encolheu, o limite encolheu junto, e a dívida passou
-> dele. Esse pedaço vermelho é o que ficou descoberto. O sistema abre uma chamada de
-> margem: o cliente tem um prazo para reforçar a garantia ou pagar.
+**Na tela:** guardar de novo (mesmo custodiante) e clicar em **Custodiante confirma**.
 
-### 1:20 a 1:45 · A fatura atrasa
+> Quando ele confirma, aí sim: nove mil e quinhentos de limite. A confirmação chega
+> assinada, e se ela vier duas vezes, ou pelo aviso e pela consulta ao mesmo tempo, é
+> aplicada uma vez só.
 
-**Na tela:** clicar em **Fechar a fatura**, depois em **Passar 1 dia** sete vezes, sem
-pressa nos dois últimos.
+### 1:35 a 2:10 · O crash da bolsa no painel de risco
 
-> E se ele não pagar? Fecho a fatura e faço os dias passarem. Primeiro dia de atraso,
-> as compras são suspensas. No sexto, o prazo da chamada de margem acaba e a conta é
-> bloqueada. No sétimo dia a garantia é executada: o sistema vende só o valor da fatura,
-> quatro mil, e os quinhentos que sobraram continuam sendo do cliente, rendendo.
+**Na tela:** trocar para a aba do `/risco`. Clicar em **Crash da bolsa (ações -30%)**.
+Apontar o "9 → 43" e a régua de Ações com o tracejado. Depois clicar em **Custodiante
+fora do ar** e apontar a perda adicional da garantia externa.
 
-### 1:45 a 2:00 · Fechamento
+> Do lado de quem cuida do risco: uma carteira sintética de mil clientes, com parte das
+> garantias em custodiantes de fora. Crash da bolsa, ações caindo trinta por cento. Os
+> clientes em chamada de margem vão de nove para quarenta e três, mas a perda fica em
+> zero, porque a margem de segurança das ações absorve a queda. Agora, se um
+> custodiante sai do ar, a perda aparece, e ela vem inteira da garantia que estava fora.
+> Os números são de uma carteira inventada, mas a pergunta é a que um time de risco faria.
 
-**Na tela:** rolar a coluna da direita e abrir um **ver o JSON entregue**.
+### 2:10 a 2:25 · Fechamento
 
-> Por baixo tem um livro contábil de partidas dobradas, proteção contra duas compras ao
-> mesmo tempo e testes para tudo isso. É um projeto pessoal de estudo, feito com dados
-> públicos. O código e a documentação estão no meu GitHub. Se você trabalha com crédito
-> ou com infraestrutura financeira, eu adoraria ouvir onde isso quebra.
+**Na tela:** voltar ao `/demo` e abrir um **ver o JSON entregue**.
+
+> Por baixo tem um livro contábil de partidas dobradas, proteção contra operações
+> simultâneas e testes para tudo isso. É um projeto pessoal de estudo, e a parte de
+> outra instituição é simulada. Se você trabalha com crédito ou infraestrutura
+> financeira, eu adoraria ouvir onde isso quebra.
 
 ---
 
-**Se sobrar tempo**, um plano B de 15 segundos para o meio do vídeo: clicar em **Pagar a
-fatura** antes do atraso e mostrar que, pagando, nada é vendido e a garantia pode ser
-resgatada.
+**Se alguém perguntar na apresentação ao vivo**, respostas curtas:
 
-**Se alguém perguntar na apresentação ao vivo**, três respostas curtas:
-
+- *"Isso fala com o Tesouro ou com a B3?"* Não. A fase 2 é simulada. Está documentado
+  onde um trilho real entraria e o que as fontes públicas dizem sobre ele.
+- *"E se o mesmo aviso do custodiante chegar duas vezes?"* Cada resposta tem um id, e o
+  banco não aceita o mesmo id duas vezes. Tem teste com dez avisos iguais ao mesmo tempo.
 - *"E se duas compras chegarem juntas?"* A conta é travada durante a decisão. Tem um
   teste que dispara quarenta compras ao mesmo tempo e exige que passem exatamente as
   que cabem.
-- *"De onde vem o saldo?"* De lugar nenhum: não existe campo de saldo. Tudo é soma do
-  livro contábil, e o banco recusa lançamento que não fecha.
 - *"Isso é legal?"* A base é a alienação fiduciária de ativos financeiros, mas eu não
-  sou advogado e está escrito isso em todo lugar da documentação.
+  sou advogado e isso está escrito em toda a documentação.

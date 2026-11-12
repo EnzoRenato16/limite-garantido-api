@@ -1,0 +1,30 @@
+# Perfis do SIMULADOR de custodiantes externos (fase 2).
+#
+# Não são instituições: são personagens fictícios para mostrar o que acontece quando o
+# gravame depende de um terceiro. Todos os números são ilustrativos, escolhidos para a
+# demonstração, e não descrevem nenhum custodiante real.
+#
+# O destino de cada pedido sai de um hash de (semente, id do pedido): mesma semente,
+# mesmo resultado, em qualquer máquina.
+
+[custodiante_agil]
+nome = "Custodiante Ágil (simulador)"
+descricao = "Responde em segundos e não recusa. Mostra o caminho feliz."
+semente = 11
+latencia_segundos = 5
+prazo_de_resposta_minutos = 60
+probabilidade_de_recusa = "0"
+probabilidade_sem_resposta = "0"
+fator_de_preco_na_venda = "1.00"
+motivos_de_recusa = ["ativo_ja_onerado"]
+
+[custodiante_lento]
+nome = "Custodiante Lento (simulador)"
+descricao = "Leva horas para responder, às vezes recusa e às vezes não responde."
+semente = 23
+latencia_segundos = 21600
+prazo_de_resposta_minutos = 1440
+probabilidade_de_recusa = "0.15"
+probabilidade_sem_resposta = "0.10"
+fator_de_preco_na_venda = "0.98"
+motivos_de_recusa = ["ativo_ja_onerado", "titularidade_divergente", "bloqueio_judicial"]

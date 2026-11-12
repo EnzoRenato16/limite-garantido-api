@@ -1,0 +1,97 @@
+# Carteira SINTÉTICA do painel de risco (/risco).
+#
+# Nada aqui é dado de mercado nem de cliente: são parâmetros ILUSTRATIVOS, escolhidos
+# para a carteira ter uma mistura plausível de ativos, tamanhos e uso de limite, e
+# para os cenários mostrarem o efeito de cada choque. A carteira é gerada em memória a
+# partir de uma semente; mesma semente, mesma carteira.
+
+# Peso de cada tipo de ativo no sorteio de uma garantia.
+[pesos_por_ativo]
+deposito = 20
+tesouro_selic = 25
+cdb = 20
+tesouro_prefixado = 10
+tesouro_ipca = 10
+acoes = 15
+
+# Quantas garantias um cliente tem (1, 2 ou 3), com estes pesos.
+[garantias_por_cliente]
+pesos = [60, 30, 10]
+
+# Faixas de valor de cada garantia, em reais, com o peso de cada faixa.
+[[faixas_de_valor]]
+de = 1000
+ate = 5000
+peso = 45
+
+[[faixas_de_valor]]
+de = 5000
+ate = 20000
+peso = 35
+
+[[faixas_de_valor]]
+de = 20000
+ate = 100000
+peso = 20
+
+[garantia_externa]
+# Fração das garantias (fora depósito, que é sempre interno) em outro custodiante.
+fracao = "0.30"
+# Como as externas se dividem entre os custodiantes simulados.
+pesos_por_custodiante = { custodiante_agil = 60, custodiante_lento = 40 }
+
+[uso_do_limite]
+# Uso do limite de cada cliente saudável: sorteado entre estes percentuais.
+minimo_percentual = 0
+maximo_percentual = 95
+# Fração de clientes que já começa em chamada de margem (dívida 1% a 10% acima do
+# limite garantido).
+fracao_em_chamada = "0.01"
+
+# Desconto por dia de espera na venda de garantia externa, sobre o valor estressado.
+[desconto_diario_por_ativo]
+deposito = "0"
+fundo_di = "0.0002"
+tesouro_selic = "0.0002"
+cdb = "0.0005"
+tesouro_prefixado = "0.002"
+tesouro_ipca = "0.002"
+acoes = "0.01"
+
+# --------------------------------------------------------------- cenários prontos
+# choques: variação de preço por ativo (-0.30 = queda de 30%).
+# taxa_sem_reforco: fração dos clientes descobertos que não reforçam nem pagam.
+# dias_extra_de_execucao: quanto a venda externa demora a mais que a interna.
+# custodiantes_indisponiveis: não executam dentro do horizonte da análise.
+
+[cenarios.dia_normal]
+nome = "Dia normal"
+descricao = "Oscilação pequena de bolsa e prefixados. Venda externa leva 2 dias a mais."
+choques = { acoes = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
+taxa_sem_reforco = "0.10"
+dias_extra_de_execucao = 2
+custodiantes_indisponiveis = []
+
+[cenarios.crash_da_bolsa]
+nome = "Crash da bolsa (ações -30%)"
+descricao = "Ações caem 30% de uma vez. Os outros ativos ficam onde estão."
+choques = { acoes = "-0.30" }
+taxa_sem_reforco = "0.30"
+dias_extra_de_execucao = 2
+custodiantes_indisponiveis = []
+
+[cenarios.alta_de_juros]
+nome = "Alta de juros (prefixado -10%)"
+descricao = "Juros sobem e o título prefixado perde 10% de valor de mercado."
+choques = { tesouro_prefixado = "-0.10" }
+taxa_sem_reforco = "0.30"
+dias_extra_de_execucao = 2
+custodiantes_indisponiveis = []
+
+[cenarios.custodiante_fora_do_ar]
+nome = "Custodiante fora do ar"
+descricao = "Mercado como no dia normal, mas o Custodiante Lento não executa nenhuma garantia dentro do horizonte da análise: o que está com ele não recupera nada. Nos outros custodiantes externos, a venda atrasa 10 dias."
+choques = { acoes = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
+taxa_sem_reforco = "0.30"
+dias_extra_de_execucao = 10
+custodiantes_indisponiveis = ["custodiante_lento"]

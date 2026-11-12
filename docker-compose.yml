@@ -28,6 +28,9 @@ x-aplicacao: &aplicacao
     WEBHOOK_PERMITIR_REDE_INTERNA: "true"
     WEBHOOK_BACKOFF_BASE_SEGUNDOS: "2"
     WORKER_INTERVALO_SEGUNDOS: "0.5"
+    # Fase 2: custodiantes SIMULADOS. Segredos de callback fictícios.
+    CUSTODIA_SEGREDOS: '{"custodiante_agil": "cbsec_exemplo-agil-ficticio-so-para-desenvolvimento", "custodiante_lento": "cbsec_exemplo-lento-ficticio-so-para-desenvolvimento"}'
+    CUSTODIA_INTERVALO_SEGUNDOS: "1"
   security_opt:
     - no-new-privileges:true
   cap_drop:

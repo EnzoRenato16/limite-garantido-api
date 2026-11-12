@@ -51,6 +51,15 @@
           <h2>Guardar dinheiro e ganhar limite</h2>
           <p>O dinheiro vai para um investimento que continua rendendo e fica bloqueado como garantia.</p>
           <form id="form-garantia" class="linha">
+            <label>Onde está o investimento
+              <select id="origem" name="origem">
+                <option value="interna">Nesta instituição</option>
+                <option value="externa">Investimento em outra instituição</option>
+              </select>
+            </label>
+            <label id="rotulo-custodiante" hidden>Custodiante (simulado)
+              <select id="custodiante" name="custodiante_id"></select>
+            </label>
             <label>Onde investir
               <select id="tipo-ativo" name="tipo_ativo"></select>
             </label>
@@ -59,6 +68,9 @@
             </label>
             <button type="submit">Guardar como garantia</button>
           </form>
+          <p class="nota-externa" id="nota-externa" hidden>Em outra instituição, o bloqueio
+            (gravame) é pedido a um custodiante e confirmado depois. Os custodiantes aqui são
+            simuladores: os botões abaixo de cada garantia fazem o papel dele.</p>
           <p class="resultado" id="resultado-garantia" role="status" aria-live="polite"></p>
           <ul class="garantias" id="garantias" aria-label="Investimentos em garantia"></ul>
         </li>
@@ -113,6 +125,7 @@
       <ol class="eventos" id="eventos" aria-live="polite"></ol>
       <footer>
         <span id="conta-atual"></span>
+        <a href="/risco">Painel de risco</a>
         <a href="/docs">Documentação da API</a>
       </footer>
     </aside>

@@ -17,7 +17,26 @@ const ESTADOS = {
   parcialmente_executada: "parte vendida para pagar a fatura",
   executada: "vendido para pagar a fatura",
   liberada: "devolvido ao cliente",
+  solicitada: "pedido enviado ao custodiante",
+  gravame_pendente: "custodiante analisando o pedido",
+  gravame_confirmado: "gravame confirmado",
+  gravame_recusado: "recusado pelo custodiante",
+  gravame_expirado: "custodiante não respondeu no prazo",
+  liberacao_pendente: "resgate pedido ao custodiante",
+  execucao_solicitada: "venda pedida ao custodiante",
 };
+
+// Linha do tempo do gravame externo. O limite só existe no último passo.
+const ETAPAS_DO_GRAVAME = [
+  ["solicitada", "Pedido enviado"],
+  ["gravame_pendente", "Custodiante analisando"],
+  ["bloqueada", "Gravame confirmado, limite liberado"],
+];
+const DESFECHOS_SEM_GRAVAME = {
+  gravame_recusado: "Recusado",
+  gravame_expirado: "Sem resposta no prazo",
+};
+const ATIVAS = ["bloqueada", "parcialmente_executada"];
 
 const MOTIVOS = {
   limite_insuficiente: "limite insuficiente",
@@ -28,6 +47,7 @@ const MOTIVOS = {
 
 const DIAS_PARA_EXECUCAO_PADRAO = 7;
 const INTERVALO_DOS_WEBHOOKS_EM_MS = 700;
+const INTERVALO_DE_RECONSULTA_EM_MS = 1500;
 const GUARDADO = "lg-demo-conta";
 
 const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -41,7 +61,18 @@ const estado = {
   contaId: null,
   conta: null,
   garantias: [],
+  custodiantes: [],
   ultimoWebhook: 0,
+  ultimaAtualizacao: 0,
+  // Cada `atualizar` ganha um número. Só a mais recente desenha: uma consulta antiga
+  // que responde por último não pode apagar da tela o que acabou de acontecer.
+  geracao: 0,
+  // A última consulta falhou: a próxima volta da consulta periódica tenta de novo.
+  desatualizado: false,
+  // Para cada mensagem na tela, a "foto" do estado a que ela se refere. Quando o estado
+  // muda, a mensagem velha some: um aviso de chamada de margem não pode continuar na
+  // tela depois que a garantia foi executada.
+  mensagens: {},
 };
 
 // ------------------------------------------------------------------ dinheiro
@@ -73,14 +104,52 @@ async function chamar(metodo, caminho, corpo, { idempotente = false } = {}) {
     headers: cabecalhos,
     body: corpo === undefined ? undefined : JSON.stringify(corpo),
   });
-  const dados = resposta.status === 204 ? null : await resposta.json();
+  let dados = null;
+  if (resposta.status !== 204) {
+    // Um 502 do proxy chega em HTML: vira erro legível em vez de quebrar o botão.
+    dados = await resposta.json().catch(() => ({ detail: `Erro HTTP ${resposta.status}` }));
+  }
   return { ok: resposta.ok, status: resposta.status, dados };
 }
+
+const PENDENTE = Symbol("ainda sem foto");
 
 function mostrar(id, texto, tipo = "") {
   const alvo = $(id);
   alvo.textContent = texto;
   alvo.className = `resultado ${tipo}`.trim();
+  // A foto é tirada no próximo `atualizar`, que é quando o efeito da ação aparece.
+  estado.mensagens[id] = texto ? PENDENTE : undefined;
+}
+
+function fotoDoEstado() {
+  const { conta } = estado;
+  if (!conta) return "";
+  return JSON.stringify([
+    conta.estado,
+    conta.motivo_bloqueio,
+    conta.chamada_de_margem?.id ?? null,
+    conta.fatura_em_aberto?.estado ?? null,
+    conta.fatura_em_aberto?.dias_em_atraso ?? null,
+    conta.limite.divida_total,
+    conta.limite.valor_das_garantias,
+    estado.garantias.map((g) => `${g.id}:${g.estado}`),
+  ]);
+}
+
+function conferirMensagens() {
+  const foto = fotoDoEstado();
+  for (const [id, fotoDaMensagem] of Object.entries(estado.mensagens)) {
+    if (fotoDaMensagem === undefined) continue;
+    if (fotoDaMensagem === PENDENTE) {
+      estado.mensagens[id] = foto;
+    } else if (fotoDaMensagem !== foto) {
+      const alvo = $(id);
+      alvo.textContent = "";
+      alvo.className = "resultado";
+      estado.mensagens[id] = undefined;
+    }
+  }
 }
 
 const erroDe = (resposta) => resposta.dados?.detail ?? `Erro HTTP ${resposta.status}`;
@@ -88,7 +157,7 @@ const erroDe = (resposta) => resposta.dados?.detail ?? `Erro HTTP ${resposta.sta
 // --------------------------------------------------------------------- régua
 function desenharRegua() {
   const limite = estado.conta.limite;
-  const ativas = estado.garantias.filter((g) => ["bloqueada", "parcialmente_executada"].includes(g.estado));
+  const ativas = estado.garantias.filter((g) => ATIVAS.includes(g.estado));
   const aplicado = ativas.reduce((soma, g) => soma + Number(g.valor_aplicado), 0);
   const garantia = Number(limite.valor_das_garantias);
   const total = Number(limite.limite_total);
@@ -141,25 +210,85 @@ function desenharAviso() {
   aviso.hidden = texto === "";
 }
 
+function nomeDoCustodiante(id) {
+  return estado.custodiantes.find((c) => c.id === id)?.nome ?? id;
+}
+
+function linhaDoTempo(garantia) {
+  const lista = Object.assign(document.createElement("ol"), { className: "linha-do-tempo" });
+  lista.setAttribute("aria-label", "Andamento do gravame");
+  const desfecho = DESFECHOS_SEM_GRAVAME[garantia.estado];
+  // Depois de confirmado, liberação e execução não voltam a linha do tempo do gravame.
+  const indiceAtual = desfecho
+    ? -1
+    : ETAPAS_DO_GRAVAME.findIndex(([estadoDaEtapa]) => estadoDaEtapa === garantia.estado);
+  const confirmado = !desfecho && indiceAtual === -1;
+  ETAPAS_DO_GRAVAME.forEach(([, rotulo], indice) => {
+    let classe = "";
+    if (confirmado || indice < indiceAtual) classe = "feito";
+    else if (indice === indiceAtual) classe = indice === ETAPAS_DO_GRAVAME.length - 1 ? "feito" : "atual";
+    if (desfecho && indice > 0) return;
+    if (desfecho && indice === 0) classe = "feito";
+    lista.append(Object.assign(document.createElement("li"), { className: classe, textContent: rotulo }));
+  });
+  if (desfecho) {
+    lista.append(Object.assign(document.createElement("li"), { className: "falhou", textContent: desfecho }));
+  }
+  return lista;
+}
+
+function botoesDoCustodiante(garantia) {
+  const acoes = Object.assign(document.createElement("div"), { className: "acoes" });
+  acoes.setAttribute("aria-label", `Simular a resposta de ${nomeDoCustodiante(garantia.custodiante_id)}`);
+  for (const [acao, rotulo] of [
+    ["confirmar", "Custodiante confirma"],
+    ["recusar", "Custodiante recusa"],
+    ["nao_responder", "Custodiante não responde"],
+  ]) {
+    const botao = Object.assign(document.createElement("button"), {
+      type: "button",
+      className: "discreto pequeno",
+      textContent: rotulo,
+    });
+    botao.addEventListener("click", () => decidirPeloCustodiante(garantia, acao, rotulo));
+    acoes.append(botao);
+  }
+  return acoes;
+}
+
 function desenharGarantias() {
   const lista = $("garantias");
   lista.replaceChildren();
   for (const garantia of estado.garantias) {
     const item = document.createElement("li");
+    item.dataset.garantia = garantia.id;
+    item.dataset.estado = garantia.estado;
     const nome = Object.assign(document.createElement("span"), {
       className: "nome",
       textContent: NOMES[garantia.tipo_ativo] ?? garantia.tipo_ativo,
     });
+    // Antes do gravame, a garantia ainda não vale nada no ledger: mostra o que foi aplicado.
+    const semValor = Number(garantia.valor_de_mercado) === 0 && garantia.origem === "externa";
     const valor = Object.assign(document.createElement("span"), {
       className: "valor",
-      textContent: reais(garantia.valor_de_mercado),
+      textContent: reais(semValor ? garantia.valor_aplicado : garantia.valor_de_mercado),
     });
     const situacao = Object.assign(document.createElement("span"), {
       className: `estado ${garantia.estado.includes("executada") ? "executada" : ""}`,
       textContent: ESTADOS[garantia.estado] ?? garantia.estado,
     });
     item.append(nome, valor, situacao);
-    if (["bloqueada", "parcialmente_executada"].includes(garantia.estado)) {
+    if (garantia.origem === "externa") {
+      item.append(
+        Object.assign(document.createElement("span"), {
+          className: "custodiante",
+          textContent: `em ${nomeDoCustodiante(garantia.custodiante_id)}`,
+        }),
+        linhaDoTempo(garantia),
+      );
+    }
+    if (garantia.solicitacao) item.append(botoesDoCustodiante(garantia));
+    if (ATIVAS.includes(garantia.estado)) {
       const resgatar = Object.assign(document.createElement("button"), {
         type: "button",
         className: "discreto pequeno",
@@ -191,17 +320,22 @@ function desenharFatura() {
 }
 
 async function atualizar() {
+  estado.ultimaAtualizacao = Date.now();
+  const geracao = ++estado.geracao;
   const [conta, garantias] = await Promise.all([
     chamar("GET", `/contas/${estado.contaId}`),
     chamar("GET", `/contas/${estado.contaId}/garantias?limite=50`),
   ]);
-  if (!conta.ok) return;
+  if (geracao !== estado.geracao) return;
+  estado.desatualizado = !conta.ok || !garantias.ok;
+  if (estado.desatualizado) return;
   estado.conta = conta.dados;
-  estado.garantias = garantias.ok ? garantias.dados.dados.slice().reverse() : [];
+  estado.garantias = garantias.dados.dados.slice().reverse();
   desenharRegua();
   desenharAviso();
   desenharGarantias();
   desenharFatura();
+  conferirMensagens();
 }
 
 // ---------------------------------------------------------------------- ações
@@ -210,14 +344,22 @@ async function guardarGarantia(evento) {
   const valor = paraDecimal($("valor-da-garantia").value);
   if (!valor) return mostrar("resultado-garantia", "Digite um valor como 5.000,00.", "negado");
   const tipo = $("tipo-ativo").value;
-  const resposta = await chamar(
-    "POST",
-    `/contas/${estado.contaId}/garantias`,
-    { tipo_ativo: tipo, valor },
-    { idempotente: true },
-  );
+  const externa = $("origem").value === "externa";
+  const corpo = { tipo_ativo: tipo, valor };
+  if (externa) corpo.custodiante_id = $("custodiante").value;
+  const resposta = await chamar("POST", `/contas/${estado.contaId}/garantias`, corpo, {
+    idempotente: true,
+  });
   if (!resposta.ok) return mostrar("resultado-garantia", erroDe(resposta), "negado");
   const { garantia } = resposta.dados;
+  if (externa) {
+    mostrar(
+      "resultado-garantia",
+      `Pedido de gravame de ${reais(garantia.valor_aplicado)} em ${NOMES[tipo]} enviado a ` +
+        `${nomeDoCustodiante(garantia.custodiante_id)}. O limite só aparece quando ele confirmar.`,
+    );
+    return atualizar();
+  }
   mostrar(
     "resultado-garantia",
     `${reais(garantia.valor_aplicado)} em ${NOMES[tipo]} bloqueados. ` +
@@ -250,7 +392,7 @@ async function comprar(evento) {
 }
 
 async function derrubarAtivo() {
-  const alvo = estado.garantias.find((g) => ["bloqueada", "parcialmente_executada"].includes(g.estado));
+  const alvo = estado.garantias.find((g) => ATIVAS.includes(g.estado));
   if (!alvo) return mostrar("resultado-queda", "Guarde um investimento primeiro.", "negado");
   const resposta = await chamar("POST", `/sandbox/garantias/${alvo.id}/remarcacao`, {
     variacao_percentual: "-10",
@@ -287,6 +429,20 @@ async function passarDia() {
     mostrar("resultado-fatura", `${dias} dia${dias > 1 ? "s" : ""} de atraso. Novas compras ficam suspensas.`, "negado");
   } else {
     desenharDias(diasParaExecucao());
+    const pedidas = await chamar(
+      "GET",
+      `/eventos?conta_id=${estado.contaId}&tipo=execucao.solicitada&limite=10`,
+    );
+    const ultimaPedida = pedidas.dados?.dados?.[0];
+    if (ultimaPedida && (resposta.dados.fatura_em_aberto?.estado === "em_atraso")) {
+      mostrar(
+        "resultado-fatura",
+        `${diasParaExecucao()}º dia: a venda de ${reais(ultimaPedida.dados.valor_a_executar)} foi pedida ao ` +
+          `custodiante. A dívida só cai quando ele confirmar a venda.`,
+        "negado",
+      );
+      return atualizar();
+    }
     const execucoes = await chamar(
       "GET",
       `/eventos?conta_id=${estado.contaId}&tipo=garantia.executada&limite=10`,
@@ -323,11 +479,36 @@ async function pagarFatura() {
 
 async function resgatarGarantia(garantia) {
   const resposta = await chamar("POST", `/garantias/${garantia.id}/liberacao`);
-  if (resposta.ok) {
+  if (resposta.status === 202) {
+    mostrar(
+      "resultado-garantia",
+      `Resgate de ${reais(garantia.valor_de_mercado)} pedido ao custodiante. O limite desta garantia saiu na hora; o dinheiro volta quando ele confirmar.`,
+    );
+  } else if (resposta.ok) {
     mostrar("resultado-garantia", `${reais(garantia.valor_de_mercado)} devolvidos ao cliente.`, "ok");
   } else {
     mostrar("resultado-garantia", erroDe(resposta), "negado");
   }
+  await atualizar();
+}
+
+const O_QUE_FOI_PEDIDO = {
+  gravame: "o gravame",
+  liberacao: "o resgate",
+  execucao: "a venda",
+};
+
+async function decidirPeloCustodiante(garantia, acao, rotulo) {
+  const resposta = await chamar("POST", `/sandbox/garantias/${garantia.id}/custodiante`, { acao });
+  if (!resposta.ok) return mostrar("resultado-garantia", erroDe(resposta), "negado");
+  const pedido = O_QUE_FOI_PEDIDO[garantia.solicitacao?.tipo] ?? "o pedido";
+  const novoEstado = resposta.dados.garantia.estado;
+  const frases = {
+    confirmar: `${rotulo}: ${pedido} foi confirmado. ${ESTADOS[novoEstado] ?? novoEstado}.`,
+    recusar: `${rotulo}: ${pedido} foi recusado. Nenhum dinheiro mudou de lugar.`,
+    nao_responder: `${rotulo}: o prazo venceu sem resposta. O parceiro foi avisado por webhook.`,
+  };
+  mostrar("resultado-garantia", frases[acao], acao === "confirmar" ? "ok" : "negado");
   await atualizar();
 }
 
@@ -358,12 +539,38 @@ function resumoDoEvento(evento) {
       return `fatura de ${reais(d.valor_fechado)} quitada`;
     case "garantia.liberada":
       return `${reais(d.valor_liberado)} devolvidos ao cliente`;
+    case "gravame.solicitado":
+      return `${reais(d.valor)} em ${NOMES[d.tipo_ativo] ?? d.tipo_ativo}; pedido a ${nomeDoCustodiante(d.custodiante_id)}`;
+    case "gravame.confirmado":
+      return `${nomeDoCustodiante(d.custodiante_id)} confirmou o gravame`;
+    case "gravame.recusado":
+      return `${nomeDoCustodiante(d.custodiante_id)} recusou: ${d.motivo}`;
+    case "gravame.expirado":
+      return "sem resposta do custodiante no prazo; nenhum limite foi liberado";
+    case "liberacao.solicitada":
+      return `resgate de ${reais(d.valor_a_liberar)} pedido; o limite saiu na hora`;
+    case "liberacao.confirmada":
+      return `${nomeDoCustodiante(d.custodiante_id)} confirmou o resgate`;
+    case "liberacao.falhou":
+    case "execucao.falhou":
+      return `${d.situacao === "expirada" ? "sem resposta no prazo" : `recusado: ${d.motivo}`}; a garantia continua bloqueada`;
+    case "execucao.solicitada":
+      return `venda de ${reais(d.valor_a_executar)} pedida ao custodiante`;
+    case "execucao.confirmada":
+      return `venda confirmada: ${reais(d.valor_aplicado_na_divida)} abatidos da dívida`;
     default:
       return "";
   }
 }
 
 const TOM = {
+  "gravame.recusado": "alerta",
+  "gravame.expirado": "alerta",
+  "liberacao.falhou": "alerta",
+  "execucao.falhou": "alerta",
+  "execucao.solicitada": "alerta",
+  "gravame.confirmado": "bom",
+  "liberacao.confirmada": "bom",
   "compra.negada": "alerta",
   chamada_de_margem: "alerta",
   "fatura.em_atraso": "alerta",
@@ -415,12 +622,25 @@ async function buscarWebhooks() {
       `/demo/webhooks?depois_de=${estado.ultimoWebhook}&conta_id=${encodeURIComponent(estado.contaId)}`,
     );
     if (!resposta.ok) return;
-    for (const recebido of await resposta.json()) {
+    const recebidos = await resposta.json();
+    for (const recebido of recebidos) {
       estado.ultimoWebhook = Math.max(estado.ultimoWebhook, recebido.numero);
       desenharWebhook(recebido);
     }
-  } catch {
-    // A API saiu do ar por um instante: tenta de novo na próxima volta.
+    // O worker muda as coisas sozinho (o custodiante confirmou, o prazo venceu): cada
+    // aviso que chega é a deixa para redesenhar a conta.
+    // Enquanto um pedido espera o custodiante, a conta é reconsultada de tempos em
+    // tempos: o aceite do pedido não gera aviso, mas muda a linha do tempo.
+    const esperando = estado.garantias.some((g) => g.solicitacao);
+    const faz = Date.now() - estado.ultimaAtualizacao;
+    const reconsultar = esperando || estado.desatualizado;
+    if (recebidos.length || (reconsultar && faz > INTERVALO_DE_RECONSULTA_EM_MS)) {
+      await atualizar();
+    }
+  } catch (erro) {
+    // A API saiu do ar por um instante: tenta de novo na próxima volta. Fica no console
+    // para que um erro de desenho não passe despercebido.
+    console.error(erro);
   }
 }
 
@@ -433,16 +653,25 @@ async function abrirConta() {
 }
 
 async function recomecar() {
-  sessionStorage.removeItem(GUARDADO);
-  $("eventos").replaceChildren();
-  $("vazio").hidden = false;
-  for (const id of ["resultado-garantia", "resultado-compra", "resultado-queda", "resultado-fatura"]) {
-    mostrar(id, "");
+  // Até a conta nova existir, nada na página pode ser clicado: um "Guardar" no meio do
+  // caminho iria para a conta antiga e sumiria da tela quando a nova aparecesse.
+  document.body.inert = true;
+  document.body.dataset.pronta = "false";
+  try {
+    sessionStorage.removeItem(GUARDADO);
+    $("eventos").replaceChildren();
+    $("vazio").hidden = false;
+    for (const id of ["resultado-garantia", "resultado-compra", "resultado-queda", "resultado-fatura"]) {
+      mostrar(id, "");
+    }
+    desenharDias(0);
+    await abrirConta();
+    $("conta-atual").textContent = estado.contaId;
+    await atualizar();
+  } finally {
+    document.body.inert = false;
+    document.body.dataset.pronta = "true";
   }
-  desenharDias(0);
-  await abrirConta();
-  $("conta-atual").textContent = estado.contaId;
-  await atualizar();
 }
 
 function preencherAtivos() {
@@ -458,7 +687,47 @@ function preencherAtivos() {
   seletor.value = "cdb" in estado.politica.ltv_por_ativo ? "cdb" : seletor.options[0].value;
 }
 
+function preencherCustodiantes() {
+  const seletor = $("custodiante");
+  seletor.replaceChildren();
+  for (const custodiante of estado.custodiantes) {
+    seletor.append(
+      Object.assign(document.createElement("option"), {
+        value: custodiante.id,
+        textContent: custodiante.nome,
+      }),
+    );
+  }
+  const temCustodiante = estado.custodiantes.length > 0;
+  $("origem").disabled = !temCustodiante;
+  const externa = temCustodiante && $("origem").value === "externa";
+  $("rotulo-custodiante").hidden = !externa;
+  $("nota-externa").hidden = !externa;
+}
+
+// Os tratadores são ligados antes de qualquer chamada à API: um clique que chegue cedo
+// demais não pode virar envio nativo do formulário (que recarregaria a página).
+function quandoPronta(acao) {
+  return (evento) => {
+    evento?.preventDefault?.();
+    if (document.body.dataset.pronta === "true") return acao(evento);
+    return undefined;
+  };
+}
+
+function ligarTratadores() {
+  $("form-garantia").addEventListener("submit", quandoPronta(guardarGarantia));
+  $("form-compra").addEventListener("submit", quandoPronta(comprar));
+  $("derrubar").addEventListener("click", quandoPronta(derrubarAtivo));
+  $("fechar-fatura").addEventListener("click", quandoPronta(fecharFatura));
+  $("passar-dia").addEventListener("click", quandoPronta(passarDia));
+  $("pagar").addEventListener("click", quandoPronta(pagarFatura));
+  $("recomecar").addEventListener("click", quandoPronta(recomecar));
+  $("origem").addEventListener("change", preencherCustodiantes);
+}
+
 async function iniciar() {
+  ligarTratadores();
   const config = await fetch("/demo/config");
   if (!config.ok) {
     $("aviso").hidden = false;
@@ -478,6 +747,9 @@ async function iniciar() {
   }
   estado.politica = parceiro.dados.politica;
   preencherAtivos();
+  const custodiantes = await chamar("GET", "/custodiantes");
+  estado.custodiantes = custodiantes.ok ? custodiantes.dados : [];
+  preencherCustodiantes();
   [...$("dias").children].forEach((dia, indice) => {
     dia.hidden = indice >= diasParaExecucao();
   });
@@ -487,16 +759,9 @@ async function iniciar() {
   if (!estado.contaId) await abrirConta();
   $("conta-atual").textContent = estado.contaId;
 
-  $("form-garantia").addEventListener("submit", guardarGarantia);
-  $("form-compra").addEventListener("submit", comprar);
-  $("derrubar").addEventListener("click", derrubarAtivo);
-  $("fechar-fatura").addEventListener("click", fecharFatura);
-  $("passar-dia").addEventListener("click", passarDia);
-  $("pagar").addEventListener("click", pagarFatura);
-  $("recomecar").addEventListener("click", recomecar);
-
   await atualizar();
   await buscarWebhooks();
+  document.body.dataset.pronta = "true";
   setInterval(buscarWebhooks, INTERVALO_DOS_WEBHOOKS_EM_MS);
 }
 

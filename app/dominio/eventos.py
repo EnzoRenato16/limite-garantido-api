@@ -18,6 +18,17 @@ class TipoEvento(StrEnum):
     FATURA_PAGA = "fatura.paga"
     FATURA_EM_ATRASO = "fatura.em_atraso"
     CHAMADA_DE_MARGEM = "chamada_de_margem"
+    # Garantia em custodiante externo (fase 2).
+    GRAVAME_SOLICITADO = "gravame.solicitado"
+    GRAVAME_CONFIRMADO = "gravame.confirmado"
+    GRAVAME_RECUSADO = "gravame.recusado"
+    GRAVAME_EXPIRADO = "gravame.expirado"
+    LIBERACAO_SOLICITADA = "liberacao.solicitada"
+    LIBERACAO_CONFIRMADA = "liberacao.confirmada"
+    LIBERACAO_FALHOU = "liberacao.falhou"
+    EXECUCAO_SOLICITADA = "execucao.solicitada"
+    EXECUCAO_CONFIRMADA = "execucao.confirmada"
+    EXECUCAO_FALHOU = "execucao.falhou"
 
 
 @dataclass(frozen=True, slots=True)

@@ -70,7 +70,16 @@ class ContaModelo(Base):
 
 class GarantiaModelo(Base):
     __tablename__ = "garantias"
-    __table_args__ = (Index("ix_garantias_conta_estado", "conta_id", "estado"),)
+    __table_args__ = (
+        Index("ix_garantias_conta_estado", "conta_id", "estado"),
+        CheckConstraint("origem IN ('interna', 'externa')", name="ck_garantias_origem"),
+        # Garantia externa tem custodiante; interna, não.
+        CheckConstraint(
+            "(origem = 'externa' AND custodiante_id IS NOT NULL)"
+            " OR (origem = 'interna' AND custodiante_id IS NULL)",
+            name="ck_garantias_custodiante",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     conta_id: Mapped[str] = mapped_column(ForeignKey("contas.id"))
@@ -80,6 +89,56 @@ class GarantiaModelo(Base):
     estado: Mapped[str] = mapped_column(String(30))
     marcada_em: Mapped[date] = mapped_column(Date)
     criada_em: Mapped[datetime] = mapped_column(DataHoraUTC)
+    # Fase 2 (migração 0002). Linhas antigas leem como interna.
+    origem: Mapped[str] = mapped_column(String(10), server_default="interna")
+    custodiante_id: Mapped[str | None] = mapped_column(String(40))
+    # Pedido em aberto no custodiante (os dados dele estão em solicitacoes_de_custodia).
+    solicitacao_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    solicitacao_enviada_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
+    valor_em_execucao: Mapped[Dinheiro | None] = mapped_column(Centavos)
+    motivo: Mapped[str | None] = mapped_column(String(200))
+
+
+class SolicitacaoDeCustodiaModelo(Base):
+    """Cada pedido feito a um custodiante externo. Só inserção: é o histórico.
+
+    Existe para que uma resposta atrasada, de um pedido que já não está em aberto, ainda
+    seja reconhecida (e registrada como obsoleta) em vez de cair no vazio.
+    """
+
+    __tablename__ = "solicitacoes_de_custodia"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    garantia_id: Mapped[str] = mapped_column(ForeignKey("garantias.id"), index=True)
+    conta_id: Mapped[str] = mapped_column(ForeignKey("contas.id"))
+    parceiro_id: Mapped[str] = mapped_column(ForeignKey("parceiros.id"))
+    custodiante_id: Mapped[str] = mapped_column(String(40))
+    tipo: Mapped[str] = mapped_column(String(20))
+    criada_em: Mapped[datetime] = mapped_column(DataHoraUTC)
+    prazo_ate: Mapped[datetime] = mapped_column(DataHoraUTC)
+
+
+class RespostaDeCustodianteModelo(Base):
+    """Respostas já recebidas. A chave (custodiante, evento) é o que impede a mesma
+    confirmação, por callback e por consulta, de ser aplicada duas vezes."""
+
+    __tablename__ = "respostas_de_custodiante"
+
+    custodiante_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    evento_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    solicitacao_id: Mapped[str] = mapped_column(
+        ForeignKey("solicitacoes_de_custodia.id"), index=True
+    )
+    garantia_id: Mapped[str] = mapped_column(ForeignKey("garantias.id"))
+    parceiro_id: Mapped[str] = mapped_column(ForeignKey("parceiros.id"))
+    status: Mapped[str] = mapped_column(String(20))
+    # callback, polling, sandbox ou admin
+    canal: Mapped[str] = mapped_column(String(20))
+    # aplicada, ou obsoleta (o pedido já não esperava esta resposta)
+    resultado: Mapped[str] = mapped_column(String(20))
+    valor_obtido: Mapped[Dinheiro | None] = mapped_column(Centavos)
+    motivo: Mapped[str | None] = mapped_column(String(200))
+    recebida_em: Mapped[datetime] = mapped_column(DataHoraUTC)
 
 
 class CompraModelo(Base):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -41,8 +42,23 @@ class Configuracao(BaseSettings):
     limite_de_requisicoes_por_minuto: int = Field(default=120, ge=1)
 
     # "interna": o gravame é confirmado na hora (fase 1, investimento dentro de casa).
-    # "assincrona": a garantia fica pendente até a custódia confirmar (fases 2 e 3).
+    # "assincrona": modo legado; a garantia interna fica pendente até uma confirmação
+    # administrativa e expira depois de CUSTODIA_PRAZO_LEGADO_MINUTOS.
     custodia_modo: Literal["interna", "assincrona"] = "interna"
+    custodia_prazo_legado_minutos: int = Field(default=1440, ge=1)
+
+    # Fase 2: custodiante externo. Não há integração real; "simulador" liga os
+    # custodiantes fictícios de app/custodiantes_simulados.toml. Sem valor explícito, o
+    # simulador fica ligado fora de produção e desligado em produção.
+    custodia_externa: Literal["simulador", "desligada"] | None = None
+    custodia_perfis_arquivo: Path | None = None
+    # Segredo HMAC de cada custodiante para assinar callbacks, em JSON:
+    # CUSTODIA_SEGREDOS='{"custodiante_agil": "...", "custodiante_lento": "..."}'
+    custodia_segredos: dict[str, SecretStr] = Field(default_factory=dict)
+    # Janela contra reapresentação de callback (diferença máxima do timestamp assinado).
+    custodia_tolerancia_segundos: int = Field(default=300, ge=1, le=900)
+    # De quanto em quanto tempo o worker consulta pedidos sem resposta (polling).
+    custodia_intervalo_segundos: float = Field(default=2.0, gt=0)
 
     webhook_timeout_segundos: float = Field(default=5.0, gt=0)
     webhook_max_tentativas: int = Field(default=8, ge=1)
@@ -62,6 +78,22 @@ class Configuracao(BaseSettings):
     demo_webhook_url: str = "http://localhost:8000/demo/webhooks"
 
     @model_validator(mode="after")
+    def _recusar_segredo_de_callback_fraco(self) -> Configuracao:
+        # Vale em qualquer ambiente: com segredo vazio ou curto, qualquer um forja a
+        # confirmação de um gravame, e isso vira limite sem garantia.
+        fracos = [
+            custodiante_id
+            for custodiante_id, segredo in self.custodia_segredos.items()
+            if len(segredo.get_secret_value()) < TAMANHO_MINIMO_DE_SEGREDO
+        ]
+        if fracos:
+            raise ValueError(
+                f"segredo de callback de {', '.join(sorted(fracos))} precisa ter "
+                f"{TAMANHO_MINIMO_DE_SEGREDO}+ caracteres"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _recusar_configuracao_insegura_em_producao(self) -> Configuracao:
         if self.ambiente is not Ambiente.PRODUCAO:
             return self
@@ -72,6 +104,17 @@ class Configuracao(BaseSettings):
             problemas.append("SANDBOX_HABILITADO precisa ser false")
         if self.webhook_permitir_rede_interna:
             problemas.append("WEBHOOK_PERMITIR_REDE_INTERNA precisa ser false")
+        if self.custodia_externa == "simulador":
+            problemas.append(
+                "CUSTODIA_EXTERNA=simulador não roda em produção: não há custodiante real"
+            )
+        for custodiante_id, segredo in self.custodia_segredos.items():
+            valor = segredo.get_secret_value()
+            if len(valor) < TAMANHO_MINIMO_DE_SEGREDO or MARCA_DE_SEGREDO_DE_EXEMPLO in valor:
+                problemas.append(
+                    f"segredo de callback de {custodiante_id} precisa ter "
+                    f"{TAMANHO_MINIMO_DE_SEGREDO}+ caracteres e não pode ser o do .env.example"
+                )
         if self.database_url.startswith("sqlite"):
             problemas.append("DATABASE_URL precisa apontar para o Postgres")
         if self.admin_token is not None:
@@ -88,6 +131,12 @@ class Configuracao(BaseSettings):
     @property
     def em_producao(self) -> bool:
         return self.ambiente is Ambiente.PRODUCAO
+
+    @property
+    def custodia_externa_efetiva(self) -> Literal["simulador", "desligada"]:
+        if self.custodia_externa is not None:
+            return self.custodia_externa
+        return "desligada" if self.em_producao else "simulador"
 
 
 @lru_cache

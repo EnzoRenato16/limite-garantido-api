@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -11,12 +12,15 @@ from app.api import apresentacao, esquemas
 from app.api.dependencias import RecursosDaApi, Unidade, exigir_administrador
 from app.api.erros import Problema
 from app.aplicacao import contas as casos_de_conta
+from app.aplicacao import custodia as casos_de_custodia
 from app.aplicacao import parceiros as casos_de_parceiro
 from app.aplicacao import risco as casos_de_risco
 from app.dominio.dinheiro import Dinheiro
-from app.dominio.erros import GarantiaNaoEncontrada
+from app.dominio.erros import GarantiaNaoEncontrada, SolicitacaoDivergente
+from app.dominio.garantia import OrigemGarantia
 from app.dominio.politica import PoliticaRisco
 from app.infra.banco.modelos import GarantiaModelo, LancamentoModelo, PartidaModelo
+from app.infra.custodia import SimuladorDeCustodiantes
 from app.infra.politica_referencia import carregar_politica_de_referencia
 
 rotas_de_admin = APIRouter(
@@ -98,17 +102,46 @@ def rotacionar_chave(parceiro_id: str, uow: Unidade) -> esquemas.ParceiroCriado:
     response_model=esquemas.GarantiaComLimite,
     summary="Confirmar o gravame de uma garantia pendente",
 )
-def confirmar_bloqueio(garantia_id: str, uow: Unidade) -> esquemas.GarantiaComLimite:
-    """Chamado pela integração de custódia quando o gravame é confirmado por um
-    custodiante externo. Fica na API administrativa de propósito: o parceiro não pode
-    atestar a própria garantia."""
-    parceiro_id = uow.sessao.execute(
-        select(GarantiaModelo.parceiro_id).where(GarantiaModelo.id == garantia_id)
-    ).scalar_one_or_none()
-    if parceiro_id is None:
+def confirmar_bloqueio(
+    garantia_id: str, uow: Unidade, recursos: RecursosDaApi
+) -> esquemas.GarantiaComLimite:
+    """Confirmação manual do gravame. Fica na API administrativa de propósito: o
+    parceiro não pode atestar a própria garantia.
+
+    - Garantia interna `pendente` (modo legado de custódia assíncrona): bloqueia.
+    - Garantia externa com pedido de gravame em aberto: é um atalho de sandbox para o
+      custodiante simulado. Passa pelo mesmo caso de uso do callback, com o mesmo id de
+      evento que o custodiante daria; se a confirmação dele chegar depois, é reconhecida
+      como a mesma e não é aplicada de novo.
+    """
+    linha = uow.sessao.execute(
+        select(GarantiaModelo.parceiro_id, GarantiaModelo.origem).where(
+            GarantiaModelo.id == garantia_id
+        )
+    ).first()
+    if linha is None:
         raise GarantiaNaoEncontrada("Garantia não encontrada", garantia_id=garantia_id)
-    parceiro = casos_de_parceiro.obter_parceiro(uow, parceiro_id)
-    conta, garantia = casos_de_conta.confirmar_bloqueio(uow, parceiro, garantia_id)
+    parceiro = casos_de_parceiro.obter_parceiro(uow, linha.parceiro_id)
+    if linha.origem == OrigemGarantia.EXTERNA.value:
+        custodiante = recursos.custodiante
+        if not (
+            recursos.config.sandbox_habilitado and isinstance(custodiante, SimuladorDeCustodiantes)
+        ):
+            # Confirmar no lugar do custodiante é atalho de sandbox, nunca de operação.
+            raise SolicitacaoDivergente(
+                "Garantia externa só é confirmada pelo custodiante (o atalho exige o "
+                "sandbox ligado)",
+                garantia_id=garantia_id,
+            )
+        _, conta, garantia = casos_de_custodia.decidir_pelo_custodiante(
+            uow,
+            garantia_id,
+            casos_de_custodia.AcaoDoSandbox.CONFIRMAR,
+            custodiante.resposta,
+            casos_de_custodia.Canal.ADMIN,
+        )
+    else:
+        conta, garantia = casos_de_conta.confirmar_bloqueio(uow, parceiro, garantia_id)
     resposta = esquemas.GarantiaComLimite(
         garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
         limite=apresentacao.posicao(conta.posicao(parceiro.politica)),
@@ -152,6 +185,28 @@ def rodar_virada_do_dia(
         contas_processadas=resumo.contas_processadas,
         contas_com_erro=resumo.contas_com_erro,
         eventos_gerados=resumo.eventos_gerados,
+    )
+
+
+@rotas_de_admin.post(
+    "/rotinas/custodia",
+    response_model=esquemas.ResumoDaRotina,
+    summary="Rodar a rotina de custódia (polling de reserva)",
+)
+def rodar_custodia(
+    recursos: RecursosDaApi, parceiro_id: FiltroDeParceiro = None
+) -> esquemas.ResumoDaRotina:
+    """Para cada garantia que espera um custodiante externo (simulado): envia o pedido
+    que ainda não saiu, consulta o que já saiu, aplica a resposta que estiver pronta e
+    expira o que passou do prazo (avisando o parceiro por webhook). O worker roda isto
+    a cada `CUSTODIA_INTERVALO_SEGUNDOS`; o endpoint existe para operação manual."""
+    processadas, erros, eventos = casos_de_custodia.processar_custodia(
+        recursos.abrir_unidade,
+        timedelta(minutes=recursos.config.custodia_prazo_legado_minutos),
+        parceiro_id,
+    )
+    return esquemas.ResumoDaRotina(
+        contas_processadas=processadas, contas_com_erro=erros, eventos_gerados=eventos
     )
 
 

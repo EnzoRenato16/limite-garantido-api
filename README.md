@@ -47,6 +47,60 @@ flowchart LR
 O caminho em três fases (dentro de casa, trilhos regulados, mercado aberto) e o desenho
 do piloto estão em [docs/roadmap.md](docs/roadmap.md).
 
+## Fase 2, simulada: investimento em outra instituição
+
+Na fase 1 o investimento fica dentro de casa e o bloqueio é imediato. Na fase 2 ele
+está em outra instituição: o bloqueio (gravame) é pedido a um custodiante externo, que
+responde depois, e pode recusar ou não responder. **Aqui isso é uma simulação.** Não há
+integração com nenhum custodiante real; os dois custodiantes, "Custodiante Ágil" e
+"Custodiante Lento", são personagens fictícios com comportamento configurado em
+[`app/custodiantes_simulados.toml`](app/custodiantes_simulados.toml).
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> solicitada
+    solicitada --> gravame_pendente: custodiante aceita o pedido
+    gravame_pendente --> gravame_confirmado: confirma
+    gravame_confirmado --> bloqueada: limite nasce aqui
+    solicitada --> gravame_recusado
+    gravame_pendente --> gravame_recusado: recusa
+    solicitada --> gravame_expirado
+    gravame_pendente --> gravame_expirado: sem resposta no prazo
+```
+
+- O limite só nasce depois de `gravame_confirmado`. Recusa e expiração não lançam nada
+  no ledger e avisam o parceiro por webhook.
+- No resgate, o limite sai já no pedido, não na confirmação. Na execução, a dívida só
+  cai quando o custodiante confirma a venda, pelo valor que ela de fato rendeu.
+- A resposta chega por callback assinado (HMAC-SHA256, com janela contra
+  reapresentação) ou pela consulta de reserva que o worker faz. A mesma confirmação,
+  venha por onde vier, é aplicada uma vez só.
+
+| O que é real | O que é simulado |
+|---|---|
+| Máquina de estados, regras de limite, ledger e chamada de margem | Os custodiantes externos e as respostas deles |
+| A rota de callback, a assinatura, a janela contra replay e a idempotência | O tempo de resposta, a chance de recusa e de silêncio (perfis fictícios) |
+| A rotina que envia, consulta e expira pedidos, no worker | O preço obtido na venda da garantia externa |
+| Os webhooks para o parceiro | Os botões "custodiante confirma / recusa / não responde" do `/demo` (sandbox) |
+| O painel de risco e o cálculo de perda | A carteira de 1.000 clientes do `/risco` e as premissas dos cenários |
+
+Onde entrariam os trilhos reais (TD Garantia para o Tesouro, o registro de garantias
+de previdência) está em [docs/arquitetura.md](docs/arquitetura.md#onde-entraria-o-trilho-real),
+com o que as fontes públicas dizem e o que ficou a confirmar.
+
+## Painel de risco da carteira
+
+Em `/risco`, uma carteira **sintética** de 1.000 clientes (mistura de depósito,
+Tesouro, CDB e ações, parte com garantia em custodiante externo) passa por um choque.
+Quatro cenários prontos: dia normal, crash da bolsa (ações −30%), alta de juros
+(prefixado −10%) e custodiante fora do ar. A tela mostra clientes em chamada de margem,
+limite antes e depois, a perda esperada separando o que vem da garantia externa e a
+concentração por ativo e por custodiante. A carteira é gerada da mesma semente, e as
+premissas são ilustrativas, não dado de mercado.
+
+![O painel de risco no cenário de custodiante fora do ar](docs/img/risco-custodiante_fora_do_ar.png)
+
 ## Rodando em 3 comandos
 
 **Com Docker** (Postgres, migrações, API e worker de webhooks):
@@ -57,7 +111,8 @@ cd limite-garantido-api
 docker compose up --build
 ```
 
-Depois abra <http://localhost:8000/demo> (a demonstração) ou
+Depois abra <http://localhost:8000/demo> (a demonstração),
+<http://localhost:8000/risco> (o painel de risco) ou
 <http://localhost:8000/docs> (a documentação da API).
 
 **Sem Docker**, com [uv](https://docs.astral.sh/uv/):
@@ -65,7 +120,7 @@ Depois abra <http://localhost:8000/demo> (a demonstração) ou
 ```bash
 uv sync                  # instala as dependências
 uv run python demo.py    # a história inteira no terminal, sem configurar nada
-./scripts/dev.sh         # sobe API e worker em SQLite; abra http://localhost:8000/demo
+./scripts/dev.sh         # sobe API e worker em SQLite; abra /demo e /risco
 ```
 
 O `demo.py` roda a API de verdade dentro do processo e conta a história de um cliente:
@@ -99,9 +154,10 @@ O `demo.py` roda a API de verdade dentro do processo e conta a história de um c
 | **Concorrência** | Trava de linha e versão otimista. Um teste dispara 40 compras simultâneas contra Postgres e exige que passem exatamente as que cabem. |
 | **API** | Multi-tenant (API key por parceiro, só o hash no banco), idempotência persistida, erros RFC 7807 com códigos estáveis, paginação por cursor, rate limit, OpenAPI em português. |
 | **Webhooks** | Outbox na mesma transação, worker com assinatura HMAC-SHA256 e timestamp, backoff exponencial, dead letter e reenvio manual. |
-| **Risco** | Marcação a mercado com provedor de preços trocável, chamada de margem com prazo, tetos por cliente e por parceiro, simulador de stress. |
+| **Risco** | Marcação a mercado com provedor de preços trocável, chamada de margem com prazo, tetos por cliente e por parceiro, simulador de stress e o painel `/risco` sobre carteira sintética. |
+| **Custódia externa (simulada)** | Gravame assíncrono que pode ser recusado ou ficar sem resposta, callback assinado, consulta de reserva e prazo, idempotentes por evento do custodiante. |
 | **Operação** | Logs JSON com `request_id` e `parceiro_id`, `/health`, `/metrics` para Prometheus. |
-| **Demonstração** | `demo.py` no terminal e a página `/demo`, testada de ponta a ponta com Playwright. |
+| **Demonstração** | `demo.py` no terminal, a página `/demo` (fases 1 e 2) e a `/risco`, testadas de ponta a ponta com Playwright. |
 
 ## Endpoints
 
@@ -121,9 +177,13 @@ A lista completa, com exemplos, está em `/docs` com a API no ar. Os principais:
 | `PUT` | `/v1/parceiro/webhook` | Configurar o webhook e receber o segredo de assinatura |
 | `GET` | `/v1/webhooks/entregas` | Entregas, tentativas e dead letter |
 | `POST` | `/v1/webhooks/entregas/{id}/reenvio` | Reenviar um webhook |
-| `POST` | `/v1/risco/simulacoes-de-stress` | "E se ações caírem 30%?" |
+| `POST` | `/v1/risco/simulacoes-de-stress` | "E se ações caírem 30%?", na carteira real do parceiro |
+| `POST` | `/v1/risco/simulacoes-de-carteira` | O painel de risco, sobre a carteira sintética |
+| `GET` | `/v1/risco/cenarios` | Os quatro cenários prontos do painel |
+| `GET` | `/v1/custodiantes` | Custodiantes externos aceitos (todos simulados) |
+| `POST` | `/v1/custodiantes/{id}/callbacks` | Resposta do custodiante, autenticada por assinatura HMAC |
 | `GET` | `/v1/erros` | Catálogo dos códigos de erro |
-| `POST` | `/v1/sandbox/...` | Simular queda de preço e passagem de dias (só com o sandbox ligado) |
+| `POST` | `/v1/sandbox/...` | Simular queda de preço, passagem de dias e a resposta do custodiante (só com o sandbox ligado) |
 | `*` | `/v1/admin/...` | Parceiros, políticas, rotinas e conferência do ledger (uso da plataforma) |
 
 ¹ Exige o cabeçalho `Idempotency-Key`.
@@ -141,24 +201,30 @@ curl -s localhost:8000/v1/contas/<id>/garantias -H "Authorization: Bearer $CHAVE
      -d '{"tipo_ativo": "cdb", "valor": "5000.00"}'
 ```
 
+Para pedir o gravame em outra instituição, acrescente `"custodiante_id":
+"custodiante_agil"` ao corpo: a resposta é `202` e a garantia nasce `solicitada`.
+
 Eventos enviados por webhook: `garantia.bloqueada`, `garantia.liberada`,
 `garantia.executada`, `limite.atualizado`, `compra.aprovada`, `compra.negada`,
-`fatura.paga`, `fatura.em_atraso` e `chamada_de_margem`.
+`fatura.paga`, `fatura.em_atraso` (uma vez, na entrada em atraso) e `chamada_de_margem`.
+Da fase 2: `gravame.solicitado`, `gravame.confirmado`, `gravame.recusado`,
+`gravame.expirado`, `liberacao.solicitada`, `liberacao.confirmada`, `liberacao.falhou`,
+`execucao.solicitada`, `execucao.confirmada` e `execucao.falhou`.
 
 ## Como o código está organizado
 
 ```text
 app/
-  dominio/     regras de crédito, ledger, política de risco, stress (só biblioteca padrão)
+  dominio/     regras de crédito, ledger, política de risco, stress e painel (só biblioteca padrão)
   aplicacao/   casos de uso e as interfaces de que eles precisam
-  infra/       SQLAlchemy, Alembic, worker de webhooks, rotinas, logs, métricas, preços
-  api/         rotas FastAPI, erros, idempotência, paginação e a página /demo
+  infra/       SQLAlchemy, worker de webhooks, simulador de custodiantes, carteira sintética
+  api/         rotas FastAPI, erros, idempotência, paginação e as páginas /demo e /risco
 alembic/       migrações (inclui os gatilhos do ledger)
 tests/
   unidade/       domínio e peças de infraestrutura
   propriedade/   Hypothesis: invariantes que valem para qualquer sequência de operações
   integracao/    API contra SQLite e contra Postgres
-  e2e/           a página /demo num navegador, com Playwright
+  e2e/           as páginas /demo e /risco num navegador, com Playwright
 docs/          arquitetura, mercado, roadmap, riscos, decisões
 ```
 
@@ -168,7 +234,7 @@ Os diagramas de sequência e de estados estão em [docs/arquitetura.md](docs/arq
 
 ```bash
 uv run pytest                    # unidade, propriedade e integração em SQLite
-uv run pytest -m e2e             # a página /demo num navegador
+uv run pytest -m e2e             # as páginas /demo e /risco num navegador
 
 scripts/pg_local.sh subir        # ou qualquer Postgres 16
 DATABASE_URL_TESTE=postgresql+psycopg://lg:lg@localhost:54329/lg_teste uv run pytest
@@ -182,7 +248,11 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy app
 - Cobertura do domínio: 99% (o mínimo exigido no CI é 90%).
 - Testes de propriedade com Hypothesis sorteiam sequências de operações e conferem,
   depois de cada passo, que o limite nunca fica negativo, que o ledger fecha em zero e
-  que a execução nunca vende mais do que a fatura vencida.
+  que a execução nunca vende mais do que a fatura vencida. Na fase 2, uma máquina
+  sorteia respostas do custodiante (válidas, repetidas ou fora de hora) e confere que
+  nenhum limite nasce antes da confirmação do gravame.
+- No painel: a perda nunca é negativa nem passa da exposição, choque mais forte nunca
+  diminui a perda, e custodiante fora do ar só mexe na parcela externa.
 - mypy no projeto inteiro, em modo estrito no domínio. Ruff com as regras de segurança.
 - O CI (GitHub Actions) roda lint, tipos, auditoria de dependências, os testes em
   SQLite e Postgres, o teste de navegador e um job que sobe o `docker compose` e faz um
@@ -200,6 +270,9 @@ Todas estão em [docs/DECISOES.md](docs/DECISOES.md). As que mais mudam o desenh
   cada compra com a linha do parceiro travada.
 - **O que os testes pegaram.** Um deadlock e um esgotamento de pool que só apareceram
   com 40 requisições simultâneas contra Postgres. Está contado no fim do documento.
+- **Na fase 2, o pedido ao custodiante sai depois do commit**, pelo worker, para nunca
+  existir gravame lá sem registro aqui. E cada resposta tem chave única
+  `(custodiante, evento)` no banco: dez callbacks iguais ao mesmo tempo aplicam uma vez.
 
 ## Próximos passos
 
@@ -216,14 +289,22 @@ O que um especialista criticaria, e que não está resolvido aqui.
 - Não há limite de concentração por ativo ou por emissor.
 - A chamada de margem bloqueia a conta, mas não liquida. Se deve liquidar é decisão
   jurídica e de risco.
-- Uma garantia `pendente` que a custódia nunca confirmar fica pendente para sempre:
-  falta recusa e prazo.
 - Liberação é tudo ou nada. Falta resgate parcial.
+- Uma confirmação de gravame que chega depois de o pedido expirar fica registrada como
+  obsoleta, mas não há rotina de reconciliação para desfazer o gravame do lado do
+  custodiante.
+- Liberação ou execução externa que falha volta a garantia para `bloqueada`, mesmo se
+  ela estava `parcialmente_executada` (perde-se o rótulo, não o valor).
 
 **Produto e integração**
 
 - A custódia, o preço e o cartão são simulados. Falta integrar com o produto de
   investimento, com um provedor de preços real e com a processadora.
+- A fase 2 inteira é simulada: falta um adaptador real da porta `Custodiante` (TD
+  Garantia, registro de previdência), e o simulador não guarda estado (responde a
+  qualquer id de pedido bem formado).
+- O painel de risco roda sobre uma carteira sintética. Rodar o mesmo cálculo na
+  carteira real do parceiro, como job, é o passo seguinte.
 - A cessão dos recebíveis ao FIDC e a liquidação com a rede não estão no ledger.
 - Consentimento do cliente (Open Finance) não está modelado.
 - A política de risco não tem versão, histórico nem aprovação em duas etapas.
@@ -245,6 +326,11 @@ O que um especialista criticaria, e que não está resolvido aqui.
 - A API administrativa tem um token único: sem usuários, papéis nem trilha de auditoria.
 - API keys não expiram, não têm escopo e não têm restrição de origem.
 - A validação anti-SSRF do webhook não fecha a janela entre resolver o DNS e conectar.
+- A assinatura HMAC tem o mesmo formato nos webhooks de saída e nos callbacks de
+  custodiante; falta separar o contexto (prefixo no que é assinado).
+- `AMBIENTE` tem padrão `desenvolvimento`: um deploy que esqueça a variável liga o
+  simulador de custodiantes. Deveria ser obrigatória.
+- A rota de callback dos custodiantes não tem rate limit próprio.
 - As imagens Docker estão fixadas por tag, não por digest.
 
 Os riscos de produto, crédito, jurídico, operacional e tecnológico, com a resposta de
@@ -259,8 +345,9 @@ cada um, estão em [docs/riscos.md](docs/riscos.md).
 | [docs/roadmap.md](docs/roadmap.md) | As três fases, o piloto e as métricas |
 | [docs/riscos.md](docs/riscos.md) | Riscos e respostas |
 | [docs/DECISOES.md](docs/DECISOES.md) | As decisões tomadas e o que os testes pegaram |
-| [docs/plano.md](docs/plano.md) | O plano de implementação |
-| [docs/roteiro-video.md](docs/roteiro-video.md) | Roteiro de 2 minutos para gravar a página `/demo` |
+| [docs/plano.md](docs/plano.md) | O plano de implementação da v1.0 |
+| [docs/plano-fase2.md](docs/plano-fase2.md) | O plano da fase 2 simulada e do painel de risco |
+| [docs/roteiro-video.md](docs/roteiro-video.md) | Roteiro de 2 min 30 s: fase 1, fase 2 e o painel |
 
 ## Sobre
 

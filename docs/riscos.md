@@ -42,12 +42,33 @@ Não sou advogado. Tudo aqui precisa de validação de quem é.
 
 | Risco | Resposta |
 |---|---|
-| **Custodiante externo não coopera.** | A fase 1 não depende dele. A fase 2 só usa trilho regulado. A fase 3 espera o padrão de gravames. |
+| **Custodiante externo não coopera.** | A fase 1 não depende dele. A fase 2 só usa trilho regulado. A fase 3 espera o padrão de gravames. Os riscos do custodiante na fase 2 estão na seção abaixo. |
 | **Rotina diária não roda.** Atraso não é marcado, garantia não é executada. | As rotinas podem rodar de novo sem repetir efeito e processam uma conta por transação. Saem com código de erro se alguma conta falhar, para o agendador alertar. Não há alerta automático de "rotina não rodou hoje". |
 | **Preço errado do provedor.** Um preço absurdo derruba limites e dispara chamadas de margem em massa. | Não tratado. Na vida real: limites de variação diária, segunda fonte de preço e trava manual antes de aplicar. Hoje o provedor é fake e determinístico. |
 | **Parceiro fora do ar não recebe webhooks.** | Retentativa com backoff exponencial, dead letter depois de N tentativas, reenvio manual e o log de eventos em `GET /v1/eventos` para reconciliar. |
 | **Erro humano na política.** Um LTV digitado errado. | A política é validada (LTV entre 0 e 1, prazos positivos, ordem de execução completa). Não há aprovação em duas etapas nem histórico de versões da política. |
 | **Fechamento de fatura e cartão são de outro sistema.** | A API expõe fechamento e pagamento, mas num produto real quem manda nisso é a processadora. A integração não existe. |
+
+## Custodiante externo (fase 2)
+
+A fase 2 deste projeto é simulada: as respostas abaixo são o que o código faz com o
+custodiante simulado. Com um custodiante real, a mesma lógica vale, mas os prazos,
+os motivos de recusa e o canal de aviso viriam do trilho, e não sei como cada trilho
+os define (ver [arquitetura](arquitetura.md#onde-entraria-o-trilho-real)).
+
+| Risco | Resposta |
+|---|---|
+| **Demora.** O custodiante leva horas para confirmar o gravame. | A garantia espera em `gravame_pendente`, sem gerar limite. O parceiro recebe `gravame.solicitado` e depois a resposta. O worker consulta o pedido periodicamente como reserva do callback. Cada custodiante tem o seu prazo de resposta. |
+| **Recusa.** Ativo já onerado, titularidade divergente, bloqueio judicial. | `gravame_recusado`, com o motivo, nenhum lançamento e webhook `gravame.recusado`. Limite nunca existiu, então não há nada a desfazer. |
+| **Silêncio.** O custodiante não responde nunca. | No prazo, a rotina expira o pedido (`gravame_expirado`, webhook `gravame.expirado`). Na liberação e na execução, a garantia volta a `bloqueada`; a execução é pedida de novo no dia seguinte. |
+| **Resposta tardia.** Confirmação que chega depois da expiração. | Fica registrada como `obsoleta` e não muda nada. **Lacuna:** não há rotina de reconciliação para pedir ao custodiante que desfaça um gravame confirmado tarde. |
+| **Indisponibilidade.** O custodiante sai do ar. | O pedido que ainda não saiu fica `solicitada` e o worker tenta de novo; cada garantia é tratada numa transação própria, então um custodiante fora do ar não trava os outros. O painel `/risco` mede o efeito no cenário "custodiante fora do ar": o que está com ele não recupera nada no horizonte. |
+| **Venda que rende menos que o pedido.** | A dívida só cai pelo valor efetivamente recebido. A diferença continua devida e a rotina pede a venda de novo no dia seguinte. |
+| **Fraude no callback.** Alguém finge ser o custodiante e "confirma" um gravame. | O callback só é aceito com assinatura HMAC-SHA256 do corpo exato, com o segredo daquele custodiante e timestamp dentro de 5 minutos. Comparação em tempo constante. Qualquer falha responde o mesmo `401`, sem dizer o quê; custodiante inexistente também, e com o mesmo custo de cálculo. A existência do pedido só é revelada depois de autenticar. |
+| **Reapresentação do callback.** Alguém captura um callback válido e reenvia. | Fora da janela, `401`. Dentro dela, o mesmo `evento_id` já está registrado e a resposta é `duplicada`, sem efeito. |
+| **Callback e consulta ao mesmo tempo.** A mesma confirmação aplicada duas vezes. | Trava de linha na conta e chave única `(custodiante, evento)` no banco. Testado com dez callbacks simultâneos contra Postgres. |
+| **Segredo de callback fraco ou de exemplo em produção.** | A aplicação se recusa a subir. E o simulador de custodiantes fica desligado em produção. |
+| **Simulador confundido com integração real.** | O nome de cada custodiante termina em "(simulador)", a API diz `simulado: true`, e a documentação e as telas avisam. Os perfis são fictícios. |
 
 ## Tecnológico
 

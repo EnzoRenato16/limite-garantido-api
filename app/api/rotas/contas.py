@@ -30,6 +30,7 @@ from app.infra.banco.modelos import (
     GarantiaModelo,
     LancamentoModelo,
     PartidaModelo,
+    SolicitacaoDeCustodiaModelo,
 )
 
 PRAZO_PADRAO_DE_VENCIMENTO_EM_DIAS = 10
@@ -181,7 +182,8 @@ def listar_lancamentos(
         202: {
             "model": esquemas.GarantiaComLimite,
             "description": "Pedido aceito; a custódia ainda vai confirmar o gravame "
-            "(garantia `pendente`, sem efeito no limite)",
+            "(garantia `pendente` ou, com custodiante externo, `solicitada`; sem efeito "
+            "no limite)",
         },
     },
 )
@@ -199,11 +201,23 @@ def bloquear_garantia(
     resposta. Gera os eventos `garantia.bloqueada` e `limite.atualizado`.
 
     Exige `Idempotency-Key`: repetir a requisição não bloqueia duas vezes.
+
+    **Investimento em outra instituição (fase 2, simulada).** Com `custodiante_id`, o
+    pedido de gravame vai para o custodiante externo e a resposta é `202` com a garantia
+    `solicitada`. O limite só aparece quando o custodiante confirmar (evento
+    `gravame.confirmado`); se ele recusar ou não responder no prazo, a garantia termina
+    em `gravame_recusado` ou `gravame_expirado`, sem nunca ter gerado limite. Os
+    custodiantes disponíveis estão em `GET /v1/custodiantes` e são todos simulados.
     """
 
     def operacao() -> RespostaHttp:
         conta, garantia = casos.solicitar_garantia(
-            uow, parceiro, conta_id, corpo.tipo_ativo, Dinheiro.de_decimal(corpo.valor)
+            uow,
+            parceiro,
+            conta_id,
+            corpo.tipo_ativo,
+            Dinheiro.de_decimal(corpo.valor),
+            corpo.custodiante_id,
         )
         resposta = esquemas.GarantiaComLimite(
             garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
@@ -231,8 +245,12 @@ def listar_garantias(
 
     def converter(garantias: Sequence[GarantiaModelo]) -> list[esquemas.GarantiaResposta]:
         valores = uow.contas.valores_de_mercado([g.id for g in garantias])
+        pedidos = _pedidos_em_aberto(uow, garantias)
         return [
-            apresentacao.garantia_do_modelo(g, valores[g.id], parceiro.politica) for g in garantias
+            apresentacao.garantia_do_modelo(
+                g, valores[g.id], parceiro.politica, pedidos.get(g.solicitacao_id or "")
+            )
+            for g in garantias
         ]
 
     return paginar(
@@ -263,7 +281,22 @@ def consultar_garantia(
     if modelo is None:
         raise GarantiaNaoEncontrada("Garantia não encontrada", garantia_id=garantia_id)
     valor = uow.contas.valores_de_mercado([modelo.id])[modelo.id]
-    return apresentacao.garantia_do_modelo(modelo, valor, parceiro.politica)
+    pedido = _pedidos_em_aberto(uow, [modelo]).get(modelo.solicitacao_id or "")
+    return apresentacao.garantia_do_modelo(modelo, valor, parceiro.politica, pedido)
+
+
+def _pedidos_em_aberto(
+    uow: Unidade, garantias: Sequence[GarantiaModelo]
+) -> dict[str, SolicitacaoDeCustodiaModelo]:
+    ids = [g.solicitacao_id for g in garantias if g.solicitacao_id]
+    if not ids:
+        return {}
+    return {
+        pedido.id: pedido
+        for pedido in uow.sessao.scalars(
+            select(SolicitacaoDeCustodiaModelo).where(SolicitacaoDeCustodiaModelo.id.in_(ids))
+        )
+    }
 
 
 @rotas_de_garantias.post(
@@ -283,6 +316,12 @@ def liberar_garantia(
 
     Só é aceita se as outras garantias da conta continuarem cobrindo a dívida. Senão,
     responde `409 garantia_cobrindo_divida`. Gera `garantia.liberada`.
+
+    **Garantia em custodiante externo.** A liberação vira um pedido ao custodiante:
+    resposta `202`, garantia `liberacao_pendente`, e ela deixa de gerar limite **já no
+    pedido**. Na confirmação saem `liberacao.confirmada` e `garantia.liberada`; se o
+    custodiante recusar ou não responder, a garantia volta a `bloqueada` e o limite
+    volta (`liberacao.falhou`).
     """
 
     def operacao() -> RespostaHttp:
@@ -291,7 +330,8 @@ def liberar_garantia(
             garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
             limite=apresentacao.posicao(conta.posicao(parceiro.politica)),
         )
-        return RespostaHttp(200, resposta.model_dump(mode="json"))
+        status = 202 if apresentacao.garantia_pendente(garantia.estado.value) else 200
+        return RespostaHttp(status, resposta.model_dump(mode="json"))
 
     return executar_com_idempotencia(
         request, uow, parceiro, chave, None, operacao, obrigatoria=False

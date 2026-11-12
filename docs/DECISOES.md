@@ -317,6 +317,210 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   - O site do Planalto bloqueou o acesso daqui; três dispositivos de lei foram lidos em
     repositório não oficial e estão resumidos, não transcritos.
 
+## Fase 2: garantia em custodiante externo (simulado) e painel de risco
+
+<a id="39-fase-2-pedido-e-ponto-de-partida"></a>
+### 39. Fase 2: pedido e ponto de partida
+- **Contexto.** Depois da v1.0 (PR #1) e do ajuste de plugins (PR #2), o pedido foi:
+  garantia em custodiante externo, assíncrona e que pode falhar, com callback assinado,
+  polling de reserva e prazo; um painel de risco sobre carteira sintética em `/risco`;
+  três ajustes pequenos no `/demo` e na emissão de `fatura.em_atraso`. Tudo simulado,
+  sem integração real. O plano está em [plano-fase2.md](plano-fase2.md).
+- **Branch.** O branch de trabalho foi reiniciado a partir do `main` atualizado, sem
+  reaproveitar o histórico já mergeado.
+- **Suíte de partida.** Ruff, mypy e pytest verdes (265 testes em SQLite, 277 em
+  Postgres), cobertura do domínio em 99%. O teste de navegador falhou na primeira
+  execução por ambiente, não por código: o Playwright 1.65 do projeto procura uma
+  revisão do Chromium que esta máquina não tem. Com `CHROMIUM_EXECUTAVEL` apontando
+  para o Chromium instalado, passou.
+
+### 40. Como a construção foi conduzida
+- **Contexto.** O pedido previa as skills de brainstorming e de plano antes de codar e
+  depois desenvolvimento por subagentes com TDD.
+- **O que foi feito.** O brainstorming termina quando o dono do projeto dispensa as
+  perguntas, que foi o caso: as decisões de desenho foram tomadas por mim e estão
+  aqui e no plano. O plano seguiu a skill de plano. A implementação foi feita nesta
+  sessão, tarefa a tarefa, com teste antes do código; os subagentes ficaram para as
+  revisões independentes no fim.
+- **Motivo.** As tarefas do núcleo dependem muito umas das outras (estado da garantia,
+  ledger, porta do custodiante, repositório e rota mudam juntos), e a construção da
+  v1.0 perdeu as revisões por agentes no limite de uso da conta. Gastar esse limite na
+  revisão, que é onde um olhar de fora mais acrescenta, me pareceu a melhor troca.
+- **Context7.** Não estava autenticado nesta sessão. Para documentação de bibliotecas,
+  conferi rodando contra as versões instaladas, como na v1.0.
+
+### 41. O que acontece com o `pendente`
+- **Contexto.** A garantia interna nasce `pendente` e, com a custódia interna, vira
+  `bloqueada` na mesma transação. Com `CUSTODIA_MODO=assincrona` ela ficava `pendente`
+  até a confirmação administrativa, para sempre se ninguém confirmasse (item 13).
+- **Opções.** (a) Migrar a interna para os estados novos. (b) Manter o `pendente` só
+  para a interna e dar à externa a máquina completa. (c) Fazer o `pendente` virar
+  sinônimo de `gravame_pendente`.
+- **Decisão.** (b), com uma saída nova: `pendente → gravame_expirado`, aplicada pela
+  rotina de custódia quando o prazo padrão passa. A fase 1 com custódia interna não
+  muda, porque o `pendente` nunca chega ao banco.
+- **Motivo.** Migrar estados persistidos de uma fase que funciona traz risco sem
+  ganho, e mudaria o que os parceiros já leem. O modo `assincrona` era um ensaio da
+  fase 2; agora que a fase 2 existe, ele fica por compatibilidade, mas também não
+  deixa garantia pendurada.
+
+### 42. O que cada estado externo conta para o limite
+- **Contexto.** A regra pedida: o limite só nasce em `bloqueada`; na liberação ele sai
+  no pedido; em `execucao_solicitada` não há limite novo.
+- **Opções para a garantia em execução.** (a) Tirá-la de tudo, como a que está sendo
+  liberada. (b) Tirá-la do limite, mas deixá-la cobrindo a dívida até a venda.
+- **Decisão.** (b). Ela não entra em `limite_total` nem em `limite_disponivel`, mas
+  entra em `valor_das_garantias` e no cálculo do `deficit`.
+- **Motivo.** O ativo continua penhorado e está sendo vendido justamente para pagar a
+  dívida. Com (a), pedir a execução abriria uma chamada de margem contra o próprio
+  cliente que está sendo executado, e o parceiro receberia um aviso sem sentido.
+
+### 43. Execução externa: o que se pede e o que se abate
+- **Decisão.** No pedido, nada vai para o ledger: só o estado e o valor mandado vender
+  (`valor_em_execucao`), que sai do devido para a rotina não pedir de novo. Na
+  confirmação, um lançamento consome da garantia o valor pedido e abate da dívida o
+  valor efetivamente recebido, limitado à dívida da conta (fatura primeiro, depois o
+  que ainda não foi faturado).
+- **Se a venda render menos**, a diferença continua devida e a rotina do dia seguinte
+  pede só ela. **Se render mais**, o excedente não passa pela plataforma: fica com o
+  cliente no próprio custodiante e aparece no evento `execucao.confirmada`
+  (`valor_devolvido_ao_cliente`).
+- **Motivo.** O ledger registra dinheiro que passou pela plataforma. Abater no pedido
+  seria registrar um recebimento que ainda não aconteceu.
+
+### 44. O pedido sai depois do commit, pelo worker
+- **Contexto.** Pedir o gravame dentro da transação da API parece mais rápido.
+- **Decisão.** A API grava a garantia `solicitada` e responde `202`. Quem envia o
+  pedido é a rotina de custódia, no worker, alguns segundos depois.
+- **Motivo.** Se o pedido saísse antes do commit e o commit falhasse, o custodiante
+  teria um gravame que a plataforma não conhece. Do jeito escolhido, o pior caso é o
+  pedido sair atrasado, e ele é idempotente pelo `solicitacao_id`. É a mesma ideia da
+  outbox dos webhooks.
+
+### 45. Histórico de pedidos e resposta obsoleta
+- **Decisão.** Cada pedido fica gravado em `solicitacoes_de_custodia`, mesmo depois de
+  encerrado. Uma resposta que chega para um pedido que já não está em aberto (por
+  exemplo, uma confirmação depois de a garantia expirar) é reconhecida, registrada como
+  `obsoleta` e não muda nada.
+- **Motivo.** Sem o histórico ela cairia no vazio como "pedido inexistente". Com ele,
+  fica o rastro para a reconciliação. Essa reconciliação (desfazer o gravame que o
+  custodiante confirmou tarde) não está implementada e está em "Próximos passos".
+
+### 46. Segurança do callback
+- **Decisão.**
+  - Autenticação só pela assinatura HMAC-SHA256 do corpo exato, com timestamp e janela
+    de 5 minutos, no mesmo formato dos webhooks de saída.
+  - Comparação em tempo constante; para custodiante desconhecido o HMAC é calculado
+    mesmo assim, com um segredo descartável, para o tempo de resposta não dizer se o
+    id existe.
+  - Qualquer falha de autenticação devolve o mesmo `401 assinatura_invalida`, sem
+    dizer qual foi.
+  - Só depois de autenticado se diz se o pedido existe (`404`), e "não existe" e "é de
+    outro custodiante" respondem igual.
+  - Uma resposta reapresentada dentro da janela é barrada pela idempotência: mesmo
+    `evento_id`, nenhum efeito.
+
+### 47. Simulador determinístico e sem estado
+- **Decisão.** O destino de cada pedido (confirma, recusa ou nunca responde) sai de um
+  SHA-256 da semente do perfil com o id do pedido. A resposta fica pronta quando o
+  relógio injetado passa da latência. O `evento_id` também é derivado do pedido e do
+  desfecho, então o callback e a consulta da mesma resposta têm o mesmo id.
+- **Consequência honesta.** Por não guardar estado, o simulador responde a qualquer id
+  bem formado, até de pedido que nunca recebeu. Um custodiante real guardaria os
+  pedidos. Para o que o simulador precisa mostrar, isso não muda nada.
+- **Sandbox e confirmação administrativa** fabricam a resposta pelo próprio simulador,
+  com o mesmo `evento_id` que ele daria. Se a resposta "de verdade" chegar depois, é a
+  mesma e não é aplicada de novo.
+
+### 48. Simulador fora de produção
+- **Decisão.** Sem `CUSTODIA_EXTERNA` explícito, o simulador fica ligado fora de
+  produção e desligado em produção. Pedir `simulador` em produção impede a aplicação
+  de subir, assim como um segredo de callback curto ou de exemplo.
+- **Motivo.** Um simulador que confirma gravames não pode, por engano, atender
+  parceiros de verdade.
+
+### 49. Liberação ou execução que falham voltam a `bloqueada`
+- **Decisão.** Recusa ou falta de resposta num pedido de liberação ou de execução
+  devolve a garantia para `bloqueada`, com o evento `liberacao.falhou` ou
+  `execucao.falhou`. Na execução, a rotina do dia seguinte pede de novo.
+- **Simplificação.** Uma garantia que estava `parcialmente_executada` também volta a
+  `bloqueada`. As duas geram limite do mesmo jeito; perde-se só o rótulo, e o histórico
+  continua nos eventos.
+
+### 50. Carteira sintética e premissas ilustrativas
+- **Decisão.** O painel `/risco` usa uma carteira gerada em memória a partir de uma
+  semente (1.000 clientes por padrão, até 5.000), com a política de referência. Ela
+  não lê nem grava nada do banco de nenhum parceiro. A mistura de ativos, as faixas de
+  valor, o uso do limite, a fração de garantia externa, os descontos por dia de espera
+  e os cenários estão em `app/carteira_sintetica.toml`.
+- **Os números são ilustrativos.** Nada ali é dado de mercado: foram escolhidos para a
+  carteira ter uma mistura plausível e para os cenários mostrarem o efeito de cada
+  choque. A tela e a resposta da API dizem isso.
+- **Determinismo.** Dinheiro sorteado em centavos inteiros, com `random.Random(semente)`
+  e listas em ordem fixa. As probabilidades são comparadas em pontos-base inteiros.
+
+### 51. Como a perda é separada entre interna e externa
+- **Contexto.** O pedido era a perda não coberta depois de executar as garantias,
+  separando interna e externa.
+- **Opções.** (a) Classificar cada cliente como "interno" ou "externo" pela maioria da
+  garantia. (b) Calcular a perda duas vezes: uma com toda a garantia vendida na hora ao
+  preço estressado, outra com as premissas da garantia externa; a diferença é o que a
+  garantia externa acrescenta.
+- **Decisão.** (b). A resposta traz `perda_com_execucao_imediata`,
+  `perda_adicional_externa` e a soma. Cada uma é a dívida descoberta vezes a taxa de
+  clientes que não reforçam, arredondada para cima.
+- **Motivo.** Um cliente com garantia nos dois lugares não cabe numa classificação.
+  Com (b), "custodiante fora do ar" mexe só na segunda parcela, o que um teste de
+  propriedade confere.
+- **Modelo da garantia externa.** Custodiante indisponível recupera zero dentro do
+  horizonte (premissa conservadora). Prazo extra aplica um desconto linear por dia, por
+  ativo, sobre o valor estressado.
+
+### 52. Os quatro cenários
+- **Dia normal:** ações −2%, prefixado e IPCA+ −0,5%; 10% dos descobertos não
+  reforçam; venda externa leva 2 dias a mais.
+- **Crash da bolsa:** ações −30%, o resto parado; 30% não reforçam.
+- **Alta de juros:** prefixado −10%, o resto parado; 30% não reforçam.
+- **Custodiante fora do ar:** o mercado do dia normal, mas o Custodiante Lento não
+  executa nenhuma garantia dentro do horizonte (o que está com ele não recupera nada)
+  e a venda nos outros custodiantes externos atrasa 10 dias; 30% não reforçam.
+- **O que o resultado mostra.** Com os LTVs da política de referência, o crash de 30%
+  aparece como chamada de margem (de 9 para 43 clientes na semente padrão), não como
+  perda: 60% de LTV em ações absorve a queda. A perda só aparece no cenário do
+  custodiante fora do ar, e inteira na parcela externa. Não ajustei os parâmetros para
+  forçar perda nos outros cenários.
+
+### 53. `fatura.em_atraso` sai uma vez
+- **Contexto.** O pedido era emitir o evento na transição para `em_atraso`, e não todo
+  dia.
+- **O que encontrei.** O código da v1.0 já fazia assim: o evento só sai quando a fatura
+  passa de `fechada` para `em_atraso`. Faltava um teste que travasse a regra; ele foi
+  escrito e passou de primeira, porque o comportamento já existia.
+- **Motivo.** O parceiro já tem o estado pela API; repetir o evento todo dia geraria
+  ruído e entregas duplicadas a tratar do lado dele.
+- **Como o parceiro acompanha os dias.** `GET /v1/contas/{id}` traz
+  `fatura_em_aberto.dias_em_atraso`, calculado na hora pela data de negócio. O próprio
+  evento informa `execucao_a_partir_de`, e os eventos seguintes (`garantia.executada`,
+  `execucao.solicitada`) marcam o que acontece no prazo.
+
+### 54. Avisos do `/demo` presos ao estado em que nasceram
+- **Contexto.** Uma mensagem como "chamada de margem aberta" ficava na tela depois da
+  execução da garantia.
+- **Decisão.** Cada mensagem guarda uma "foto" do estado da conta (situação, chamada,
+  fatura, dívida, garantias) no momento em que o efeito da ação aparece. Quando a foto
+  muda, a mensagem some. O aviso do topo já era derivado do estado e continua assim.
+
+### 55. Resumo fixo também no celular, em versão compacta
+- **Decisão.** A régua (limite disponível, garantia, limite, usado) fica presa no topo
+  em qualquer largura. No celular ela encolhe: número menor, trilho mais baixo,
+  legenda numa linha.
+
+### 56. O `/demo` reconsulta a conta enquanto um pedido espera o custodiante
+- **Contexto.** O aceite do pedido pelo custodiante não gera webhook, e a página só se
+  redesenhava quando chegava um.
+- **Decisão.** Enquanto alguma garantia tem pedido em aberto, a página reconsulta a
+  conta a cada 1,5 s. Sem pedido em aberto, volta a depender só dos webhooks.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
@@ -351,6 +555,52 @@ A decisão de parar aqui e entregar foi do dono do projeto, com a suíte e o CI 
 Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
 `/security-review` e `/insecure-defaults:audit`.
 
+### Revisão final da fase 2
+
+**O que rodou até o fim**
+
+- Suíte completa: ruff, mypy (estrito no domínio), 653 testes em SQLite e 667 em
+  Postgres, cobertura do domínio acima de 90%, e os 10 testes de navegador do `/demo` e
+  do `/risco`, três rodadas seguidas verdes.
+- `scripts/dev.sh` e `docker compose` subiram e foram exercitados: fumaça da v1.0, a
+  confirmação pelo worker, callback assinado aceito e callback com segredo errado
+  recusado, e o ledger fechando. O Docker Hub recusou o download daqui (429); as imagens
+  vieram do espelho `mirror.gcr.io`, e o build usou uma cópia do Dockerfile com o
+  certificado do proxy deste ambiente, fora do repositório.
+- Três revisões por agentes: revisão de código, caça a falhas silenciosas e sharp
+  edges. Os achados aceitos foram corrigidos no commit "achados da revisão por agentes":
+  duplicata de resposta que escondia outros erros de integridade, custodiante fora do
+  ar impedindo a expiração, worker que parava os webhooks quando a custódia falhava,
+  segredo de callback fraco aceito fora de produção, janela de replay sem teto, atalho
+  administrativo sem exigir o sandbox, logs sem contexto e erros de rede engolidos no
+  navegador.
+- Conferência de segurança manual: o callback só aplica resposta a pedido do próprio
+  custodiante, o sandbox filtra pelo parceiro autenticado, o front não usa `innerHTML`
+  nem `eval`, e as consultas são todas pelo ORM.
+
+**Achados não aceitos, com o motivo**
+
+- A expiração do `pendente` legado foi apontada como mudança da fase 1. Ela é o que
+  resolve o "pendente para sempre" pedido nesta entrega, e só age no modo legado
+  `CUSTODIA_MODO=assincrona` (item 41).
+
+**Achados que ficaram para depois** (estão em "Próximos passos" no README)
+
+- A assinatura usa o mesmo formato nos webhooks de saída e nos callbacks de entrada, sem
+  separar o contexto no HMAC.
+- `AMBIENTE` tem padrão `desenvolvimento`: um deploy que esqueça a variável liga o
+  simulador. Herdado da v1.0.
+- A rota de callback não tem rate limit próprio.
+
+**O que não rodou**
+
+- A busca de vulnerabilidades da `security-review` foi interrompida pelo limite de
+  uso da conta; a parte que ela ia conferir foi feita à mão (acima).
+- Por decisão do dono do projeto, para encerrar a entrega, ficaram de fora
+  `claude-security`, `insecure-defaults:audit`, `supply-chain-risk-auditor`,
+  `/code-review` e as demais revisões pendentes da v1.0. Nesta entrega não entrou
+  nenhuma dependência nova.
+
 ## O que os testes pegaram
 
 1. **`Decimal` virando `float`.** Na reconstrução da 0.1, o `jsonable_encoder` do
@@ -375,6 +625,19 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
 9. **Corpo cortado é pior que corpo recusado.** A primeira versão do teto de tamanho
    cortava o corpo: um JSON válido seguido de lixo seria executado e o cliente
    receberia 413. Agora a leitura falha inteira e o endpoint não roda.
+10. **Clique antes da página ficar pronta.** Na fase 2, o `/demo` passou a fazer mais
+    uma chamada antes de ligar os tratadores, e um clique cedo enviava o formulário de
+    forma nativa e recarregava a página. O teste de navegador pegou de forma
+    intermitente; agora os tratadores entram primeiro.
+11. **Custodiante fora do ar travava o prazo.** A revisão por agente apontou, e um teste
+    confirmou antes da correção: se a consulta ao custodiante falhava, a garantia nunca
+    expirava.
+12. **"Guardar" logo depois de "Começar de novo" ia para a conta antiga.** O CI do PR
+    pegou (três testes de navegador da fase 2): se a conta nova demorava a ser criada, o
+    pedido de gravame ia para a conta anterior e a garantia sumia da tela quando a nova
+    aparecia. Reproduzido atrasando a criação da conta no navegador. Agora a página fica
+    travada (`inert`) até a conta nova existir, e só a consulta mais recente desenha a
+    tela: uma resposta antiga que chega por último é descartada.
 
 <a id="o-que-ficou-para-voce-decidir"></a>
 ## O que ficou para você decidir

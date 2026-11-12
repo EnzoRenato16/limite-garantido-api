@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel de risco da carteira · Limite Garantido</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/demo/estatico/demo.css">
+  <link rel="stylesheet" href="/demo/estatico/risco.css">
+  <script type="module" src="/demo/estatico/risco.js"></script>
+</head>
+<body>
+  <div class="palco">
+
+    <main class="app painel" aria-label="Painel de risco">
+      <header class="cabecalho">
+        <div>
+          <p class="marca">Painel de risco da carteira</p>
+          <p class="nota">Carteira sintética de <span id="tamanho">1.000</span> clientes, gerada
+            pela semente <span id="semente">42</span>. Não é a carteira de nenhum parceiro, e as
+            premissas são ilustrativas.</p>
+        </div>
+        <a class="discreto-link" href="/demo">Ver a demonstração</a>
+      </header>
+
+      <section aria-labelledby="titulo-cenarios">
+        <h2 id="titulo-cenarios" class="secao">Cenário</h2>
+        <div class="cenarios" id="cenarios" role="group" aria-label="Cenários prontos"></div>
+        <p class="descricao-cenario" id="descricao-cenario"></p>
+      </section>
+
+      <form class="controles" id="controles" aria-label="Ajustar premissas" novalidate>
+        <fieldset>
+          <legend>Choque por ativo, em %</legend>
+          <div class="grade-choques" id="choques"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Clientes e garantia externa</legend>
+          <label>Clientes descobertos que não reforçam, em %
+            <input id="taxa" type="number" min="0" max="100" step="1" inputmode="decimal">
+          </label>
+          <label>Dias a mais para vender garantia externa
+            <input id="dias-extra" type="number" min="0" max="365" step="1">
+          </label>
+          <div class="indisponiveis" id="indisponiveis" role="group"
+               aria-label="Custodiantes fora do ar"></div>
+        </fieldset>
+        <div class="linha">
+          <button type="submit">Simular com estes valores</button>
+          <p class="resultado negado" id="erro" role="alert"></p>
+        </div>
+      </form>
+
+      <section class="numeros" aria-labelledby="titulo-numeros">
+        <h2 id="titulo-numeros" class="secao">Resultado</h2>
+        <dl class="destaques">
+          <div>
+            <dt>Clientes em chamada de margem</dt>
+            <dd><span id="chamada-antes">0</span><span class="seta" aria-label="para">→</span><strong id="chamada-depois">0</strong></dd>
+          </div>
+          <div>
+            <dt>Perda esperada não coberta</dt>
+            <dd><strong id="perda-total">R$ 0,00</strong></dd>
+            <p class="detalhe">de uma exposição de <span id="exposicao">R$ 0,00</span></p>
+          </div>
+          <div>
+            <dt>Limite total</dt>
+            <dd><span id="limite-antes">R$ 0,00</span><span class="seta" aria-label="para">→</span><strong id="limite-depois">R$ 0,00</strong></dd>
+            <p class="detalhe">utilização <span id="utilizacao-depois">0%</span></p>
+          </div>
+        </dl>
+
+        <div class="partes-da-perda" aria-label="De onde vem a perda">
+          <div class="barra-perda" id="barra-perda" role="img" aria-label="Perda dividida em duas parcelas">
+            <div class="parte imediata" id="parte-imediata"></div>
+            <div class="parte externa" id="parte-externa"></div>
+          </div>
+          <dl class="legenda">
+            <div><dt><i class="cor cor-imediata"></i>Mesmo vendendo tudo na hora</dt><dd id="perda-imediata">R$ 0,00</dd></div>
+            <div><dt><i class="cor cor-externa"></i>Adicional da garantia externa</dt><dd id="perda-externa">R$ 0,00</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-ativos">
+        <h2 id="titulo-ativos" class="secao">Garantias por ativo, antes e depois do choque</h2>
+        <svg id="grafico-ativos" class="grafico" role="img" aria-labelledby="titulo-ativos"></svg>
+      </section>
+
+      <section aria-labelledby="titulo-custodiantes">
+        <h2 id="titulo-custodiantes" class="secao">Onde a garantia está guardada</h2>
+        <svg id="grafico-custodiantes" class="grafico" role="img" aria-labelledby="titulo-custodiantes"></svg>
+      </section>
+    </main>
+
+    <aside class="bastidores leitura" aria-label="Como ler">
+      <header>
+        <h2>Como ler o resultado</h2>
+      </header>
+      <div class="texto-leitura">
+        <p>Cada cliente tem um limite igual ao valor de mercado das garantias vezes o LTV do
+          ativo, até o teto por cliente. O choque muda o valor das garantias, e com ele o
+          limite.</p>
+        <p><strong>Chamada de margem</strong> é o cliente cuja dívida passou do limite
+          garantido depois do choque. Ele tem prazo para reforçar ou pagar; não é perda.</p>
+        <p><strong>Perda esperada</strong> é a dívida que nem a venda de toda a garantia
+          cobre, vezes a parte dos clientes que não reforça. Ela vem em duas parcelas: a
+          que existiria mesmo vendendo tudo na hora, ao preço estressado, e a que a garantia
+          em outro custodiante acrescenta, porque ele pode estar fora do ar ou vender com
+          atraso.</p>
+        <p>Com LTVs conservadores, quedas grandes costumam aparecer primeiro como chamada
+          de margem e só depois como perda. É isso que a régua por ativo mostra: o
+          tracejado é o valor que o choque tirou.</p>
+        <p class="aviso-leitura">A carteira é sintética e as premissas são ilustrativas.
+          Não use estes números como estimativa de risco real.</p>
+        <h3>Premissas usadas nesta simulação</h3>
+        <dl class="premissas" id="premissas"></dl>
+      </div>
+      <footer>
+        <span>Custodiantes externos são simulados</span>
+        <a href="/docs#/Risco">Documentação da API</a>
+      </footer>
+    </aside>
+
+  </div>
+</body>
+</html>

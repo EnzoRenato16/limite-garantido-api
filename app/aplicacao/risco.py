@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
+from app.aplicacao import custodia
 from app.aplicacao.erros import ContaNaoEncontrada, SemFaturaEmAberto
 from app.aplicacao.portas import FabricaDeUnidades, ProvedorDePrecos, UnidadeDeTrabalho
 from app.dominio.conta import Conta
@@ -80,7 +81,12 @@ def virar_o_dia(abrir_unidade: FabricaDeUnidades, parceiro_id: str | None = None
         try:
             with abrir_unidade() as uow:
                 parceiro, conta = _carregar(uow, id_do_parceiro, conta_id)
-                conta.virar_o_dia(parceiro.politica, uow.relogio.agora(), uow.relogio.hoje())
+                conta.virar_o_dia(
+                    parceiro.politica,
+                    uow.relogio.agora(),
+                    uow.relogio.hoje(),
+                    custodia.prazos_dos_custodiantes(uow),
+                )
                 eventos += len(conta.pendencias.eventos)
                 uow.contas.salvar(conta, parceiro)
                 uow.commit()
@@ -160,6 +166,11 @@ def avancar_dias_no_sandbox(
         fatura.vencimento -= recuo
     if chamada is not None:
         chamada.prazo_ate -= recuo
-    conta.virar_o_dia(parceiro.politica, uow.relogio.agora(), uow.relogio.hoje())
+    conta.virar_o_dia(
+        parceiro.politica,
+        uow.relogio.agora(),
+        uow.relogio.hoje(),
+        custodia.prazos_dos_custodiantes(uow),
+    )
     uow.contas.salvar(conta, parceiro)
     return conta

@@ -16,76 +16,13 @@ Variáveis opcionais:
 from __future__ import annotations
 
 import os
-import socket
-import subprocess
-import sys
-import time
-from collections.abc import Iterator
 from pathlib import Path
 
-import httpx2
 import pytest
 
 pytestmark = pytest.mark.e2e
 
-RAIZ = Path(__file__).resolve().parent.parent.parent
 TELA = {"width": 1280, "height": 800}
-
-
-def _porta_livre() -> int:
-    with socket.socket() as soquete:
-        soquete.bind(("127.0.0.1", 0))
-        return int(soquete.getsockname()[1])
-
-
-@pytest.fixture(scope="module")
-def endereco(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    ja_no_ar = os.environ.get("E2E_ENDERECO")
-    if ja_no_ar:
-        yield ja_no_ar.rstrip("/")
-        return
-    pasta = tmp_path_factory.mktemp("e2e")
-    porta = _porta_livre()
-    base = f"http://127.0.0.1:{porta}"
-    ambiente = {
-        **os.environ,
-        "AMBIENTE": "teste",
-        "DATABASE_URL": f"sqlite:///{pasta / 'demo.db'}",
-        "SANDBOX_HABILITADO": "true",
-        "DEMO_HABILITADO": "true",
-        "DEMO_API_KEY": "lgk_exemplo000000_chave-ficticia-so-para-a-demonstracao",
-        "DEMO_WEBHOOK_SEGREDO": "whsec_exemplo-segredo-ficticio-so-para-a-demonstracao",
-        "DEMO_WEBHOOK_URL": f"{base}/demo/webhooks",
-        "WEBHOOK_PERMITIR_REDE_INTERNA": "true",
-        "WORKER_INTERVALO_SEGUNDOS": "0.2",
-        "LOG_NIVEL": "WARNING",
-    }
-    python = sys.executable
-    subprocess.run([python, "-m", "alembic", "upgrade", "head"], cwd=RAIZ, env=ambiente, check=True)  # noqa: S603
-    subprocess.run([python, "-m", "app.seed"], cwd=RAIZ, env=ambiente, check=True)  # noqa: S603
-    api = subprocess.Popen(  # noqa: S603
-        [python, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(porta)],
-        cwd=RAIZ,
-        env=ambiente,
-    )
-    worker = subprocess.Popen([python, "-m", "app.worker"], cwd=RAIZ, env=ambiente)  # noqa: S603
-    try:
-        limite = time.monotonic() + 30
-        while True:
-            try:
-                if httpx2.get(f"{base}/health", timeout=1).status_code == 200:
-                    break
-            except httpx2.HTTPError:
-                pass
-            if time.monotonic() > limite or api.poll() is not None:
-                raise RuntimeError("A API não subiu para o teste e2e")
-            time.sleep(0.2)
-        yield base
-    finally:
-        for processo in (worker, api):
-            processo.terminate()
-        for processo in (worker, api):
-            processo.wait(timeout=15)
 
 
 def test_historia_completa_na_pagina_de_demonstracao(endereco: str) -> None:
@@ -111,6 +48,7 @@ def test_historia_completa_na_pagina_de_demonstracao(endereco: str) -> None:
             return pagina.locator("#eventos .evento-tipo", has_text=tipo)
 
         pagina.goto(f"{endereco}/demo")
+        esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
         esperar(pagina.locator("#tipo-ativo")).to_have_value("cdb")
         esperar(pagina.locator("#disponivel")).to_have_text("R$ 0,00")
         esperar(pagina.locator("#trilho-vazio")).to_be_visible()

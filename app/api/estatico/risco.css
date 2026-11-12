@@ -1,0 +1,195 @@
+/* Página /risco. Usa os tokens, a fonte e os componentes de demo.css; aqui só o que é
+   do painel.
+
+   A peça que se repete do /demo é a régua: no gráfico por ativo, a pista é o valor
+   antes do choque e o preenchimento é o valor depois. O que o choque tirou fica
+   tracejado, como o déficit da régua do cliente. */
+
+:root {
+  --imediata: var(--deficit);
+  --externa: #8a4fb0;
+}
+
+.discreto-link {
+  color: var(--tinta);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  text-underline-offset: 3px;
+}
+
+.painel { max-width: 60rem; }
+
+.secao {
+  font-size: 1.05rem;
+  font-variation-settings: "wght" 650;
+  letter-spacing: -0.01em;
+  margin: calc(var(--passo) * 5) 0 calc(var(--passo) * 1.5);
+}
+
+.cenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cenarios button {
+  background: var(--superficie);
+  color: var(--tinta);
+  border: 1.5px solid var(--linha);
+}
+
+.cenarios button[aria-pressed="false"]:hover:not(:disabled) {
+  background: var(--superficie);
+  border-color: var(--tinta-suave);
+}
+
+.cenarios button[aria-pressed="true"],
+.cenarios button[aria-pressed="true"]:hover {
+  background: var(--tinta);
+  border-color: var(--tinta);
+  color: #fff;
+}
+
+.descricao-cenario {
+  color: var(--tinta-suave);
+  font-size: 0.93rem;
+  margin-top: 0.7rem;
+  max-width: 40rem;
+  min-height: 1.4em;
+}
+
+.controles {
+  margin-top: calc(var(--passo) * 3);
+  display: grid;
+  gap: calc(var(--passo) * 2);
+}
+
+.controles fieldset {
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  padding: 0.8rem 1rem 1rem;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.2rem;
+  align-items: end;
+}
+
+.controles legend {
+  font-size: 0.85rem;
+  color: var(--tinta-suave);
+  padding: 0 0.3rem;
+}
+
+.grade-choques {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem 1rem;
+  width: 100%;
+}
+
+.grade-choques input,
+.controles input[type="number"] { width: 100%; min-width: 0; }
+
+.indisponiveis { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.indisponiveis label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  width: auto;
+}
+.indisponiveis input { width: auto; min-width: 0; margin: 0; padding: 0; }
+
+.destaques {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: calc(var(--passo) * 3);
+  padding: calc(var(--passo) * 2.5) 0;
+  border-top: 1px solid var(--linha);
+  border-bottom: 1px solid var(--linha);
+}
+
+.destaques dt { font-size: 0.86rem; color: var(--tinta-suave); }
+
+.destaques dd {
+  margin-top: 0.2rem;
+  font-size: clamp(1.2rem, 2.1vw, 1.6rem);
+  font-feature-settings: "tnum";
+  letter-spacing: -0.02em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.45rem;
+}
+
+.destaques dd span { color: var(--tinta-suave); font-size: 0.7em; }
+.destaques dd .seta { font-size: 0.6em; }
+.destaques strong { font-variation-settings: "wght" 700; }
+.destaques strong.piorou { color: var(--deficit); }
+.destaques .detalhe { font-size: 0.82rem; color: var(--tinta-suave); margin-top: 0.2rem; }
+
+.partes-da-perda { margin-top: calc(var(--passo) * 2.5); }
+
+.barra-perda {
+  height: 0.85rem;
+  border-radius: 3px;
+  background: var(--garantia-clara);
+  display: flex;
+  overflow: hidden;
+}
+
+.barra-perda .parte { height: 100%; transition: width 450ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.parte.imediata { background: var(--imediata); }
+.parte.externa {
+  background: repeating-linear-gradient(135deg, var(--externa) 0 6px, #a777c6 6px 9px);
+}
+
+.cor-imediata { background: var(--imediata); }
+.cor-externa { background: var(--externa); }
+
+.grafico {
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: var(--fonte);
+  overflow: visible;
+}
+
+.grafico .nome { font-size: 13px; fill: var(--tinta); font-variation-settings: "wght" 560; }
+.grafico .valor { font-size: 12px; fill: var(--tinta-suave); font-feature-settings: "tnum"; }
+.grafico .pista { fill: var(--superficie); stroke: var(--linha); }
+.grafico .antes { fill: none; stroke: var(--garantia); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.grafico .depois { fill: var(--garantia); }
+.grafico .depois.externa { fill: var(--externa); }
+.grafico .depois.interna { fill: var(--garantia); }
+.grafico .queda { fill: var(--deficit); font-size: 12px; font-feature-settings: "tnum"; }
+
+/* ------------------------------------------------------------- leitura (escuro) */
+.leitura { overflow-y: auto; }
+
+.texto-leitura {
+  margin-top: calc(var(--passo) * 2);
+  display: grid;
+  gap: 0.8rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  max-width: 34rem;
+  flex: 1;
+}
+
+.texto-leitura strong { color: #fff; font-variation-settings: "wght" 620; }
+.texto-leitura h3 { font-size: 0.95rem; color: #fff; margin: 0.6rem 0 0; font-variation-settings: "wght" 620; }
+.aviso-leitura { color: #ffd59a; }
+
+.premissas { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.9rem; font-size: 0.85rem; }
+.premissas dt { color: var(--texto-bastidor-suave); }
+.premissas dd { margin: 0; font-feature-settings: "tnum"; }
+
+@media (max-width: 48rem) {
+  .destaques { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barra-perda .parte { transition: none; }
+}

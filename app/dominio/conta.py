@@ -10,7 +10,7 @@ Este módulo não conhece banco, HTTP nem relógio: `agora` e `hoje` chegam de f
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -23,11 +23,20 @@ from app.dominio.erros import (
     GarantiaNaoEncontrada,
     PagamentoExcedeDivida,
     SemSaldoParaFaturar,
+    SolicitacaoDivergente,
+    SolicitacaoNoPrazo,
+    TransicaoInvalida,
     ValorInvalido,
     VencimentoInvalido,
 )
 from app.dominio.eventos import EventoDominio, TipoEvento
-from app.dominio.garantia import EstadoGarantia, Garantia
+from app.dominio.garantia import (
+    EstadoGarantia,
+    Garantia,
+    OrigemGarantia,
+    Solicitacao,
+    TipoSolicitacao,
+)
 from app.dominio.ids import novo_id
 from app.dominio.ledger import (
     ContaContabil,
@@ -67,6 +76,16 @@ class EstadoChamada(StrEnum):
 class EstadoCompra(StrEnum):
     APROVADA = "aprovada"
     NEGADA = "negada"
+
+
+# Prazo para o custodiante responder a um pedido de execução quando quem chama não diz
+# outro. Os prazos de verdade vêm do perfil de cada custodiante.
+PRAZO_PADRAO_DE_RESPOSTA = timedelta(hours=24)
+
+EVENTO_DE_FALHA = {
+    TipoSolicitacao.LIBERACAO: TipoEvento.LIBERACAO_FALHOU,
+    TipoSolicitacao.EXECUCAO: TipoEvento.EXECUCAO_FALHOU,
+}
 
 
 class MotivoNegacao(StrEnum):
@@ -253,14 +272,34 @@ class Conta:
         fatura = self.fatura_em_aberto
         return fatura is not None and fatura.dias_em_atraso(hoje) > 0
 
+    @property
+    def em_execucao_externa(self) -> Dinheiro:
+        """Garantia mandada vender a um custodiante externo e ainda sem confirmação."""
+        return Dinheiro.somar(
+            garantia.valor_em_execucao
+            for garantia in self.garantias
+            if garantia.estado is EstadoGarantia.EXECUCAO_SOLICITADA
+            and garantia.valor_em_execucao is not None
+        )
+
     def posicao(self, politica: PoliticaRisco) -> PosicaoDeLimite:
         valor_das_garantias = Dinheiro.zero()
         limite_garantido = Dinheiro.zero()
-        for garantia in self.garantias_ativas:
+        # Garantia em execução externa: não gera limite, mas ainda está penhorada e cobre
+        # a dívida enquanto a venda não é confirmada. Sem isso, pedir a execução abriria
+        # uma chamada de margem contra o próprio cliente que está sendo executado.
+        cobertura_em_execucao = Dinheiro.zero()
+        for garantia in self.garantias:
+            if not garantia.cobre_divida:
+                continue
             valor = self.valor_de_mercado(garantia.id)
             valor_das_garantias += valor
             # {BRL} * LTV {1} -> {BRL}; cada parcela arredonda para baixo.
-            limite_garantido += self._limite_da_garantia(garantia, valor, politica)
+            limite = self._limite_da_garantia(garantia, valor, politica)
+            if garantia.gera_limite:
+                limite_garantido += limite
+            else:
+                cobertura_em_execucao += limite
 
         limite_total = limite_garantido
         if politica.teto_limite_por_cliente is not None:
@@ -277,7 +316,7 @@ class Conta:
             divida_total=divida,
             divida_faturada=self.divida_faturada,
             limite_disponivel=disponivel,
-            deficit=(divida - limite_garantido).nao_negativo(),
+            deficit=(divida - limite_garantido - cobertura_em_execucao).nao_negativo(),
         )
 
     @staticmethod
@@ -298,28 +337,70 @@ class Conta:
         politica: PoliticaRisco,
         agora: datetime,
         hoje: date,
+        *,
+        custodiante_id: str | None = None,
+        prazo_ate: datetime | None = None,
     ) -> Garantia:
-        """Registra o pedido. A garantia nasce `pendente`, sem efeito no limite."""
+        """Registra o pedido, sem efeito no limite.
+
+        Interna: nasce `pendente`. Externa (com `custodiante_id`): nasce `solicitada`,
+        com um pedido de gravame que expira em `prazo_ate`.
+        """
         if not valor.positivo:
             raise ValorInvalido("O valor da garantia precisa ser positivo")
         politica.ltv(tipo_ativo)  # levanta AtivoNaoAceito se o parceiro não aceita o ativo
+        if custodiante_id is None:
+            garantia = Garantia(
+                id=novo_id("gar"),
+                conta_id=self.id,
+                tipo_ativo=tipo_ativo,
+                valor_aplicado=valor,
+                estado=EstadoGarantia.PENDENTE,
+                criada_em=agora,
+                marcada_em=hoje,
+            )
+            self.garantias.append(garantia)
+            return garantia
+
+        if prazo_ate is None:
+            raise ValorInvalido("Pedido a custodiante externo precisa de prazo de resposta")
         garantia = Garantia(
             id=novo_id("gar"),
             conta_id=self.id,
             tipo_ativo=tipo_ativo,
             valor_aplicado=valor,
-            estado=EstadoGarantia.PENDENTE,
+            estado=EstadoGarantia.SOLICITADA,
             criada_em=agora,
             marcada_em=hoje,
+            origem=OrigemGarantia.EXTERNA,
+            custodiante_id=custodiante_id,
+            solicitacao=Solicitacao(
+                id=novo_id("sol"),
+                tipo=TipoSolicitacao.GRAVAME,
+                criada_em=agora,
+                prazo_ate=prazo_ate,
+            ),
         )
         self.garantias.append(garantia)
+        self._emitir(
+            TipoEvento.GRAVAME_SOLICITADO,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(tipo_ativo),
+            valor=valor.texto(),
+            **self._dados_da_solicitacao(garantia),
+        )
         return garantia
 
     def confirmar_bloqueio(
         self, garantia_id: str, politica: PoliticaRisco, agora: datetime, hoje: date
     ) -> Garantia:
         """O custodiante confirmou o gravame: a garantia passa a valer e libera limite."""
-        garantia = self.garantia(garantia_id)
+        return self._efetivar_bloqueio(self.garantia(garantia_id), politica, agora, hoje)
+
+    def _efetivar_bloqueio(
+        self, garantia: Garantia, politica: PoliticaRisco, agora: datetime, hoje: date
+    ) -> Garantia:
         antes = self.posicao(politica)
         garantia.transicionar(EstadoGarantia.BLOQUEADA)
         garantia.marcada_em = hoje
@@ -392,6 +473,16 @@ class Conta:
         garantia = self.garantia(garantia_id)
         garantia.exigir_ativa("liberar")
         antes = self.posicao(politica)
+        self._exigir_que_o_resto_cubra(garantia, antes, politica)
+        garantia.transicionar(EstadoGarantia.LIBERADA)
+        self._lancar_liberacao(garantia, agora)
+        self._reavaliar(politica, agora, hoje)
+        self._emitir_limite_se_mudou(antes, politica, "garantia_liberada", agora)
+        return garantia
+
+    def _exigir_que_o_resto_cubra(
+        self, garantia: Garantia, antes: PosicaoDeLimite, politica: PoliticaRisco
+    ) -> None:
         valor = self.valor_de_mercado(garantia.id)
         limite_sem_ela = antes.limite_garantido - self._limite_da_garantia(
             garantia, valor, politica
@@ -403,7 +494,9 @@ class Conta:
                 divida_total=self.divida_total.texto(),
                 limite_garantido_sem_ela=limite_sem_ela.texto(),
             )
-        garantia.transicionar(EstadoGarantia.LIBERADA)
+
+    def _lancar_liberacao(self, garantia: Garantia, agora: datetime) -> None:
+        valor = self.valor_de_mercado(garantia.id)
         if valor.positivo:
             self._lancar(
                 TipoLancamento.LIBERACAO_GARANTIA,
@@ -420,9 +513,307 @@ class Conta:
             tipo_ativo=str(garantia.tipo_ativo),
             valor_liberado=valor.texto(),
         )
+
+    # ============================================= garantia em custodiante externo
+    def aceitar_solicitacao(
+        self, garantia_id: str, solicitacao_id: str, agora: datetime
+    ) -> Garantia:
+        """O custodiante recebeu o pedido e vai responder. Repetir não muda nada."""
+        garantia = self.garantia(garantia_id)
+        solicitacao = self._solicitacao_em_aberto(garantia, solicitacao_id)
+        if solicitacao.enviada_em is None:
+            solicitacao.enviada_em = agora
+        if garantia.estado is EstadoGarantia.SOLICITADA:
+            garantia.transicionar(EstadoGarantia.GRAVAME_PENDENTE)
+        return garantia
+
+    def confirmar_gravame(
+        self,
+        garantia_id: str,
+        solicitacao_id: str,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+    ) -> Garantia:
+        """O custodiante confirmou o gravame. Só aqui a garantia externa gera limite."""
+        garantia = self.garantia(garantia_id)
+        self._solicitacao_em_aberto(garantia, solicitacao_id, TipoSolicitacao.GRAVAME)
+        if garantia.estado is EstadoGarantia.SOLICITADA:
+            # Confirmou sem que o aceite tivesse chegado: o aceite estava implícito.
+            garantia.transicionar(EstadoGarantia.GRAVAME_PENDENTE)
+        garantia.transicionar(EstadoGarantia.GRAVAME_CONFIRMADO)
+        self._emitir(
+            TipoEvento.GRAVAME_CONFIRMADO,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            valor=garantia.valor_aplicado.texto(),
+            **self._dados_da_solicitacao(garantia),
+        )
+        garantia.solicitacao = None
+        return self._efetivar_bloqueio(garantia, politica, agora, hoje)
+
+    def recusar_solicitacao(
+        self,
+        garantia_id: str,
+        solicitacao_id: str,
+        motivo: str,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+    ) -> Garantia:
+        """O custodiante recusou o pedido. Nada entra no ledger."""
+        garantia = self.garantia(garantia_id)
+        self._solicitacao_em_aberto(garantia, solicitacao_id)
+        return self._encerrar_sem_sucesso(garantia, motivo, "recusada", politica, agora, hoje)
+
+    def expirar_solicitacao(
+        self, garantia_id: str, politica: PoliticaRisco, agora: datetime, hoje: date
+    ) -> Garantia:
+        """Sem resposta no prazo. Também encerra o `pendente` da custódia assíncrona
+        legada, cujo prazo quem chama é que confere."""
+        garantia = self.garantia(garantia_id)
+        if garantia.estado is EstadoGarantia.PENDENTE:
+            garantia.transicionar(EstadoGarantia.GRAVAME_EXPIRADO)
+            self._emitir(
+                TipoEvento.GRAVAME_EXPIRADO,
+                agora,
+                garantia_id=garantia.id,
+                tipo_ativo=str(garantia.tipo_ativo),
+                valor=garantia.valor_aplicado.texto(),
+            )
+            return garantia
+        solicitacao = self._solicitacao_em_aberto(garantia, None)
+        if not solicitacao.vencida(agora):
+            raise SolicitacaoNoPrazo(
+                "O custodiante ainda está no prazo para responder",
+                garantia_id=garantia.id,
+                prazo_ate=solicitacao.prazo_ate.isoformat(),
+            )
+        return self._encerrar_sem_sucesso(
+            garantia, "sem_resposta_no_prazo", "expirada", politica, agora, hoje
+        )
+
+    def solicitar_liberacao(
+        self,
+        garantia_id: str,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+        *,
+        prazo_ate: datetime,
+    ) -> Garantia:
+        """Pede ao custodiante para tirar o gravame. A garantia para de gerar limite já
+        no pedido: se a confirmação demorar, o cliente não compra com um limite que está
+        de saída."""
+        garantia = self.garantia(garantia_id)
+        if not garantia.externa:
+            raise TransicaoInvalida(
+                "Garantia interna é liberada na hora, sem pedido ao custodiante",
+                garantia_id=garantia.id,
+            )
+        garantia.exigir_ativa("liberar")
+        antes = self.posicao(politica)
+        self._exigir_que_o_resto_cubra(garantia, antes, politica)
+        garantia.transicionar(EstadoGarantia.LIBERACAO_PENDENTE)
+        garantia.solicitacao = Solicitacao(
+            id=novo_id("sol"), tipo=TipoSolicitacao.LIBERACAO, criada_em=agora, prazo_ate=prazo_ate
+        )
+        self._emitir(
+            TipoEvento.LIBERACAO_SOLICITADA,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            valor_a_liberar=self.valor_de_mercado(garantia.id).texto(),
+            **self._dados_da_solicitacao(garantia),
+        )
+        self._reavaliar(politica, agora, hoje)
+        self._emitir_limite_se_mudou(antes, politica, "liberacao_solicitada", agora)
+        return garantia
+
+    def confirmar_liberacao(
+        self,
+        garantia_id: str,
+        solicitacao_id: str,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+    ) -> Garantia:
+        garantia = self.garantia(garantia_id)
+        self._solicitacao_em_aberto(garantia, solicitacao_id, TipoSolicitacao.LIBERACAO)
+        antes = self.posicao(politica)
+        garantia.transicionar(EstadoGarantia.LIBERADA)
+        self._emitir(
+            TipoEvento.LIBERACAO_CONFIRMADA,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            valor_liberado=self.valor_de_mercado(garantia.id).texto(),
+            **self._dados_da_solicitacao(garantia),
+        )
+        garantia.solicitacao = None
+        self._lancar_liberacao(garantia, agora)
         self._reavaliar(politica, agora, hoje)
         self._emitir_limite_se_mudou(antes, politica, "garantia_liberada", agora)
         return garantia
+
+    def confirmar_execucao(
+        self,
+        garantia_id: str,
+        solicitacao_id: str,
+        valor_obtido: Dinheiro,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+    ) -> Garantia:
+        """O custodiante vendeu a garantia e repassou o dinheiro.
+
+        Consome da garantia o valor que foi mandado vender e abate da dívida o que de
+        fato entrou, até o tamanho da dívida. Se a venda rendeu mais que isso, o
+        excedente fica com o cliente no próprio custodiante (sai no evento, não no
+        ledger da plataforma, porque não passa por ela).
+        """
+        garantia = self.garantia(garantia_id)
+        self._solicitacao_em_aberto(garantia, solicitacao_id, TipoSolicitacao.EXECUCAO)
+        if valor_obtido.negativo:
+            raise ValorInvalido("O valor obtido na venda não pode ser negativo")
+        assert garantia.valor_em_execucao is not None  # noqa: S101 - invariante do estado
+        antes = self.posicao(politica)
+        vendido = garantia.valor_em_execucao
+        remanescente = self.valor_de_mercado(garantia.id) - vendido
+        aplicado = min(valor_obtido, self.divida_total)
+        na_fatura = min(aplicado, self.divida_faturada)
+        antecipado = aplicado - na_fatura
+        partidas = [
+            debito(ContaContabil.GARANTIAS_A_DEVOLVER, vendido, garantia.id),
+            credito(ContaContabil.GARANTIAS_CUSTODIADAS, vendido, garantia.id),
+        ]
+        if aplicado.positivo:
+            partidas.append(debito(ContaContabil.CAIXA_RECEBIMENTOS, aplicado))
+        if na_fatura.positivo:
+            partidas.append(credito(ContaContabil.RECEBIVEIS_FATURADOS, na_fatura))
+        if antecipado.positivo:
+            partidas.append(credito(ContaContabil.RECEBIVEIS_A_FATURAR, antecipado))
+        fatura = self.fatura_em_aberto
+        self._lancar(
+            TipoLancamento.EXECUCAO_GARANTIA,
+            garantia.id,
+            "Execução da garantia confirmada pelo custodiante",
+            agora,
+            *partidas,
+        )
+        garantia.transicionar(
+            EstadoGarantia.EXECUTADA if remanescente.nulo else EstadoGarantia.PARCIALMENTE_EXECUTADA
+        )
+        self._emitir(
+            TipoEvento.EXECUCAO_CONFIRMADA,
+            agora,
+            garantia_id=garantia.id,
+            valor_executado=vendido.texto(),
+            valor_obtido=valor_obtido.texto(),
+            valor_aplicado_na_divida=aplicado.texto(),
+            valor_devolvido_ao_cliente=(valor_obtido - aplicado).texto(),
+            valor_remanescente=remanescente.texto(),
+            **self._dados_da_solicitacao(garantia),
+        )
+        garantia.solicitacao = None
+        garantia.valor_em_execucao = None
+        self._emitir(
+            TipoEvento.GARANTIA_EXECUTADA,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            valor_executado=vendido.texto(),
+            valor_remanescente=remanescente.texto(),
+            estado=str(garantia.estado),
+            fatura_id=fatura.id if fatura else None,
+            dias_em_atraso=fatura.dias_em_atraso(hoje) if fatura else 0,
+            saldo_da_fatura_apos_execucao=self.divida_faturada.texto(),
+        )
+        if fatura is not None and self.divida_faturada.nulo:
+            fatura.estado = EstadoFatura.LIQUIDADA_POR_EXECUCAO
+            fatura.encerrada_em = agora
+        self._reavaliar(politica, agora, hoje)
+        self._emitir_limite_se_mudou(antes, politica, "execucao_confirmada", agora)
+        return garantia
+
+    def _solicitacao_em_aberto(
+        self,
+        garantia: Garantia,
+        solicitacao_id: str | None,
+        tipo: TipoSolicitacao | None = None,
+    ) -> Solicitacao:
+        solicitacao = garantia.solicitacao
+        if (
+            solicitacao is None
+            or (solicitacao_id is not None and solicitacao.id != solicitacao_id)
+            or (tipo is not None and solicitacao.tipo is not tipo)
+        ):
+            raise SolicitacaoDivergente(
+                "Não há pedido em aberto que corresponda a esta resposta",
+                garantia_id=garantia.id,
+                solicitacao_id=solicitacao_id,
+                estado_atual=str(garantia.estado),
+            )
+        return solicitacao
+
+    def _encerrar_sem_sucesso(
+        self,
+        garantia: Garantia,
+        motivo: str,
+        situacao: str,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+    ) -> Garantia:
+        """Recusa ou falta de resposta. Nenhum lançamento: nada saiu do lugar."""
+        solicitacao = garantia.solicitacao
+        assert solicitacao is not None  # noqa: S101 - conferido por quem chama
+        antes = self.posicao(politica)
+        dados = self._dados_da_solicitacao(garantia)
+        garantia.motivo = motivo
+        garantia.solicitacao = None
+        if solicitacao.tipo is TipoSolicitacao.GRAVAME:
+            recusada = situacao == "recusada"
+            garantia.transicionar(
+                EstadoGarantia.GRAVAME_RECUSADO if recusada else EstadoGarantia.GRAVAME_EXPIRADO
+            )
+            self._emitir(
+                TipoEvento.GRAVAME_RECUSADO if recusada else TipoEvento.GRAVAME_EXPIRADO,
+                agora,
+                garantia_id=garantia.id,
+                tipo_ativo=str(garantia.tipo_ativo),
+                valor=garantia.valor_aplicado.texto(),
+                motivo=motivo,
+                **dados,
+            )
+            return garantia
+        # Liberação ou execução que não aconteceu: a garantia continua bloqueada.
+        nao_vendido = garantia.valor_em_execucao
+        garantia.valor_em_execucao = None
+        garantia.transicionar(EstadoGarantia.BLOQUEADA)
+        self._emitir(
+            EVENTO_DE_FALHA[solicitacao.tipo],
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            situacao=situacao,
+            motivo=motivo,
+            **({"valor_nao_executado": nao_vendido.texto()} if nao_vendido else {}),
+            **dados,
+        )
+        self._reavaliar(politica, agora, hoje)
+        self._emitir_limite_se_mudou(antes, politica, f"{solicitacao.tipo}_sem_sucesso", agora)
+        return garantia
+
+    @staticmethod
+    def _dados_da_solicitacao(garantia: Garantia) -> dict[str, object]:
+        solicitacao = garantia.solicitacao
+        return {
+            "custodiante_id": garantia.custodiante_id,
+            "solicitacao_id": solicitacao.id if solicitacao else None,
+            "prazo_ate": solicitacao.prazo_ate.isoformat() if solicitacao else None,
+        }
 
     # =============================================================== compras
     def autorizar_compra(
@@ -582,18 +973,32 @@ class Conta:
         return pagamento
 
     # ========================================================= virada do dia
-    def virar_o_dia(self, politica: PoliticaRisco, agora: datetime, hoje: date) -> None:
+    def virar_o_dia(
+        self,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+        prazos_dos_custodiantes: Mapping[str, timedelta] | None = None,
+    ) -> None:
         """Rotina diária da conta: atraso, execução e prazo da chamada de margem.
 
         Pode rodar mais de uma vez no mesmo dia sem repetir efeito.
+        `prazos_dos_custodiantes` diz quanto cada custodiante externo tem para confirmar
+        uma execução; quem não estiver ali recebe `PRAZO_PADRAO_DE_RESPOSTA`.
         """
         antes = self.posicao(politica)
-        self._tratar_atraso(politica, agora, hoje)
+        self._tratar_atraso(politica, agora, hoje, prazos_dos_custodiantes or {})
         self._tratar_prazo_da_chamada(politica, agora, hoje)
         self._reavaliar(politica, agora, hoje)
         self._emitir_limite_se_mudou(antes, politica, "virada_do_dia", agora)
 
-    def _tratar_atraso(self, politica: PoliticaRisco, agora: datetime, hoje: date) -> None:
+    def _tratar_atraso(
+        self,
+        politica: PoliticaRisco,
+        agora: datetime,
+        hoje: date,
+        prazos: Mapping[str, timedelta],
+    ) -> None:
         fatura = self.fatura_em_aberto
         if fatura is None:
             return
@@ -614,17 +1019,26 @@ class Conta:
                 ).isoformat(),
             )
         if dias >= politica.dias_para_execucao:
-            self._executar_garantias(fatura, dias, politica, agora)
+            self._executar_garantias(fatura, dias, politica, agora, prazos)
 
     def _executar_garantias(
-        self, fatura: Fatura, dias_em_atraso: int, politica: PoliticaRisco, agora: datetime
+        self,
+        fatura: Fatura,
+        dias_em_atraso: int,
+        politica: PoliticaRisco,
+        agora: datetime,
+        prazos: Mapping[str, timedelta],
     ) -> None:
         """Vende garantia para quitar a fatura em atraso, e só o necessário.
 
         Começa pelos ativos mais líquidos (ordem da política). O que sobra de uma
         garantia vendida em parte continua bloqueado.
+
+        Garantia interna é vendida na hora. Garantia externa vira pedido ao custodiante
+        e só abate a dívida quando ele confirmar; por isso o que já está pedido sai do
+        devido, e nunca se manda vender mais do que a fatura.
         """
-        devido = self.divida_faturada
+        devido = (self.divida_faturada - self.em_execucao_externa).nao_negativo()
         fila = sorted(
             self.garantias_ativas,
             key=lambda g: (politica.prioridade_de_execucao(g.tipo_ativo), g.criada_em, g.id),
@@ -637,6 +1051,12 @@ class Conta:
                 continue
             vendido = min(valor, devido)
             remanescente = valor - vendido
+            if garantia.externa:
+                assert garantia.custodiante_id is not None  # noqa: S101 - garantia externa
+                prazo = prazos.get(garantia.custodiante_id, PRAZO_PADRAO_DE_RESPOSTA)
+                self._pedir_execucao(garantia, vendido, fatura, dias_em_atraso, agora, prazo)
+                devido -= vendido
+                continue
             self._lancar(
                 TipoLancamento.EXECUCAO_GARANTIA,
                 garantia.id,
@@ -665,12 +1085,40 @@ class Conta:
                 dias_em_atraso=dias_em_atraso,
                 saldo_da_fatura_apos_execucao=devido.texto(),
             )
-        if devido.nulo:
+        if self.divida_faturada.nulo:
             fatura.estado = EstadoFatura.LIQUIDADA_POR_EXECUCAO
             fatura.encerrada_em = agora
-        elif not self.garantias_com_valor():
+        elif devido.positivo and not self.garantias_com_valor():
             # A garantia acabou e ainda há fatura vencida: dívida sem cobertura.
             self._bloquear(MotivoBloqueio.DIVIDA_DESCOBERTA)
+
+    def _pedir_execucao(
+        self,
+        garantia: Garantia,
+        valor: Dinheiro,
+        fatura: Fatura,
+        dias_em_atraso: int,
+        agora: datetime,
+        prazo: timedelta,
+    ) -> None:
+        garantia.transicionar(EstadoGarantia.EXECUCAO_SOLICITADA)
+        garantia.valor_em_execucao = valor
+        garantia.solicitacao = Solicitacao(
+            id=novo_id("sol"),
+            tipo=TipoSolicitacao.EXECUCAO,
+            criada_em=agora,
+            prazo_ate=agora + prazo,
+        )
+        self._emitir(
+            TipoEvento.EXECUCAO_SOLICITADA,
+            agora,
+            garantia_id=garantia.id,
+            tipo_ativo=str(garantia.tipo_ativo),
+            valor_a_executar=valor.texto(),
+            fatura_id=fatura.id,
+            dias_em_atraso=dias_em_atraso,
+            **self._dados_da_solicitacao(garantia),
+        )
 
     def garantias_com_valor(self) -> list[Garantia]:
         return [g for g in self.garantias_ativas if self.valor_de_mercado(g.id).positivo]

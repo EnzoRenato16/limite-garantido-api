@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from app.dominio.conta import Conta
@@ -70,3 +70,29 @@ def bloquear(
     pol = pol or politica()
     garantia = conta.registrar_garantia(tipo, reais(valor), pol, AGORA, hoje)
     return conta.confirmar_bloqueio(garantia.id, pol, AGORA, hoje)
+
+
+CUSTODIANTE = "custodiante_agil"
+PRAZO = timedelta(hours=24)
+
+
+def registrar_externa(
+    conta: Conta, tipo: TipoAtivo, valor: str, pol: PoliticaRisco | None = None
+) -> Garantia:
+    """Pede o gravame num custodiante externo. A garantia nasce `solicitada`."""
+    pol = pol or politica()
+    return conta.registrar_garantia(
+        tipo, reais(valor), pol, AGORA, HOJE, custodiante_id=CUSTODIANTE, prazo_ate=AGORA + PRAZO
+    )
+
+
+def bloquear_externa(
+    conta: Conta, tipo: TipoAtivo, valor: str, pol: PoliticaRisco | None = None
+) -> Garantia:
+    """Gravame externo pedido, aceito e confirmado: a garantia termina `bloqueada`."""
+    pol = pol or politica()
+    garantia = registrar_externa(conta, tipo, valor, pol)
+    assert garantia.solicitacao is not None
+    solicitacao_id = garantia.solicitacao.id
+    conta.aceitar_solicitacao(garantia.id, solicitacao_id, AGORA)
+    return conta.confirmar_gravame(garantia.id, solicitacao_id, pol, AGORA, HOJE)

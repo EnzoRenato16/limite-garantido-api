@@ -39,6 +39,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
     "cursor_invalido": (400, "Cursor inválido", "O cursor de paginação não foi reconhecido."),
     # 401 / 403
     "nao_autenticado": (401, "Não autenticado", "API key ausente, malformada ou incorreta."),
+    "assinatura_invalida": (
+        401,
+        "Assinatura inválida",
+        "O callback não pôde ser autenticado. Confira o segredo, o relógio e o corpo enviado.",
+    ),
     "parceiro_inativo": (
         403,
         "Parceiro inativo",
@@ -84,6 +89,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Entrega não encontrada",
         "A entrega de webhook não existe ou pertence a outro parceiro.",
     ),
+    "solicitacao_nao_encontrada": (
+        404,
+        "Pedido não encontrado",
+        "Não há pedido com este id para este custodiante.",
+    ),
     "metodo_nao_permitido": (
         405,
         "Método não permitido",
@@ -120,6 +130,21 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         409,
         "Nada para o tempo agir",
         "A conta não tem fatura fechada nem chamada de margem aberta.",
+    ),
+    "solicitacao_divergente": (
+        409,
+        "Sem pedido em aberto",
+        "A garantia não tem pedido em aberto no custodiante que corresponda a esta ação.",
+    ),
+    "solicitacao_no_prazo": (
+        409,
+        "Pedido ainda no prazo",
+        "O custodiante ainda está dentro do prazo para responder a este pedido.",
+    ),
+    "resposta_duplicada": (
+        409,
+        "Resposta duplicada",
+        "Esta resposta do custodiante já foi recebida e aplicada.",
     ),
     "webhook_nao_configurado": (
         409,
@@ -158,6 +183,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         422,
         "Pagamento maior que a dívida",
         "O valor pago é maior que o saldo devedor da conta.",
+    ),
+    "custodiante_nao_configurado": (
+        422,
+        "Custodiante não configurado",
+        "O custodiante informado não existe. Veja a lista em GET /v1/custodiantes.",
     ),
     "url_de_webhook_invalida": (
         422,

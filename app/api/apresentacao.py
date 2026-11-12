@@ -3,15 +3,27 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 
 from app.api import esquemas
 from app.dominio.conta import ChamadaDeMargem, Compra, Conta, Fatura, Pagamento
 from app.dominio.conta import PosicaoDeLimite as PosicaoDoDominio
 from app.dominio.dinheiro import Dinheiro
-from app.dominio.garantia import ESTADOS_ATIVOS, EstadoGarantia, Garantia
+from app.dominio.garantia import (
+    ESTADOS_AGUARDANDO_CUSTODIANTE,
+    ESTADOS_ATIVOS,
+    EstadoGarantia,
+    Garantia,
+)
 from app.dominio.parceiro import Parceiro
 from app.dominio.politica import PoliticaRisco, TipoAtivo
-from app.dominio.stress import ResultadoDoStress
+from app.dominio.stress import (
+    FatiaDeConcentracao,
+    FotoDaCarteira,
+    PremissasDaGarantiaExterna,
+    ResultadoDoPainel,
+    ResultadoDoStress,
+)
 from app.infra.banco.modelos import (
     CompraModelo,
     EntregaDeWebhookModelo,
@@ -20,7 +32,9 @@ from app.infra.banco.modelos import (
     GarantiaModelo,
     LancamentoModelo,
     PartidaModelo,
+    SolicitacaoDeCustodiaModelo,
 )
+from app.infra.carteira_sintetica import Cenario
 
 _ESTADOS_ATIVOS = {estado.value for estado in ESTADOS_ATIVOS}
 
@@ -79,6 +93,11 @@ def _garantia(
     marcada_em: date,
     criada_em: datetime,
     politica: PoliticaRisco,
+    origem: str = "interna",
+    custodiante_id: str | None = None,
+    solicitacao: esquemas.SolicitacaoResposta | None = None,
+    valor_em_execucao: Dinheiro | None = None,
+    motivo: str | None = None,
 ) -> esquemas.GarantiaResposta:
     ltv = politica.ltv_por_ativo.get(tipo_ativo)
     gera_limite = ltv is not None and estado in _ESTADOS_ATIVOS
@@ -97,6 +116,11 @@ def _garantia(
         ).texto(),
         marcada_em=marcada_em,
         criada_em=criada_em,
+        origem=origem,
+        custodiante_id=custodiante_id,
+        solicitacao=solicitacao,
+        valor_em_execucao=None if valor_em_execucao is None else valor_em_execucao.texto(),
+        motivo=motivo,
     )
 
 
@@ -113,11 +137,27 @@ def garantia(
         marcada_em=valor.marcada_em,
         criada_em=valor.criada_em,
         politica=politica,
+        origem=valor.origem.value,
+        custodiante_id=valor.custodiante_id,
+        solicitacao=None
+        if valor.solicitacao is None
+        else esquemas.SolicitacaoResposta(
+            id=valor.solicitacao.id,
+            tipo=valor.solicitacao.tipo.value,
+            criada_em=valor.solicitacao.criada_em,
+            prazo_ate=valor.solicitacao.prazo_ate,
+            enviada_em=valor.solicitacao.enviada_em,
+        ),
+        valor_em_execucao=valor.valor_em_execucao,
+        motivo=valor.motivo,
     )
 
 
 def garantia_do_modelo(
-    modelo: GarantiaModelo, valor_de_mercado: Dinheiro, politica: PoliticaRisco
+    modelo: GarantiaModelo,
+    valor_de_mercado: Dinheiro,
+    politica: PoliticaRisco,
+    pedido: SolicitacaoDeCustodiaModelo | None = None,
 ) -> esquemas.GarantiaResposta:
     return _garantia(
         id=modelo.id,
@@ -129,11 +169,28 @@ def garantia_do_modelo(
         marcada_em=modelo.marcada_em,
         criada_em=modelo.criada_em,
         politica=politica,
+        origem=modelo.origem,
+        custodiante_id=modelo.custodiante_id,
+        solicitacao=None
+        if pedido is None
+        else esquemas.SolicitacaoResposta(
+            id=pedido.id,
+            tipo=pedido.tipo,
+            criada_em=pedido.criada_em,
+            prazo_ate=pedido.prazo_ate,
+            enviada_em=modelo.solicitacao_enviada_em,
+        ),
+        valor_em_execucao=modelo.valor_em_execucao,
+        motivo=modelo.motivo,
     )
 
 
+_ESPERANDO_CUSTODIA = {e.value for e in ESTADOS_AGUARDANDO_CUSTODIANTE | {EstadoGarantia.PENDENTE}}
+
+
 def garantia_pendente(estado: str) -> bool:
-    return estado == EstadoGarantia.PENDENTE.value
+    """Pedido aceito e ainda sem resposta da custódia: a API responde 202."""
+    return estado in _ESPERANDO_CUSTODIA
 
 
 def compra(valor: Compra) -> esquemas.CompraResposta:
@@ -276,4 +333,106 @@ def stress(resultado: ResultadoDoStress, *, detalhar: bool) -> esquemas.Resultad
         exposicao_descoberta_total=resultado.exposicao_descoberta_total.texto(),
         perda_esperada=resultado.perda_esperada.texto(),
         contas=contas,
+    )
+
+
+# ------------------------------------------------------------- painel de risco
+AVISO_DA_CARTEIRA_SINTETICA = (
+    "Carteira sintética, gerada em memória a partir da semente. Os parâmetros e as "
+    "premissas são ilustrativos: não são dados de mercado nem de nenhum parceiro."
+)
+
+
+def _percentual(parte: Dinheiro, total: Dinheiro) -> str:
+    """Percentual com duas casas, truncado. Não é dinheiro: é proporção para exibir."""
+    if not total.positivo:
+        return "0.00"
+    centesimos = parte.centavos * 10_000 // total.centavos
+    return f"{centesimos // 100}.{centesimos % 100:02d}"
+
+
+def _foto(valor: FotoDaCarteira) -> esquemas.FotoDaCarteiraResposta:
+    return esquemas.FotoDaCarteiraResposta(
+        contas_em_chamada=valor.contas_em_chamada,
+        valor_das_garantias=valor.valor_das_garantias.texto(),
+        limite_total=valor.limite_total.texto(),
+        limite_utilizado=valor.limite_utilizado.texto(),
+        limite_disponivel=valor.limite_disponivel.texto(),
+        utilizacao_percentual=_percentual(valor.limite_utilizado, valor.limite_total),
+    )
+
+
+def _fatias(
+    fatias: tuple[FatiaDeConcentracao, ...], total: Dinheiro
+) -> list[esquemas.FatiaDeConcentracaoResposta]:
+    return [
+        esquemas.FatiaDeConcentracaoResposta(
+            chave=fatia.chave,
+            valor_antes=fatia.valor_antes.texto(),
+            valor_depois=fatia.valor_depois.texto(),
+            percentual_antes=_percentual(fatia.valor_antes, total),
+            garantias=fatia.garantias,
+            contas=fatia.contas,
+        )
+        for fatia in fatias
+    ]
+
+
+def painel(
+    resultado: ResultadoDoPainel,
+    *,
+    tamanho: int,
+    semente: int,
+    cenario: str | None,
+    choques: dict[TipoAtivo, Decimal],
+    taxa_sem_reforco: Decimal,
+    premissas: PremissasDaGarantiaExterna,
+) -> esquemas.ResultadoDoPainel:
+    perda = resultado.perda
+    total = resultado.antes.valor_das_garantias
+    return esquemas.ResultadoDoPainel(
+        carteira=esquemas.CarteiraSinteticaResposta(
+            sintetica=True, tamanho=tamanho, semente=semente, aviso=AVISO_DA_CARTEIRA_SINTETICA
+        ),
+        cenario=cenario,
+        premissas=esquemas.PremissasResposta(
+            choques={tipo: _decimal(valor) for tipo, valor in choques.items()},
+            taxa_sem_reforco=_decimal(taxa_sem_reforco),
+            custodiantes_indisponiveis=sorted(premissas.custodiantes_indisponiveis),
+            dias_extra_de_execucao=premissas.dias_extra_de_execucao,
+            desconto_diario_por_ativo={
+                tipo: _decimal(valor) for tipo, valor in premissas.desconto_diario_por_ativo.items()
+            },
+        ),
+        antes=_foto(resultado.antes),
+        depois=_foto(resultado.depois),
+        perda=esquemas.PerdaDoPainelResposta(
+            exposicao=perda.exposicao.texto(),
+            descoberta_com_execucao_imediata=perda.descoberta_com_execucao_imediata.texto(),
+            descoberta_com_premissas_externas=perda.descoberta_com_premissas_externas.texto(),
+            perda_com_execucao_imediata=perda.perda_com_execucao_imediata.texto(),
+            perda_adicional_externa=perda.perda_adicional_externa.texto(),
+            perda_esperada_total=perda.perda_esperada_total.texto(),
+        ),
+        concentracao_por_ativo=_fatias(resultado.por_ativo, total),
+        concentracao_por_custodiante=_fatias(resultado.por_custodiante, total),
+    )
+
+
+def _decimal(valor: Decimal) -> str:
+    """Decimal como texto, sem notação científica e com pelo menos duas casas."""
+    texto = format(valor.normalize(), "f")
+    inteiro, _, casas = texto.partition(".")
+    return f"{inteiro}.{casas.ljust(2, '0')}"
+
+
+def cenario(valor: Cenario) -> esquemas.CenarioDoPainel:
+    return esquemas.CenarioDoPainel(
+        id=valor.id,
+        nome=valor.nome,
+        descricao=valor.descricao,
+        choques={tipo: _decimal(choque) for tipo, choque in valor.choques.items()},
+        taxa_sem_reforco=_decimal(valor.taxa_sem_reforco),
+        dias_extra_de_execucao=valor.premissas.dias_extra_de_execucao,
+        custodiantes_indisponiveis=sorted(valor.premissas.custodiantes_indisponiveis),
     )
