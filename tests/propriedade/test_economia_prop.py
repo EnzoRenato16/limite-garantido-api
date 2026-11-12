@@ -4,6 +4,9 @@
 - Plataforma + parceiro = arranjo.
 - Mais perda, mais CDI ou mais spread nunca aumentam a margem da plataforma.
 - Mais intercâmbio nunca diminui a receita da plataforma nem a do parceiro.
+
+Nas propriedades de monotonia o aumento é estritamente positivo e a alavanca mexe de
+verdade na conta: a fonte fica ligada e o saldo financiado é positivo.
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import Decimal
 
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from app.dominio.dinheiro import Dinheiro
@@ -22,11 +25,10 @@ from app.dominio.economia.calculo import (
     TaxasDePerda,
     calcular_mes,
 )
-from app.dominio.economia.premissas import Premissas
+from app.dominio.economia.premissas import FonteDeReceita, Premissas
 from app.dominio.taxas import Fracao, FrequenciaAoAno, TaxaAoAno
 from tests.propriedade.estrategias_economia import (
     CASAS,
-    fracoes,
     premissas_validas,
     taxas_de_perda,
 )
@@ -34,13 +36,17 @@ from tests.propriedade.estrategias_economia import (
 PROPRIEDADE = settings(max_examples=200, deadline=None)
 
 aumentos = st.decimals(
-    min_value=Decimal(0),
+    min_value=Decimal("0.0001"),
     max_value=Decimal("0.5"),
     places=CASAS,
     allow_nan=False,
     allow_infinity=False,
 )
 DO_ARRANJO = {Parte.plataforma, Parte.parceiro}
+
+
+def _tem_saldo_financiado(p: Premissas, perdas: TaxasDePerda) -> bool:
+    return calcular_mes(p, perdas).perda.saldo_financiado.positivo
 
 
 def _somar(r: ResultadoDoMes, condicao: Callable[[Linha], bool]) -> Dinheiro:
@@ -83,11 +89,11 @@ def test_plataforma_mais_parceiro_e_o_arranjo(p: Premissas, perdas: TaxasDePerda
     taxas_de_perda(),
     st.sampled_from(["taxa_base", "frequencia", "condicional_interna", "condicional_externa"]),
     aumentos,
-    fracoes,
 )
 def test_mais_perda_nunca_aumenta_a_margem_da_plataforma(
-    p: Premissas, perdas: TaxasDePerda, alavanca: str, aumento: Decimal, alvo: Decimal
+    p: Premissas, perdas: TaxasDePerda, alavanca: str, aumento: Decimal
 ) -> None:
+    assume(_tem_saldo_financiado(p, perdas))
     mais_p, mais_perdas = p, perdas
     match alavanca:
         case "taxa_base":
@@ -101,12 +107,18 @@ def test_mais_perda_nunca_aumenta_a_margem_da_plataforma(
                 )
             )
         case "condicional_interna":
-            maior = max(perdas.condicional_interna.valor, alvo)
+            atual = perdas.condicional_interna.valor
+            assume(atual < 1 and p.fracao_interna.valor > 0)
+            assume(p.frequencia_do_cenario_ao_ano.valor > 0)
+            maior = min(atual + aumento, Decimal(1))
             mais_perdas = TaxasDePerda(
                 perdas.cenario_id, perdas.nome, Fracao(maior), perdas.condicional_externa
             )
         case _:
-            maior = max(perdas.condicional_externa.valor, alvo)
+            atual = perdas.condicional_externa.valor
+            assume(atual < 1 and p.fracao_externa.valor > 0)
+            assume(p.frequencia_do_cenario_ao_ano.valor > 0)
+            maior = min(atual + aumento, Decimal(1))
             mais_perdas = TaxasDePerda(
                 perdas.cenario_id, perdas.nome, perdas.condicional_interna, Fracao(maior)
             )
@@ -127,6 +139,7 @@ def test_mais_perda_nunca_aumenta_a_margem_da_plataforma(
 def test_mais_cdi_ou_spread_nunca_aumenta_a_margem_da_plataforma(
     p: Premissas, perdas: TaxasDePerda, campo: str, aumento: Decimal
 ) -> None:
+    assume(_tem_saldo_financiado(p, perdas))
     atual: TaxaAoAno = getattr(p, campo)
     mais = p.com(**{campo: TaxaAoAno(atual.valor + aumento)})
     assert calcular_mes(mais, perdas).plataforma.margem <= calcular_mes(p, perdas).plataforma.margem
@@ -137,7 +150,9 @@ def test_mais_cdi_ou_spread_nunca_aumenta_a_margem_da_plataforma(
 def test_mais_intercambio_nunca_diminui_a_receita_da_plataforma_nem_a_do_parceiro(
     p: Premissas, perdas: TaxasDePerda, aumento: Decimal
 ) -> None:
+    p = p.com(receitas_ligadas=p.receitas_ligadas | {FonteDeReceita.intercambio})
     maior = min(p.taxa_de_intercambio.valor + aumento, Decimal(1))
+    assert maior > p.taxa_de_intercambio.valor
     antes = calcular_mes(p, perdas)
     depois = calcular_mes(p.com(taxa_de_intercambio=Fracao(maior)), perdas)
     assert depois.plataforma.receita >= antes.plataforma.receita

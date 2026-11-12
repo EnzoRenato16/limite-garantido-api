@@ -22,12 +22,12 @@ from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.premissas import FonteDeReceita, NomeDaPremissa, Premissas
 from app.dominio.erros import ValorInvalido
 from app.dominio.taxas import (
+    DIAS_CORRIDOS_NO_ANO,
     MESES_NO_ANO,
     Fracao,
     FrequenciaAoAno,
     TaxaAoAno,
     TaxaAoMes,
-    dias_para_meses,
 )
 
 N = NomeDaPremissa
@@ -190,7 +190,11 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
     n = p.meses_no_rotativo  # {mês}
 
     # Saldo financiado médio: G × dias ÷ (365/12) + R × n. {centavos}
-    saldo = g * dias_para_meses(p.dias_financiados) + rolado * n
+    # A divisão vem por último: 12/365 é dízima, e dividir primeiro deixa um fio acima ou
+    # abaixo do inteiro quando a conta é exata, o que move o arredondamento em 1 centavo.
+    # {centavos/mês} × {dia} × {mês/ano} ÷ {dia/ano} -> {centavos}
+    dias = g * p.dias_financiados * MESES_NO_ANO / DIAS_CORRIDOS_NO_ANO
+    saldo = dias + rolado * n
     saldo_arredondado = _para_cima(saldo)
     premissas_do_saldo: tuple[NomeDaPremissa, ...] = (N.gasto_mensal, N.dias_financiados)
     if tem_rotativo:

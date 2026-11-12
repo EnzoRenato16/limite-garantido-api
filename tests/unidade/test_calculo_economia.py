@@ -17,7 +17,13 @@ from app.dominio.economia.calculo import (
     calcular_mes,
 )
 from app.dominio.economia.premissas import FonteDeReceita, NomeDaPremissa, Premissas
-from app.dominio.taxas import Fracao, TaxaAoAno, TaxaAoMes, dias_para_meses
+from app.dominio.taxas import (
+    DIAS_CORRIDOS_NO_ANO,
+    MESES_NO_ANO,
+    Fracao,
+    TaxaAoAno,
+    TaxaAoMes,
+)
 from tests.economia_base import premissas_base
 
 N = NomeDaPremissa
@@ -63,14 +69,15 @@ def _para_cima(exato: Decimal) -> int:
 
 
 def _saldo_exato(p: Premissas) -> Decimal:
-    """G × dias ÷ (365/12) + R × n, em centavos."""
+    """G × dias × 12 ÷ 365 + R × n, em centavos (a divisão por último)."""
     with localcontext() as contexto:
         contexto.prec = 34
         g = Decimal(p.gasto_mensal.centavos)
         r = g * p.fracao_de_clientes_no_rotativo.valor * p.fracao_da_fatura_rolada.valor
         if FonteDeReceita.juros_rotativo not in p.receitas_ligadas:
             r = Decimal(0)
-        return g * dias_para_meses(p.dias_financiados) + r * p.meses_no_rotativo
+        dias = g * p.dias_financiados * MESES_NO_ANO / DIAS_CORRIDOS_NO_ANO
+        return dias + r * p.meses_no_rotativo
 
 
 # ------------------------------------------------------------------ exemplos
@@ -236,6 +243,42 @@ def test_saldo_financiado_soma_dias_e_rotativo() -> None:
     r = calcular_mes(premissas_base(), PERDAS)
     # R$ 493,15068... + R$ 22,50 × 2 = R$ 538,15068... -> R$ 538,16.
     assert r.perda.saldo_financiado == Dinheiro(53816)
+
+
+@pytest.mark.parametrize(("dias", "centavos"), [(6, 7200), (4, 4800), (10, 12000)])
+def test_saldo_financiado_exato_quando_a_conta_da_inteiro(dias: int, centavos: int) -> None:
+    # R$ 365,00 × dias × 12 ÷ 365 dá um número inteiro de centavos. Dividindo primeiro,
+    # 12/365 vira dízima e o produto cai um fio acima ou abaixo do inteiro, o que move o
+    # arredondamento em 1 centavo. Sem rotativo, o saldo é só esse.
+    p = premissas_base().com(
+        gasto_mensal=Dinheiro(36500),
+        dias_financiados=Decimal(dias),
+        fracao_de_clientes_no_rotativo=Fracao(Decimal(0)),
+    )
+    r = calcular_mes(p, PERDAS)
+
+    assert r.perda.saldo_financiado == Dinheiro(centavos)
+    saldo = Decimal(centavos)
+    with localcontext() as contexto:
+        contexto.prec = 34
+        fidc = p.cdi_ao_ano.composta_com(p.spread_fidc_ao_ano).ao_mes().valor
+        balanco = p.cdi_ao_ano.composta_com(p.spread_balanco_ao_ano).ao_mes().valor
+        taxa_fidc = p.taxa_fidc_ao_ano.ao_mes().valor
+        assert _linha(r, "funding_fidc").valor == Dinheiro(
+            _para_cima(saldo * Decimal("0.60") * fidc)
+        )
+        assert _linha(r, "funding_balanco").valor == Dinheiro(
+            _para_cima(saldo * Decimal("0.40") * balanco)
+        )
+        assert _linha(r, "taxa_fidc").valor == Dinheiro(
+            _para_baixo(saldo * Decimal("0.60") * taxa_fidc)
+        )
+        assert _linha(r, "perda_esperada").valor == Dinheiro(
+            _para_cima(saldo * r.perda.taxa_ao_mes.valor)
+        )
+    texto = f"saldo financiado de {Dinheiro(centavos).formatado()}"
+    for id_ in ("funding_fidc", "funding_balanco", "perda_esperada", "taxa_fidc"):
+        assert texto in _linha(r, id_).formula
 
 
 def test_receita_sobre_investimento_so_na_interna() -> None:
