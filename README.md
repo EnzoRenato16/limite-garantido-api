@@ -112,7 +112,8 @@ docker compose up --build
 ```
 
 Depois abra <http://localhost:8000/demo> (a demonstração),
-<http://localhost:8000/risco> (o painel de risco) ou
+<http://localhost:8000/risco> (o painel de risco),
+<http://localhost:8000/negocio> (o modelo econômico) ou
 <http://localhost:8000/docs> (a documentação da API).
 
 **Sem Docker**, com [uv](https://docs.astral.sh/uv/):
@@ -120,7 +121,7 @@ Depois abra <http://localhost:8000/demo> (a demonstração),
 ```bash
 uv sync                  # instala as dependências
 uv run python demo.py    # a história inteira no terminal, sem configurar nada
-./scripts/dev.sh         # sobe API e worker em SQLite; abra /demo e /risco
+./scripts/dev.sh         # sobe API e worker em SQLite; abra /demo, /risco e /negocio
 ```
 
 O `demo.py` roda a API de verdade dentro do processo e conta a história de um cliente:
@@ -157,7 +158,30 @@ O `demo.py` roda a API de verdade dentro do processo e conta a história de um c
 | **Risco** | Marcação a mercado com provedor de preços trocável, chamada de margem com prazo, tetos por cliente e por parceiro, simulador de stress e o painel `/risco` sobre carteira sintética. |
 | **Custódia externa (simulada)** | Gravame assíncrono que pode ser recusado ou ficar sem resposta, callback assinado, consulta de reserva e prazo, idempotentes por evento do custodiante. |
 | **Operação** | Logs JSON com `request_id` e `parceiro_id`, `/health`, `/metrics` para Prometheus. |
-| **Demonstração** | `demo.py` no terminal, a página `/demo` (fases 1 e 2) e a `/risco`, testadas de ponta a ponta com Playwright. |
+| **Modelo econômico** | A página `/negocio` e a API `/v1/negocio`: margem da plataforma e do parceiro por cliente, ponto de equilíbrio, interna x externa e tornado, com premissas ilustrativas. |
+| **Demonstração** | `demo.py` no terminal, a página `/demo` (fases 1 e 2), a `/risco` e a `/negocio`, testadas de ponta a ponta com Playwright. |
+
+## Modelo econômico (`/negocio`)
+
+Em `/negocio`, quanto a plataforma e o parceiro ganham por cliente ativo por mês, a partir
+de quantos clientes a plataforma paga o custo fixo, quanto a garantia em outra instituição
+custa a mais que a interna e quais premissas mais mexem no resultado (tornado). Três
+conjuntos prontos (conservador, base, otimista) e controles para editar os valores.
+
+Para abrir, é o mesmo caminho do `/risco`: com a aplicação no ar,
+<http://localhost:8000/negocio>.
+
+**Os números são ilustrativos**: premissas editáveis, sem dado de nenhuma empresa. Só têm
+fonte o CDI, os tetos de intercâmbio (débito e pré-pago) e do rotativo e a taxa média do
+rotativo; o resto é "premissa ilustrativa". A conta, a tabela de quem paga quem, as
+premissas com faixa e origem e as fontes estão em [docs/economia.md](docs/economia.md).
+
+![A página /negocio no conjunto base](docs/img/negocio-base.png)
+
+O conjunto conservador mostra margem negativa e nenhum ponto de equilíbrio, de propósito:
+com premissas ruins, o negócio não se sustenta.
+
+![O conjunto conservador, com margem negativa](docs/img/negocio-conservador.png)
 
 ## Endpoints
 
@@ -180,6 +204,8 @@ A lista completa, com exemplos, está em `/docs` com a API no ar. Os principais:
 | `POST` | `/v1/risco/simulacoes-de-stress` | "E se ações caírem 30%?", na carteira real do parceiro |
 | `POST` | `/v1/risco/simulacoes-de-carteira` | O painel de risco, sobre a carteira sintética |
 | `GET` | `/v1/risco/cenarios` | Os quatro cenários prontos do painel |
+| `GET` | `/v1/negocio/premissas` | Premissas do modelo econômico, com unidade, faixa e origem, e os três conjuntos |
+| `POST` | `/v1/negocio/simulacoes` | Margem por cliente, ponto de equilíbrio, interna x externa e tornado (JSON ou CSV com `Accept: text/csv`) |
 | `GET` | `/v1/custodiantes` | Custodiantes externos aceitos (todos simulados) |
 | `POST` | `/v1/custodiantes/{id}/callbacks` | Resposta do custodiante, autenticada por assinatura HMAC |
 | `GET` | `/v1/erros` | Catálogo dos códigos de erro |
@@ -218,13 +244,13 @@ app/
   dominio/     regras de crédito, ledger, política de risco, stress e painel (só biblioteca padrão)
   aplicacao/   casos de uso e as interfaces de que eles precisam
   infra/       SQLAlchemy, worker de webhooks, simulador de custodiantes, carteira sintética
-  api/         rotas FastAPI, erros, idempotência, paginação e as páginas /demo e /risco
+  api/         rotas FastAPI, erros, idempotência, paginação e as páginas /demo, /risco e /negocio
 alembic/       migrações (inclui os gatilhos do ledger)
 tests/
   unidade/       domínio e peças de infraestrutura
   propriedade/   Hypothesis: invariantes que valem para qualquer sequência de operações
   integracao/    API contra SQLite e contra Postgres
-  e2e/           as páginas /demo e /risco num navegador, com Playwright
+  e2e/           as páginas /demo, /risco e /negocio num navegador, com Playwright
 docs/          arquitetura, mercado, roadmap, riscos, decisões
 ```
 
@@ -234,7 +260,7 @@ Os diagramas de sequência e de estados estão em [docs/arquitetura.md](docs/arq
 
 ```bash
 uv run pytest                    # unidade, propriedade e integração em SQLite
-uv run pytest -m e2e             # as páginas /demo e /risco num navegador
+uv run pytest -m e2e             # as páginas /demo, /risco e /negocio num navegador
 
 scripts/pg_local.sh subir        # ou qualquer Postgres 16
 DATABASE_URL_TESTE=postgresql+psycopg://lg:lg@localhost:54329/lg_teste uv run pytest
@@ -309,6 +335,27 @@ O que um especialista criticaria, e que não está resolvido aqui.
 - Consentimento do cliente (Open Finance) não está modelado.
 - A política de risco não tem versão, histórico nem aprovação em duas etapas.
 
+**Modelo econômico**
+
+- Fora do escopo: capital regulatório, custo de aquisição de cliente e churn, modelagem
+  tributária detalhada (hoje, uma alíquota única), projeção de vários anos e valuation.
+- Conferir as taxas médias (rotativo) na série das Estatísticas Monetárias e de Crédito do
+  BC: os valores citados vêm da imprensa, citando o Banco Central.
+- Todas as premissas fora dos dados públicos são ilustrativas e precisam ser trocadas por
+  números de quem opera.
+- O CSV sai só em português (`;` e vírgula decimal). Um Excel em inglês lê errado; falta
+  uma opção com ponto decimal.
+- A carteira sintética que dá a perda usa mais do limite que o cliente médio do modelo, o
+  que deixa a perda prudente (maior). Medir a perda na utilização do cliente médio é o
+  passo seguinte.
+- As frações interna e externa são por contagem de garantias, não por valor: pesam o
+  rendimento e a perda como se as duas tivessem o mesmo saldo médio.
+- O saldo do rotativo conta só o principal rolado, sem os juros capitalizados; funding e
+  perda sobre esse saldo saem um pouco menores.
+- O tornado vem ligado por padrão na API e refaz o mês duas vezes por premissa (66
+  cálculos no conjunto base); com uso alto, convém desligá-lo por padrão ou dar a ele um
+  limite próprio.
+
 **Engenharia**
 
 - O saldo é somado do ledger a cada operação. Com volume, precisa de saldo consolidado
@@ -341,13 +388,14 @@ cada um, estão em [docs/riscos.md](docs/riscos.md).
 | Documento | O que tem |
 |---|---|
 | [docs/arquitetura.md](docs/arquitetura.md) | Camadas, ledger, estados e os diagramas de sequência |
+| [docs/economia.md](docs/economia.md) | O modelo econômico: quem paga quem, premissas, ponto de equilíbrio, tornado e fontes |
 | [docs/mercado.md](docs/mercado.md) | Quem já faz, base legal e o que foi (ou não) confirmado em fonte |
 | [docs/roadmap.md](docs/roadmap.md) | As três fases, o piloto e as métricas |
 | [docs/riscos.md](docs/riscos.md) | Riscos e respostas |
 | [docs/DECISOES.md](docs/DECISOES.md) | As decisões tomadas e o que os testes pegaram |
 | [docs/plano.md](docs/plano.md) | O plano de implementação da v1.0 |
 | [docs/plano-fase2.md](docs/plano-fase2.md) | O plano da fase 2 simulada e do painel de risco |
-| [docs/roteiro-video.md](docs/roteiro-video.md) | Roteiro de 2 min 30 s: fase 1, fase 2 e o painel |
+| [docs/roteiro-video.md](docs/roteiro-video.md) | Roteiro de 3 min: fase 1, fase 2, o painel de risco e o modelo econômico |
 
 ## Sobre
 

@@ -1,4 +1,6 @@
-"""Sobe a API e o worker de verdade para os testes de navegador (ver test_demo.py)."""
+"""Sobe a API e o worker de verdade para os testes de navegador (ver test_demo.py).
+
+Também abre o navegador (`pagina`) para os testes do /risco e do /negocio."""
 
 from __future__ import annotations
 
@@ -9,11 +11,13 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import httpx2
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
+TELA = {"width": 1280, "height": 800}
 
 
 def _porta_livre() -> int:
@@ -71,3 +75,20 @@ def endereco(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
             processo.terminate()
         for processo in (worker, api):
             processo.wait(timeout=15)
+
+
+@pytest.fixture
+def pagina(endereco: str) -> Iterator[Any]:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    pasta_das_telas = os.environ.get("SALVAR_TELAS")
+    erros: list[str] = []
+    with sync_api.sync_playwright() as playwright:
+        navegador = playwright.chromium.launch(
+            executable_path=os.environ.get("CHROMIUM_EXECUTAVEL") or None
+        )
+        pagina = navegador.new_page(viewport=TELA, device_scale_factor=2 if pasta_das_telas else 1)
+        pagina.on("pageerror", lambda erro: erros.append(str(erro)))
+        pagina.endereco = endereco  # type: ignore[attr-defined]
+        yield pagina
+        navegador.close()
+    assert erros == [], f"Erros de JavaScript na página: {erros}"

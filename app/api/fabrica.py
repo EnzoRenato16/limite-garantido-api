@@ -25,6 +25,7 @@ from app.api.rotas.custodia import (
     rotas_de_sandbox_de_custodia,
 )
 from app.api.rotas.eventos import rotas_de_eventos
+from app.api.rotas.negocio import rotas_de_negocio
 from app.api.rotas.operacao import rotas_de_operacao
 from app.api.rotas.risco import rotas_de_risco, rotas_de_sandbox
 from app.aplicacao.portas import Custodiante, ProvedorDePrecos, Relogio
@@ -32,6 +33,7 @@ from app.config import Configuracao, obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
 from app.infra.custodia import montar_custodiante
+from app.infra.economia import carregar_parametros_da_economia
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
@@ -101,6 +103,11 @@ TAGS = [
     },
     {"name": "Risco", "description": "Política de risco do parceiro e simulador de stress."},
     {
+        "name": "Negócio",
+        "description": "Modelo econômico: receitas, custos e margem por cliente, da "
+        "plataforma e do parceiro. Premissas editáveis, carteira sintética, números ilustrativos.",
+    },
+    {
         "name": "Sandbox",
         "description": "Simulações para teste: queda de preço e passagem de dias. "
         "Só existem com `SANDBOX_HABILITADO=true`.",
@@ -124,6 +131,8 @@ def criar_app(
 ) -> FastAPI:
     config = config or obter_configuracao()
     configurar_logs(config.log_nivel)
+    # O TOML do modelo econômico é lido e validado aqui: quebrado, a aplicação não sobe.
+    carregar_parametros_da_economia()
 
     engine_proprio = engine is None
     engine = engine or criar_engine(
@@ -185,6 +194,7 @@ def criar_app(
         rotas_de_custodiantes,
         rotas_de_callback,
         rotas_de_risco,
+        rotas_de_negocio,
         rotas_de_sandbox,
         rotas_de_sandbox_de_custodia,
         rotas_de_admin,

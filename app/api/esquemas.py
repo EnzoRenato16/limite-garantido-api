@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from app.dominio.economia.premissas import FonteDeReceita, NomeDaPremissa
 from app.dominio.politica import TipoAtivo
 
 ValorDeEntrada = Annotated[
@@ -613,3 +614,235 @@ class ResultadoDoPainel(BaseModel):
     perda: PerdaDoPainelResposta
     concentracao_por_ativo: list[FatiaDeConcentracaoResposta]
     concentracao_por_custodiante: list[FatiaDeConcentracaoResposta]
+
+
+# ------------------------------------------------------------------- negócio
+AVISO_DO_NEGOCIO = (
+    "Números ilustrativos: premissas editáveis, carteira sintética, "
+    "sem dado de nenhuma empresa real."
+)
+
+
+class SimulacaoDeNegocio(Esquema):
+    conjunto: str = Field(
+        default="base",
+        pattern=r"^[a-z_]{1,40}$",
+        description="Conjunto pronto de premissas (veja GET /v1/negocio/premissas)",
+        examples=["base"],
+    )
+    premissas: (
+        Annotated[
+            dict[NomeDaPremissa, Annotated[Decimal, Field(max_digits=20, decimal_places=6)]],
+            Field(max_length=40),
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description="Premissas que sobrescrevem as do conjunto, por nome. Dinheiro em reais, "
+        "taxas e frações em decimal (0.0125 = 1,25%). Texto ou número JSON.",
+    )
+    receitas_ligadas: dict[FonteDeReceita, bool] | None = Field(
+        default=None,
+        description="Liga (true) ou desliga (false) fontes de receita. Sobrescreve só as "
+        "fontes enviadas; as ausentes seguem o conjunto; premissas de fonte desligada não "
+        "entram na conta.",
+        examples=[{"fee_gravame": False}],
+    )
+    cenario_de_risco: str | None = Field(
+        default=None,
+        pattern=r"^[a-z_]{1,40}$",
+        description="Cenário do motor de risco que dá a perda; sem ele, vale o do conjunto",
+        examples=["crash_da_bolsa"],
+    )
+    incluir_tornado: bool = Field(
+        default=True, description="Inclui a análise de sensibilidade (tornado)"
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "conjunto": "base",
+                "premissas": {"gasto_mensal": "3000.00", "ltv_medio": "0.6"},
+                "receitas_ligadas": {"fee_gravame": False},
+                "cenario_de_risco": "crash_da_bolsa",
+                "incluir_tornado": True,
+            }
+        },
+    )
+
+
+class EsquemaDaPremissaResposta(BaseModel):
+    nome: str = Field(examples=["gasto_mensal"])
+    nome_exibicao: str = Field(examples=["Gasto mensal por cliente"])
+    tipo: str = Field(description="dinheiro, fracao, taxa_ao_ano, taxa_ao_mes, ...")
+    unidade: str
+    minimo: str = Field(description="Menor valor aceito")
+    maximo: str = Field(description="Maior valor aceito")
+    razoavel_minimo: str | None = Field(description="Extremo baixo do tornado")
+    razoavel_maximo: str | None = Field(description="Extremo alto do tornado")
+    origem: str = Field(description="De onde vem o número; sem fonte é premissa ilustrativa")
+    fonte: str | None
+
+
+class ConjuntoResposta(BaseModel):
+    id: str
+    nome: str
+    descricao: str
+    cenario_de_risco: str
+    receitas_ligadas: list[str]
+    valores: dict[str, str]
+
+
+class CenarioDeRiscoResposta(BaseModel):
+    id: str
+    nome: str
+
+
+class CatalogoDoNegocio(BaseModel):
+    premissas: list[EsquemaDaPremissaResposta]
+    conjuntos: list[ConjuntoResposta]
+    cenarios_de_risco: list[CenarioDeRiscoResposta]
+    fontes_de_receita: list[str]
+
+
+class PremissasUsadas(BaseModel):
+    valores: dict[str, str] = Field(description="Cada premissa e o valor usado")
+    receitas_ligadas: list[str]
+    cenario_de_risco: str
+
+
+class LinhaResposta(BaseModel):
+    id: str
+    nome: str
+    fonte: str | None
+    origem: str
+    destino: str
+    valor: ValorDeSaida = Field(description="Por cliente por mês")
+    formula: str
+    premissas: list[str]
+
+
+class VisaoResposta(BaseModel):
+    receita: ValorDeSaida
+    custo: ValorDeSaida
+    margem: ValorDeSaida
+
+
+class VisoesResposta(BaseModel):
+    plataforma: VisaoResposta
+    parceiro: VisaoResposta
+    arranjo: VisaoResposta
+
+
+class CarteiraDoNegocioResposta(BaseModel):
+    clientes_ativos: int
+    plataforma_mes: ValorDeSaida
+    plataforma_ano: ValorDeSaida
+    parceiro_por_parceiro_mes: ValorDeSaida
+    parceiro_por_parceiro_ano: ValorDeSaida
+    arranjo_mes: ValorDeSaida
+
+
+class PontoDeEquilibrioResposta(BaseModel):
+    clientes: int | None = Field(description="Clientes que pagam o custo fixo; nulo sem margem")
+    motivo: str | None
+
+
+class PerdaDoNegocioResposta(BaseModel):
+    cenario: CenarioDeRiscoResposta
+    taxa_base_ao_ano: str
+    frequencia_ao_ano: str
+    condicional_interna: str
+    condicional_externa: str
+    condicional_mista: str
+    taxa_ao_ano: str
+    taxa_ao_mes: str
+    saldo_financiado: ValorDeSaida
+
+
+class InternaXExternaResposta(BaseModel):
+    margem_interna: ValorDeSaida
+    margem_externa: ValorDeSaida
+    custo_a_mais_da_externa: ValorDeSaida
+    fee_de_gravame_externo_para_empatar: ValorDeSaida | None = Field(
+        description="Fee de gravame externo com que a externa empata; nulo com `motivo_fee`"
+    )
+    motivo_fee: str | None = Field(
+        description="Por que não há fee para empatar: a externa não custa mais, não há "
+        "gravame, a fonte de fee de gravame está desligada ou nenhum valor da faixa aceita "
+        "empata. Nulo quando há fee."
+    )
+    gasto_para_empatar: ValorDeSaida | None = Field(
+        description="Gasto mensal com que a externa empata; nulo com `motivo_gasto`"
+    )
+    motivo_gasto: str | None = Field(
+        description="Por que não há gasto para empatar: a externa não custa mais ou nenhum "
+        "valor da faixa aceita empata. Nulo quando há gasto."
+    )
+    gasto_cabe_no_limite: bool | None = Field(
+        description="Se o gasto que empata cabe em saldo x LTV; nulo sem gasto"
+    )
+    parceiro_interna: ValorDeSaida
+    parceiro_externa: ValorDeSaida
+
+
+class BarraDoTornadoResposta(BaseModel):
+    premissa: str
+    nome_exibicao: str
+    unidade: str
+    valor_baixo: str
+    valor_alto: str
+    valor_base: str
+    margem_no_baixo: ValorDeSaida
+    margem_no_alto: ValorDeSaida
+    margem_base: ValorDeSaida
+    minimo: ValorDeSaida
+    maximo: ValorDeSaida
+    amplitude: ValorDeSaida
+    cortado_pela_coerencia: bool
+
+
+class ResultadoDoNegocio(BaseModel):
+    premissas: PremissasUsadas
+    linhas: list[LinhaResposta]
+    por_cliente_mes: VisoesResposta
+    por_cliente_ano: VisoesResposta
+    carteira: CarteiraDoNegocioResposta
+    ponto_de_equilibrio: PontoDeEquilibrioResposta
+    perda: PerdaDoNegocioResposta
+    rotativo_no_teto: bool
+    interna_x_externa: InternaXExternaResposta
+    tornado: list[BarraDoTornadoResposta]
+    aviso: str = Field(examples=[AVISO_DO_NEGOCIO])
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "premissas": {
+                    "valores": {"gasto_mensal": "3000.00", "ltv_medio": "0.6"},
+                    "receitas_ligadas": ["intercambio", "fee_garantia_ativa"],
+                    "cenario_de_risco": "dia_normal",
+                },
+                "linhas": [
+                    {
+                        "id": "intercambio",
+                        "nome": "Intercâmbio",
+                        "fonte": "intercambio",
+                        "origem": "lojista",
+                        "destino": "plataforma",
+                        "valor": "45.00",
+                        "formula": "R$ 3.000,00 × 1,50%",
+                        "premissas": ["gasto_mensal", "taxa_de_intercambio"],
+                    }
+                ],
+                "por_cliente_mes": {
+                    "plataforma": {"receita": "60.00", "custo": "40.00", "margem": "20.00"},
+                    "parceiro": {"receita": "30.00", "custo": "10.00", "margem": "20.00"},
+                    "arranjo": {"receita": "75.00", "custo": "35.00", "margem": "40.00"},
+                },
+                "ponto_de_equilibrio": {"clientes": 5000, "motivo": None},
+                "aviso": AVISO_DO_NEGOCIO,
+            }
+        }
+    )

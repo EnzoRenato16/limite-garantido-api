@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -9,6 +10,9 @@ from app.api import esquemas
 from app.dominio.conta import ChamadaDeMargem, Compra, Conta, Fatura, Pagamento
 from app.dominio.conta import PosicaoDeLimite as PosicaoDoDominio
 from app.dominio.dinheiro import Dinheiro
+from app.dominio.economia.analises import ResultadoEconomico
+from app.dominio.economia.calculo import Visao
+from app.dominio.economia.premissas import EsquemaDaPremissa, FonteDeReceita, NomeDaPremissa
 from app.dominio.garantia import (
     ESTADOS_AGUARDANDO_CUSTODIANTE,
     ESTADOS_ATIVOS,
@@ -35,6 +39,7 @@ from app.infra.banco.modelos import (
     SolicitacaoDeCustodiaModelo,
 )
 from app.infra.carteira_sintetica import Cenario
+from app.infra.economia import ParametrosDaEconomia
 
 _ESTADOS_ATIVOS = {estado.value for estado in ESTADOS_ATIVOS}
 
@@ -435,4 +440,155 @@ def cenario(valor: Cenario) -> esquemas.CenarioDoPainel:
         taxa_sem_reforco=_decimal(valor.taxa_sem_reforco),
         dias_extra_de_execucao=valor.premissas.dias_extra_de_execucao,
         custodiantes_indisponiveis=sorted(valor.premissas.custodiantes_indisponiveis),
+    )
+
+
+# ------------------------------------------------------------------- negócio
+def _decimal_texto(valor: Decimal) -> str:
+    """Decimal sem notação científica: `"0.1365"`, nunca `"1.365E-1"`."""
+    return format(valor, "f")
+
+
+def catalogo_do_negocio(
+    parametros: ParametrosDaEconomia, cenarios: list[tuple[str, str]]
+) -> esquemas.CatalogoDoNegocio:
+    return esquemas.CatalogoDoNegocio(
+        premissas=[
+            esquemas.EsquemaDaPremissaResposta(
+                nome=e.nome.value,
+                nome_exibicao=e.nome_exibicao,
+                tipo=e.tipo.value,
+                unidade=e.unidade,
+                minimo=_decimal_texto(e.minimo),
+                maximo=_decimal_texto(e.maximo),
+                razoavel_minimo=None
+                if e.razoavel_minimo is None
+                else _decimal_texto(e.razoavel_minimo),
+                razoavel_maximo=None
+                if e.razoavel_maximo is None
+                else _decimal_texto(e.razoavel_maximo),
+                origem=e.origem,
+                fonte=e.fonte,
+            )
+            for e in parametros.esquema.values()
+        ],
+        conjuntos=[
+            esquemas.ConjuntoResposta(
+                id=c.id,
+                nome=c.nome,
+                descricao=c.descricao,
+                cenario_de_risco=c.cenario_de_risco,
+                receitas_ligadas=sorted(f.value for f in c.receitas_ligadas),
+                valores={n.value: _decimal_texto(v) for n, v in c.valores.items()},
+            )
+            for c in parametros.conjuntos.values()
+        ],
+        cenarios_de_risco=[esquemas.CenarioDeRiscoResposta(id=i, nome=n) for i, n in cenarios],
+        fontes_de_receita=[f.value for f in FonteDeReceita],
+    )
+
+
+def _visao(visao: Visao) -> esquemas.VisaoResposta:
+    return esquemas.VisaoResposta(
+        receita=visao.receita.texto(), custo=visao.custo.texto(), margem=visao.margem.texto()
+    )
+
+
+def _opcional(valor: Dinheiro | None) -> str | None:
+    return None if valor is None else valor.texto()
+
+
+def resultado_do_negocio(
+    r: ResultadoEconomico,
+    esquema: Mapping[NomeDaPremissa, EsquemaDaPremissa],
+    cenarios: list[tuple[str, str]],
+) -> esquemas.ResultadoDoNegocio:
+    p = r.premissas
+    base = p.valores()
+    perda = r.mes.perda
+    nome_do_cenario = dict(cenarios).get(p.cenario_de_risco, p.cenario_de_risco)
+    ix = r.interna_x_externa
+    return esquemas.ResultadoDoNegocio(
+        premissas=esquemas.PremissasUsadas(
+            valores={n.value: _decimal_texto(v) for n, v in base.items()},
+            receitas_ligadas=sorted(f.value for f in p.receitas_ligadas),
+            cenario_de_risco=p.cenario_de_risco,
+        ),
+        linhas=[
+            esquemas.LinhaResposta(
+                id=x.id,
+                nome=x.nome,
+                fonte=None if x.fonte is None else x.fonte.value,
+                origem=str(x.origem),
+                destino=str(x.destino),
+                valor=x.valor.texto(),
+                formula=x.formula,
+                premissas=[n.value for n in x.premissas],
+            )
+            for x in r.mes.linhas
+        ],
+        por_cliente_mes=esquemas.VisoesResposta(
+            plataforma=_visao(r.mes.plataforma),
+            parceiro=_visao(r.mes.parceiro),
+            arranjo=_visao(r.mes.arranjo),
+        ),
+        por_cliente_ano=esquemas.VisoesResposta(
+            plataforma=_visao(r.ano["plataforma"]),
+            parceiro=_visao(r.ano["parceiro"]),
+            arranjo=_visao(r.ano["arranjo"]),
+        ),
+        carteira=esquemas.CarteiraDoNegocioResposta(
+            clientes_ativos=r.carteira.clientes_ativos,
+            plataforma_mes=r.carteira.plataforma_mes.texto(),
+            plataforma_ano=r.carteira.plataforma_ano.texto(),
+            parceiro_por_parceiro_mes=r.carteira.parceiro_por_parceiro_mes.texto(),
+            parceiro_por_parceiro_ano=r.carteira.parceiro_por_parceiro_ano.texto(),
+            arranjo_mes=r.carteira.arranjo_mes.texto(),
+        ),
+        ponto_de_equilibrio=esquemas.PontoDeEquilibrioResposta(
+            clientes=r.equilibrio.clientes, motivo=r.equilibrio.motivo
+        ),
+        perda=esquemas.PerdaDoNegocioResposta(
+            cenario=esquemas.CenarioDeRiscoResposta(id=p.cenario_de_risco, nome=nome_do_cenario),
+            taxa_base_ao_ano=_decimal_texto(perda.taxa_base_ao_ano.valor),
+            frequencia_ao_ano=_decimal_texto(perda.frequencia_ao_ano.valor),
+            condicional_interna=_decimal_texto(perda.condicional_interna.valor),
+            condicional_externa=_decimal_texto(perda.condicional_externa.valor),
+            condicional_mista=_decimal_texto(perda.condicional_mista.valor),
+            taxa_ao_ano=_decimal_texto(perda.taxa_ao_ano.valor),
+            taxa_ao_mes=_decimal_texto(perda.taxa_ao_mes.valor),
+            saldo_financiado=perda.saldo_financiado.texto(),
+        ),
+        rotativo_no_teto=r.mes.rotativo_no_teto,
+        interna_x_externa=esquemas.InternaXExternaResposta(
+            margem_interna=ix.margem_interna.texto(),
+            margem_externa=ix.margem_externa.texto(),
+            custo_a_mais_da_externa=ix.custo_a_mais_da_externa.texto(),
+            fee_de_gravame_externo_para_empatar=_opcional(ix.fee_de_gravame_externo_para_empatar),
+            motivo_fee=ix.motivo_fee,
+            gasto_para_empatar=_opcional(ix.gasto_para_empatar),
+            motivo_gasto=ix.motivo_gasto,
+            gasto_cabe_no_limite=ix.gasto_cabe_no_limite,
+            parceiro_interna=ix.parceiro_interna.texto(),
+            parceiro_externa=ix.parceiro_externa.texto(),
+        ),
+        tornado=[
+            esquemas.BarraDoTornadoResposta(
+                premissa=b.premissa.value,
+                nome_exibicao=esquema[b.premissa].nome_exibicao,
+                unidade=esquema[b.premissa].unidade,
+                valor_baixo=_decimal_texto(b.valor_baixo),
+                valor_alto=_decimal_texto(b.valor_alto),
+                valor_base=_decimal_texto(base[b.premissa]),
+                margem_no_baixo=b.margem_no_baixo.texto(),
+                margem_no_alto=b.margem_no_alto.texto(),
+                margem_base=r.mes.plataforma.margem.texto(),
+                minimo=b.minimo.texto(),
+                maximo=b.maximo.texto(),
+                amplitude=b.amplitude.texto(),
+                cortado_pela_coerencia=b.cortado_pela_coerencia,
+            )
+            for b in r.tornado
+        ],
+        aviso=esquemas.AVISO_DO_NEGOCIO,
     )

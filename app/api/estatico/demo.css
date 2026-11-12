@@ -32,6 +32,7 @@
   --fonte: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --passo: 0.5rem;
+  --altura-paginas: 2.75rem;
 }
 
 * { box-sizing: border-box; }
@@ -54,10 +55,56 @@ body {
 h1, h2, p, ol, ul, dl, dd { margin: 0; padding: 0; }
 ol, ul { list-style: none; }
 
+/* ------------------------------------------------- navegação entre as páginas */
+/* Faixa escura no topo, da mesma cor dos bastidores: junto com a coluna da direita
+   forma a moldura das três páginas. A página atual ganha o traço embaixo. Na tela
+   larga ela fica presa no topo, e a coluna da direita e a régua do /demo ficam presas
+   logo abaixo dela; no celular ela rola junto com a página. */
+.paginas {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: var(--altura-paginas);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0 1.5rem;
+  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
+  background: var(--fundo-bastidor);
+  border-bottom: 1px solid var(--linha-bastidor);
+  font-size: 0.88rem;
+}
+
+.paginas-produto {
+  align-self: center;
+  margin-right: 0.75rem;
+  color: #fff;
+  font-variation-settings: "wght" 680;
+  letter-spacing: -0.01em;
+}
+
+.paginas a {
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 0 0.55rem;
+  border-bottom: 2px solid transparent;
+  color: var(--texto-bastidor-suave);
+  text-decoration: none;
+  font-variation-settings: "wght" 520;
+}
+
+.paginas a:hover { color: var(--texto-bastidor); }
+
+.paginas a[aria-current="page"] {
+  color: #fff;
+  border-bottom-color: var(--garantia-clara);
+  font-variation-settings: "wght" 620;
+}
+
 .palco {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(22rem, 1fr);
-  min-height: 100vh;
+  min-height: calc(100vh - var(--altura-paginas));
 }
 
 /* ------------------------------------------------------------ app do parceiro */
@@ -94,7 +141,7 @@ ol, ul { list-style: none; }
    vista o efeito de cada ação sobre garantia, limite e dívida. */
 .regua {
   position: sticky;
-  top: 0;
+  top: var(--altura-paginas);
   z-index: 2;
   background: var(--papel);
   padding: calc(var(--passo) * 2.5) 0 calc(var(--passo) * 3);
@@ -430,8 +477,8 @@ button.pequeno { font-size: 0.82rem; padding: 0.25rem 0.6rem; }
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--altura-paginas);
+  height: calc(100vh - var(--altura-paginas));
   overflow: hidden;
 }
 
@@ -542,6 +589,9 @@ button.pequeno { font-size: 0.82rem; padding: 0.25rem 0.6rem; }
 
 /* ---------------------------------------------------------------- telas menores */
 @media (max-width: 62rem) {
+  .paginas { position: static; height: auto; }
+  .regua { top: 0; }
+  .palco { min-height: 0; }
   .palco { grid-template-columns: 1fr; }
   .app { justify-self: stretch; max-width: none; }
   .bastidores { position: static; height: auto; max-height: none; }
@@ -550,6 +600,8 @@ button.pequeno { font-size: 0.82rem; padding: 0.25rem 0.6rem; }
 
 @media (max-width: 34rem) {
   html { font-size: 16px; }
+  .paginas { gap: 0 1.2rem; }
+  .paginas-produto { display: none; }
   /* No celular a régua continua presa no topo, em versão compacta: limite, garantia e
      usado sempre à vista, sem tomar a tela. */
   .regua { padding: 0.6rem 0 0.7rem; }

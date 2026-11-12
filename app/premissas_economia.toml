@@ -1,0 +1,449 @@
+# Premissas do modelo econômico: esquema (faixas) e os três conjuntos prontos.
+#
+# Todos os números são ILUSTRATIVOS, salvo onde há `fonte` citada; `origem` diz, em uma frase, de onde vem cada valor. Nada aqui é dado de
+# empresa real. Quem quiser usar de verdade troca os valores pelos seus.
+#
+# Convenções de conversão (as mesmas do código):
+#   - taxa ao ano vira taxa ao mês por juros compostos: (1 + a)^(1/12) - 1;
+#   - frequência de eventos (vezes por ano) vira mensal dividindo por 12, sem composição;
+#   - perda esperada ao ano (base + frequência x perda por evento) é soma de eventos e
+#     também vira mensal dividindo por 12;
+#   - dias corridos viram mês por 365/12;
+#   - taxa e fração são frações: 0.1365 = 13,65%. Dinheiro em reais, até 2 casas.
+# Faixa aceita (`minimo`/`maximo`): o que a validação deixa passar, nas duas pontas.
+# Faixa razoável (`razoavel`): os extremos do tornado; sem a chave, fica fora do tornado.
+# Valores como texto, para não passar por float.
+
+[premissas.gasto_mensal]
+nome = "Gasto mensal"
+tipo = "dinheiro"
+unidade = "R$/mês"
+minimo = "0"
+maximo = "50000"
+razoavel = ["500", "4000"]
+origem = "Premissa ilustrativa: ordem de grandeza do gasto mensal no cartão de um cliente que usa o limite garantido; sem fonte de mercado."
+
+[premissas.saldo_em_garantia]
+nome = "Saldo em garantia"
+tipo = "dinheiro"
+unidade = "R$"
+minimo = "100"
+maximo = "1000000"
+razoavel = ["2000", "30000"]
+origem = "Premissa ilustrativa: saldo médio aplicado em garantia por cliente, de ordem de grandeza compatível com as faixas da carteira sintética; sem fonte de mercado."
+
+[premissas.ltv_medio]
+nome = "LTV médio"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0.60"
+maximo = "1.00"
+razoavel = ["0.70", "0.95"]
+origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,60 (ações) a 1,00 (depósito)."
+
+[premissas.fracao_interna]
+nome = "Fração interna"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+origem = "Premissa ilustrativa: parcela das garantias custodiadas na própria plataforma; soma com a fração externa e dá 1."
+
+[premissas.fracao_externa]
+nome = "Fração externa"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+razoavel = ["0", "1"]
+origem = "Premissa ilustrativa: parcela das garantias em custódia externa; o valor base repete a fração da carteira sintética do painel de risco (0,30)."
+
+[premissas.garantias_por_cliente]
+nome = "Garantias por cliente"
+tipo = "quantidade"
+unidade = "garantia/cliente"
+minimo = "1"
+maximo = "10"
+razoavel = ["1", "3"]
+origem = "Premissa ilustrativa: média da carteira sintética do painel de risco (pesos 60/30/10 para 1, 2 e 3 garantias)."
+
+[premissas.gravames_ao_mes]
+nome = "Gravames ao mês"
+tipo = "quantidade"
+unidade = "operação/cliente/mês"
+minimo = "0"
+maximo = "5"
+razoavel = ["0.05", "0.30"]
+origem = "Premissa ilustrativa: operações de gravame (constituir ou baixar) por cliente por mês; sem fonte de mercado."
+
+[premissas.dias_financiados]
+nome = "Dias financiados"
+tipo = "quantidade"
+unidade = "dia"
+minimo = "0"
+maximo = "60"
+razoavel = ["0", "30"]
+origem = "Premissa ilustrativa: dias entre pagar o arranjo de pagamentos e receber do cliente, período em que a plataforma financia o gasto."
+
+[premissas.taxa_de_intercambio]
+nome = "Taxa de intercâmbio"
+tipo = "fracao"
+unidade = "fração do gasto"
+minimo = "0"
+maximo = "0.05"
+razoavel = ["0.008", "0.018"]
+origem = "Premissa ilustrativa: taxa média de intercâmbio sobre o gasto no crédito; o teto regulatório existe só para débito e pré-pago."
+fonte = "Res. BCB 246/2022 (teto só para débito e pré-pago)"
+
+[premissas.fracao_do_intercambio_da_plataforma]
+nome = "Fração do intercâmbio da plataforma"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+razoavel = ["0.30", "0.70"]
+origem = "Premissa ilustrativa: parte do intercâmbio que fica com a plataforma, o resto é repassado ao parceiro."
+
+[premissas.fee_por_garantia_ativa]
+nome = "Fee por garantia ativa"
+tipo = "dinheiro"
+unidade = "R$/garantia/mês"
+minimo = "0"
+maximo = "100"
+razoavel = ["0.50", "5.00"]
+origem = "Premissa ilustrativa: tarifa mensal que o parceiro paga à plataforma por garantia ativa; sem fonte de mercado."
+
+[premissas.fee_gravame_interna]
+nome = "Fee de gravame interno"
+tipo = "dinheiro"
+unidade = "R$/operação"
+minimo = "0"
+maximo = "500"
+razoavel = ["0", "3"]
+origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia interna, cobrada do parceiro; sem fonte de mercado."
+
+[premissas.fee_gravame_externa]
+nome = "Fee de gravame externo"
+tipo = "dinheiro"
+unidade = "R$/operação"
+minimo = "0"
+maximo = "500"
+razoavel = ["3", "20"]
+origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia externa, mais alta que a interna por repassar o custo do custodiante; sem fonte de mercado."
+
+[premissas.taxa_sobre_investimento_ao_ano]
+nome = "Taxa sobre investimento ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.03"
+razoavel = ["0.001", "0.006"]
+origem = "Premissa ilustrativa: parte do rendimento do saldo em garantia que a plataforma retém, ao ano; sem fonte de mercado."
+
+[premissas.fracao_de_clientes_no_rotativo]
+nome = "Fração de clientes no rotativo"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+razoavel = ["0", "0.15"]
+origem = "Premissa ilustrativa: fração dos clientes que não paga a fatura inteira e entra no rotativo no mês; sem fonte de mercado."
+
+[premissas.fracao_da_fatura_rolada]
+nome = "Fração da fatura rolada"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+razoavel = ["0.10", "0.60"]
+origem = "Premissa ilustrativa: fração da fatura que quem entra no rotativo deixa de pagar; sem fonte de mercado."
+
+[premissas.taxa_do_rotativo_ao_mes]
+nome = "Taxa do rotativo ao mês"
+tipo = "taxa_ao_mes"
+unidade = "1/mês"
+minimo = "0"
+maximo = "0.30"
+razoavel = ["0.03", "0.15"]
+origem = "Premissa ilustrativa: taxa de juros do rotativo ao mês, abaixo da média de mercado observada pelo BC; o total cobrado respeita o teto legal."
+fonte = "BCB, taxa média do rotativo, ago/2026: 15,18% a.m.; Lei 14.690/2023 e Res. CMN 5.112/2023: juros e encargos limitados a 100% do valor original"
+
+[premissas.meses_no_rotativo]
+nome = "Meses no rotativo"
+tipo = "inteiro"
+unidade = "mês"
+minimo = "1"
+maximo = "24"
+razoavel = ["1", "6"]
+origem = "Premissa ilustrativa: meses seguidos que um cliente fica no rotativo antes de regularizar; o teto legal de 100% do valor original vale para o total."
+
+[premissas.fracao_cedida_ao_fidc]
+nome = "Fração cedida ao FIDC"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "1"
+razoavel = ["0", "0.90"]
+origem = "Premissa ilustrativa: parcela do saldo financiado cedida a um fundo de recebíveis (FIDC); o resto fica no balanço da plataforma."
+
+[premissas.taxa_fidc_ao_ano]
+nome = "Taxa do FIDC ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.05"
+razoavel = ["0.002", "0.01"]
+origem = "Premissa ilustrativa: taxa ao ano que o FIDC paga à plataforma pela originação e gestão dos recebíveis cedidos; sem fonte de mercado."
+
+[premissas.cdi_ao_ano]
+nome = "CDI ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.50"
+razoavel = ["0.10", "0.16"]
+origem = "Taxa DI-B3 vigente na data da análise; o DI acompanha a Selic, definida pelo Copom."
+fonte = "DI-B3 13,65% a.a. em 06/11/2026, ANBIMA"
+
+[premissas.spread_fidc_ao_ano]
+nome = "Spread do FIDC ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.30"
+razoavel = ["0.015", "0.05"]
+origem = "Premissa ilustrativa: spread sobre o CDI que o FIDC cobra pelo funding, ao ano; sem fonte de mercado."
+
+[premissas.spread_balanco_ao_ano]
+nome = "Spread de balanço ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.30"
+razoavel = ["0.02", "0.08"]
+origem = "Premissa ilustrativa: spread sobre o CDI do funding com recursos do balanço, ao ano; sem fonte de mercado."
+
+[premissas.taxa_base_de_perda_ao_ano]
+nome = "Taxa base de perda ao ano"
+tipo = "taxa_ao_ano"
+unidade = "1/ano"
+minimo = "0"
+maximo = "0.50"
+razoavel = ["0.002", "0.02"]
+origem = "Premissa ilustrativa: perda anual de fundo sobre o saldo financiado, fora dos eventos do cenário de risco; sem fonte de mercado."
+
+[premissas.frequencia_do_cenario_ao_ano]
+nome = "Frequência do cenário ao ano"
+tipo = "frequencia_ao_ano"
+unidade = "vez/ano"
+minimo = "0"
+maximo = "12"
+razoavel = ["0", "0.5"]
+origem = "Premissa ilustrativa: quantas vezes por ano o cenário de risco escolhido acontece; a perda do evento vem do painel de risco."
+
+[premissas.custo_de_processamento_por_cartao]
+nome = "Custo de processamento por cartão"
+tipo = "dinheiro"
+unidade = "R$/cartão/mês"
+minimo = "0"
+maximo = "100"
+razoavel = ["1", "8"]
+origem = "Premissa ilustrativa: custo mensal de processadora por cartão ativo; sem fonte de mercado."
+
+[premissas.custo_do_gravame_externo]
+nome = "Custo do gravame externo"
+tipo = "dinheiro"
+unidade = "R$/operação"
+minimo = "0"
+maximo = "500"
+razoavel = ["2", "15"]
+origem = "Premissa ilustrativa: custo por operação de gravame pago ao custodiante externo; sem fonte de mercado."
+
+[premissas.execucoes_ao_ano]
+nome = "Execuções ao ano"
+tipo = "quantidade"
+unidade = "execução/cliente/ano"
+minimo = "0"
+maximo = "12"
+razoavel = ["0", "0.10"]
+origem = "Premissa ilustrativa: execuções de garantia por cliente ao ano, quando a garantia é executada por inadimplência; sem fonte de mercado."
+
+[premissas.custo_de_execucao_interna]
+nome = "Custo de execução interna"
+tipo = "dinheiro"
+unidade = "R$/execução"
+minimo = "0"
+maximo = "5000"
+razoavel = ["5", "50"]
+origem = "Premissa ilustrativa: custo operacional por execução de garantia na própria plataforma; sem fonte de mercado."
+
+[premissas.custo_de_execucao_externa]
+nome = "Custo de execução externa"
+tipo = "dinheiro"
+unidade = "R$/execução"
+minimo = "0"
+maximo = "5000"
+razoavel = ["20", "200"]
+origem = "Premissa ilustrativa: custo por execução de garantia em custodiante externo, maior que o interno por envolver terceiros; sem fonte de mercado."
+
+[premissas.aliquota_sobre_receita]
+nome = "Alíquota sobre a receita"
+tipo = "fracao"
+unidade = "fração"
+minimo = "0"
+maximo = "0.50"
+razoavel = ["0.06", "0.17"]
+origem = "Premissa ilustrativa: alíquota única de tributos sobre a receita; não representa o regime tributário de nenhuma empresa."
+
+[premissas.custo_fixo_mensal]
+nome = "Custo fixo mensal"
+tipo = "dinheiro"
+unidade = "R$/mês"
+minimo = "0"
+maximo = "100000000"
+razoavel = ["200000", "1000000"]
+origem = "Premissa ilustrativa: custo fixo mensal da plataforma (equipe, infraestrutura), usado no ponto de equilíbrio; sem fonte de mercado."
+
+[premissas.parceiros]
+nome = "Parceiros"
+tipo = "inteiro"
+unidade = "parceiro"
+minimo = "1"
+maximo = "1000"
+razoavel = ["1", "20"]
+origem = "Premissa ilustrativa: número de parceiros (emissores) que distribuem o produto; sem fonte de mercado."
+
+[premissas.clientes_por_parceiro]
+nome = "Clientes por parceiro"
+tipo = "inteiro"
+unidade = "cliente/parceiro"
+minimo = "1"
+maximo = "10000000"
+razoavel = ["2000", "100000"]
+origem = "Premissa ilustrativa: clientes ativos por parceiro; sem fonte de mercado."
+
+[conjuntos.conservador]
+nome = "Conservador"
+descricao = "Gasto e saldo menores, mais gente na externa, custos e perda mais altos, receitas mais baixas."
+cenario_de_risco = "custodiante_fora_do_ar"
+receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
+
+[conjuntos.conservador.valores]
+gasto_mensal = "1000"
+saldo_em_garantia = "6000"
+ltv_medio = "0.85"
+fracao_interna = "0.50"
+fracao_externa = "0.50"
+garantias_por_cliente = "1.5"
+gravames_ao_mes = "0.10"
+dias_financiados = "15"
+taxa_de_intercambio = "0.010"
+fracao_do_intercambio_da_plataforma = "0.50"
+fee_por_garantia_ativa = "2.00"
+fee_gravame_interna = "1.00"
+fee_gravame_externa = "8.00"
+taxa_sobre_investimento_ao_ano = "0.002"
+fracao_de_clientes_no_rotativo = "0.03"
+fracao_da_fatura_rolada = "0.30"
+taxa_do_rotativo_ao_mes = "0.06"
+meses_no_rotativo = "2"
+fracao_cedida_ao_fidc = "0.60"
+taxa_fidc_ao_ano = "0.005"
+cdi_ao_ano = "0.1365"
+spread_fidc_ao_ano = "0.04"
+spread_balanco_ao_ano = "0.05"
+taxa_base_de_perda_ao_ano = "0.010"
+frequencia_do_cenario_ao_ano = "0.20"
+custo_de_processamento_por_cartao = "4.00"
+custo_do_gravame_externo = "8.00"
+execucoes_ao_ano = "0.04"
+custo_de_execucao_interna = "15.00"
+custo_de_execucao_externa = "90.00"
+aliquota_sobre_receita = "0.10"
+custo_fixo_mensal = "600000"
+parceiros = "3"
+clientes_por_parceiro = "10000"
+
+[conjuntos.base]
+nome = "Base"
+descricao = "Valores centrais ilustrativos, os mesmos da carteira sintética onde há referência."
+cenario_de_risco = "custodiante_fora_do_ar"
+receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
+
+[conjuntos.base.valores]
+gasto_mensal = "1500"
+saldo_em_garantia = "8000"
+ltv_medio = "0.85"
+fracao_interna = "0.70"
+fracao_externa = "0.30"
+garantias_por_cliente = "1.5"
+gravames_ao_mes = "0.10"
+dias_financiados = "10"
+taxa_de_intercambio = "0.012"
+fracao_do_intercambio_da_plataforma = "0.50"
+fee_por_garantia_ativa = "2.00"
+fee_gravame_interna = "1.00"
+fee_gravame_externa = "8.00"
+taxa_sobre_investimento_ao_ano = "0.003"
+fracao_de_clientes_no_rotativo = "0.05"
+fracao_da_fatura_rolada = "0.30"
+taxa_do_rotativo_ao_mes = "0.08"
+meses_no_rotativo = "2"
+fracao_cedida_ao_fidc = "0.60"
+taxa_fidc_ao_ano = "0.005"
+cdi_ao_ano = "0.1365"
+spread_fidc_ao_ano = "0.03"
+spread_balanco_ao_ano = "0.04"
+taxa_base_de_perda_ao_ano = "0.005"
+frequencia_do_cenario_ao_ano = "0.05"
+custo_de_processamento_por_cartao = "3.00"
+custo_do_gravame_externo = "5.00"
+execucoes_ao_ano = "0.02"
+custo_de_execucao_interna = "15.00"
+custo_de_execucao_externa = "60.00"
+aliquota_sobre_receita = "0.10"
+custo_fixo_mensal = "400000"
+parceiros = "5"
+clientes_por_parceiro = "20000"
+
+[conjuntos.otimista]
+nome = "Otimista"
+descricao = "Gasto e saldo maiores, mais gente na interna, custos e perda mais baixos."
+cenario_de_risco = "crash_da_bolsa"
+receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
+
+[conjuntos.otimista.valores]
+gasto_mensal = "2500"
+saldo_em_garantia = "12000"
+ltv_medio = "0.85"
+fracao_interna = "0.85"
+fracao_externa = "0.15"
+garantias_por_cliente = "1.5"
+gravames_ao_mes = "0.10"
+dias_financiados = "5"
+taxa_de_intercambio = "0.014"
+fracao_do_intercambio_da_plataforma = "0.50"
+fee_por_garantia_ativa = "2.00"
+fee_gravame_interna = "1.00"
+fee_gravame_externa = "8.00"
+taxa_sobre_investimento_ao_ano = "0.004"
+fracao_de_clientes_no_rotativo = "0.06"
+fracao_da_fatura_rolada = "0.30"
+taxa_do_rotativo_ao_mes = "0.10"
+meses_no_rotativo = "2"
+fracao_cedida_ao_fidc = "0.60"
+taxa_fidc_ao_ano = "0.005"
+cdi_ao_ano = "0.1365"
+spread_fidc_ao_ano = "0.025"
+spread_balanco_ao_ano = "0.03"
+taxa_base_de_perda_ao_ano = "0.003"
+frequencia_do_cenario_ao_ano = "0.05"
+custo_de_processamento_por_cartao = "2.50"
+custo_do_gravame_externo = "4.00"
+execucoes_ao_ano = "0.01"
+custo_de_execucao_interna = "15.00"
+custo_de_execucao_externa = "50.00"
+aliquota_sobre_receita = "0.10"
+custo_fixo_mensal = "300000"
+parceiros = "8"
+clientes_por_parceiro = "40000"

@@ -167,6 +167,12 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Requisição inválida",
         "O corpo ou os parâmetros não passaram na validação; veja o campo `erros`.",
     ),
+    "premissas_invalidas": (
+        422,
+        "Premissas inválidas",
+        "Uma ou mais premissas do modelo econômico estão fora da faixa ou incoerentes; "
+        "veja o campo `erros`, com o nome da premissa e o motivo.",
+    ),
     "valor_invalido": (422, "Valor inválido", "O valor informado não é aceito nesta operação."),
     "ativo_nao_aceito": (
         422,

@@ -1,0 +1,215 @@
+/* Página /negocio. Usa os tokens, a fonte e os componentes de demo.css e risco.css
+   (conjuntos, controles, destaques, gráficos, coluna de leitura); aqui só o que é do
+   modelo econômico.
+
+   As cores repetem o sentido que já têm no /demo: azul é o dinheiro que entra (como a
+   garantia), âmbar é o que sai (como o usado), verde e vermelho são a margem que sobra
+   ou falta (como o limite e o déficit). */
+
+:root {
+  --entra: var(--garantia);
+  --sai: var(--usado);
+  --sai-texto: #8f5d0a;
+}
+
+/* ------------------------------------------------------------ aviso no topo */
+.aviso-ilustrativo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 4px solid var(--usado);
+  background: color-mix(in srgb, var(--usado) 13%, white);
+  font-size: 0.92rem;
+}
+
+.aviso-ilustrativo strong { font-variation-settings: "wght" 600; }
+.aviso-ilustrativo a { color: var(--tinta); text-underline-offset: 3px; font-size: 0.86rem; }
+
+/* --------------------------------------------------------------- controles */
+.grade-controles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.7rem 1rem;
+  width: 100%;
+}
+
+.grade-controles input,
+.grade-controles select { width: 100%; min-width: 0; }
+
+/* O que a última simulação usou, ao lado dos campos em %. */
+.grade-controles .valor-usado {
+  display: block;
+  min-height: 1.2em;
+  color: var(--tinta-suave);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- destaques */
+.titulo-com-acao {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin: calc(var(--passo) * 5) 0 calc(var(--passo) * 1.5);
+}
+
+.titulo-com-acao .secao { margin: 0; }
+
+.destaques.destaques-negocio {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--passo) * 3) calc(var(--passo) * 4);
+}
+
+/* Os quatro destaques em subgrade: rótulo, número e detalhe alinhados entre as colunas,
+   mesmo quando um rótulo quebra em duas linhas. */
+.destaques-negocio > div {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0.2rem;
+  align-content: start;
+}
+
+.destaques-negocio dd { align-self: end; font-size: clamp(1.45rem, 2.6vw, 2.05rem); }
+.destaques-negocio strong.negativo { color: var(--deficit); }
+.destaques-negocio strong.sem-equilibrio {
+  font-size: 0.62em;
+  color: var(--deficit);
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------------ textos */
+.explica {
+  color: var(--tinta-suave);
+  font-size: 0.9rem;
+  max-width: 40rem;
+  margin-bottom: calc(var(--passo) * 2);
+}
+
+#nota-tornado { margin: calc(var(--passo) * 1.5) 0 0; }
+
+.legenda-tornado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.3rem;
+  font-size: 0.8rem;
+  color: var(--tinta-suave);
+  margin-bottom: calc(var(--passo) * 1.5);
+}
+
+.legenda-tornado span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.cor-baixo { background: var(--sai); }
+.cor-alto { background: var(--entra); }
+.traco-base { width: 2px; height: 0.9rem; background: var(--tinta); display: inline-block; }
+
+/* ----------------------------------------------------------------- gráficos */
+/* Texto com contorno da cor do papel: conectores e linhas de referência passam por
+   trás das letras sem riscá-las. */
+.negocio .grafico text {
+  paint-order: stroke;
+  stroke: var(--papel);
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+.grafico .receita { fill: var(--entra); }
+.grafico .custo { fill: var(--sai); }
+.grafico .positivo { fill: var(--limite); }
+.grafico .negativo { fill: var(--deficit); }
+.grafico .baixo { fill: var(--sai); }
+.grafico .alto { fill: var(--entra); }
+
+.grafico .quantia { font-size: 13px; font-feature-settings: "tnum"; fill: var(--tinta); }
+.grafico .quantia.receita { fill: var(--entra); font-variation-settings: "wght" 600; }
+.grafico .quantia.custo { fill: var(--tinta-suave); }
+.grafico .quantia.positivo { fill: var(--limite); font-variation-settings: "wght" 650; }
+.grafico .quantia.negativo { fill: var(--deficit); font-variation-settings: "wght" 650; }
+.grafico .degrau.margem .nome { font-variation-settings: "wght" 650; }
+.grafico text.valor.baixo { fill: var(--sai-texto); }
+.grafico text.valor.alto { fill: var(--entra); }
+
+.grafico .conector { stroke: var(--tinta-suave); stroke-width: 1; stroke-dasharray: 2 3; }
+.grafico .zero { stroke: var(--tinta-suave); stroke-width: 1; stroke-dasharray: 4 3; }
+.grafico .base { stroke: var(--tinta); stroke-width: 2; }
+.grafico .rotulo-base { font-size: 12px; fill: var(--tinta); font-feature-settings: "tnum"; font-variation-settings: "wght" 600; }
+
+/* ------------------------------------------------------------ duas contas */
+.contas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--passo) * 3);
+}
+
+.contas h3 {
+  font-size: 0.95rem;
+  font-variation-settings: "wght" 620;
+  margin: 0 0 0.35rem;
+}
+
+.contas p { font-size: 0.9rem; line-height: 1.55; font-feature-settings: "tnum"; }
+
+/* ----------------------------------------------------------- quem paga quem */
+.linhas-de-dinheiro {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.linhas-de-dinheiro th {
+  text-align: left;
+  font-size: 0.78rem;
+  color: var(--tinta-suave);
+  font-variation-settings: "wght" 520;
+  padding: 0 0.8rem 0.4rem 0;
+  border-bottom: 1px solid var(--linha);
+}
+
+.linhas-de-dinheiro td {
+  padding: 0.5rem 0.8rem 0.5rem 0;
+  border-top: 1px solid var(--linha);
+  vertical-align: top;
+}
+
+.linhas-de-dinheiro .nome { font-variation-settings: "wght" 560; }
+.linhas-de-dinheiro .partes { color: var(--tinta-suave); white-space: nowrap; }
+.linhas-de-dinheiro .valor {
+  text-align: right;
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+.linhas-de-dinheiro .formula { color: var(--tinta-suave); font-size: 0.8rem; padding-right: 0; }
+.linhas-de-dinheiro tr.receita td.valor { color: var(--entra); font-variation-settings: "wght" 600; }
+.linhas-de-dinheiro tr.custo td.valor { color: var(--sai-texto); }
+
+/* ---------------------------------------------------- coluna de leitura */
+.origens { grid-template-columns: 1fr; gap: 0.15rem; }
+.origens dt { color: var(--texto-bastidor); font-variation-settings: "wght" 600; margin-top: 0.5rem; }
+.origens dd { color: var(--texto-bastidor-suave); font-size: 0.82rem; line-height: 1.45; }
+
+/* ---------------------------------------------------------- telas menores */
+@media (max-width: 48rem) {
+  .destaques.destaques-negocio { grid-template-columns: 1fr; }
+  .contas { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 40rem) {
+  /* A tabela vira uma ficha por linha: nome e valor em cima, partes e conta embaixo. */
+  .linhas-de-dinheiro thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .linhas-de-dinheiro tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "nome valor" "partes partes" "formula formula";
+    gap: 0.1rem 0.8rem;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--linha);
+  }
+  .linhas-de-dinheiro td { display: block; padding: 0; border: 0; }
+  .linhas-de-dinheiro .nome { grid-area: nome; }
+  .linhas-de-dinheiro .valor { grid-area: valor; }
+  .linhas-de-dinheiro .partes { grid-area: partes; white-space: normal; }
+  .linhas-de-dinheiro .formula { grid-area: formula; }
+}
