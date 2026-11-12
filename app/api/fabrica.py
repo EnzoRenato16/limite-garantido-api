@@ -25,6 +25,7 @@ from app.api.rotas.custodia import (
     rotas_de_sandbox_de_custodia,
 )
 from app.api.rotas.eventos import rotas_de_eventos
+from app.api.rotas.negocio import rotas_de_negocio
 from app.api.rotas.operacao import rotas_de_operacao
 from app.api.rotas.risco import rotas_de_risco, rotas_de_sandbox
 from app.aplicacao.portas import Custodiante, ProvedorDePrecos, Relogio
@@ -100,6 +101,11 @@ TAGS = [
         "callback assinado (HMAC) ou pela consulta de reserva da rotina de custódia.",
     },
     {"name": "Risco", "description": "Política de risco do parceiro e simulador de stress."},
+    {
+        "name": "Negócio",
+        "description": "Modelo econômico: receitas, custos e margem por cliente, da "
+        "plataforma e do parceiro. Premissas editáveis, carteira sintética, números ilustrativos.",
+    },
     {
         "name": "Sandbox",
         "description": "Simulações para teste: queda de preço e passagem de dias. "
@@ -185,6 +191,7 @@ def criar_app(
         rotas_de_custodiantes,
         rotas_de_callback,
         rotas_de_risco,
+        rotas_de_negocio,
         rotas_de_sandbox,
         rotas_de_sandbox_de_custodia,
         rotas_de_admin,
