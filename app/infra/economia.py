@@ -82,8 +82,10 @@ def _texto(tabela: Mapping[str, Any], campo: str, chave: str) -> str:
     return valor
 
 
-def _ler_esquema(chave_nome: str, tabela: Mapping[str, Any]) -> EsquemaDaPremissa:
+def _ler_esquema(chave_nome: str, tabela: object) -> EsquemaDaPremissa:
     chave = f"premissas.{chave_nome}"
+    if not isinstance(tabela, dict):
+        raise ErroNoArquivoDePremissas(f"{chave}: precisa ser uma tabela")
     try:
         nome = NomeDaPremissa(chave_nome)
     except ValueError:
@@ -134,8 +136,10 @@ def _ler_esquema(chave_nome: str, tabela: Mapping[str, Any]) -> EsquemaDaPremiss
     )
 
 
-def _ler_conjunto(conjunto_id: str, tabela: Mapping[str, Any]) -> Conjunto:
+def _ler_conjunto(conjunto_id: str, tabela: object) -> Conjunto:
     chave = f"conjuntos.{conjunto_id}"
+    if not isinstance(tabela, dict):
+        raise ErroNoArquivoDePremissas(f"{chave}: precisa ser uma tabela")
     brutos = tabela.get("valores")
     if not isinstance(brutos, dict):
         raise ErroNoArquivoDePremissas(f"{chave}.valores: falta a tabela de valores")

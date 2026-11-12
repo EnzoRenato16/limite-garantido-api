@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -36,6 +37,15 @@ def test_toml_e_o_apoio_de_teste_dizem_o_mesmo() -> None:
     parametros = carregar_parametros_da_economia()
     assert dict(parametros.esquema) == ESQUEMA
     assert dict(parametros.conjuntos["base"].valores) == VALORES_BASE
+
+
+def test_toda_premissa_explica_a_origem() -> None:
+    for esquema in carregar_parametros_da_economia().esquema.values():
+        origem = esquema.origem.strip()
+        assert len(origem) >= 30, esquema.nome
+        assert origem.lower() not in {"ilustrativa", "referência", "referencia"}, esquema.nome
+        if esquema.fonte is not None:
+            assert esquema.fonte.strip().lower() not in {"ilustrativa", "referência"}
 
 
 def test_conjunto_dentro_das_faixas() -> None:
@@ -132,6 +142,25 @@ def test_toml_quebrado_levanta_erro_claro(
     tmp_path: Path, antigo: str, novo: str, chave: str
 ) -> None:
     arquivo = _toml_com(tmp_path, antigo, novo)
+    with pytest.raises(economia.ErroNoArquivoDePremissas) as erro:
+        carregar_parametros_da_economia(arquivo)
+    assert chave in str(erro.value)
+
+
+@pytest.mark.parametrize(
+    ("bloco", "chave"),
+    [
+        (r"\[premissas\.parceiros\]\n.*?\n\n", "premissas.parceiros"),
+        (r"\[conjuntos\.base\]\n.*?\[conjuntos\.base\.valores\]\n.*?\n\n", "conjuntos.base"),
+    ],
+)
+def test_entrada_que_nao_e_tabela_levanta_erro_claro(
+    tmp_path: Path, bloco: str, chave: str
+) -> None:
+    texto = economia.ARQUIVO_PADRAO.read_text(encoding="utf-8")
+    sem_o_bloco = re.sub(bloco, "", texto, count=1, flags=re.DOTALL)
+    arquivo = tmp_path / "premissas.toml"
+    arquivo.write_text(f"{chave} = 3\n{sem_o_bloco}", encoding="utf-8")
     with pytest.raises(economia.ErroNoArquivoDePremissas) as erro:
         carregar_parametros_da_economia(arquivo)
     assert chave in str(erro.value)
