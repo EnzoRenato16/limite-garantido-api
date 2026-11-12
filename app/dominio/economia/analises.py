@@ -46,8 +46,9 @@ MOTIVO_SEM_EQUILIBRIO = (
     "então nenhum número de clientes paga o custo fixo."
 )
 
-# Busca do valor que empata: passos de um centavo, no máximo estes.
-MAXIMO_DE_PASSOS = 1000
+# Busca do valor que empata: passos de um centavo a partir da estimativa, no máximo
+# estes; se acabarem, a bissecção fecha a conta. Poucos passos limitam o pior caso.
+MAXIMO_DE_PASSOS = 50
 # Distância entre os dois pontos que medem a inclinação. O fee mexe só em uma linha e
 # nos tributos, então R$ 1,00 basta. O gasto mexe em oito linhas arredondadas e cada
 # real dele vale menos de um centavo de margem: com R$ 1,00 a inclinação seria só o
@@ -94,6 +95,10 @@ class ComparacaoInternaExterna:
     margem_externa: Dinheiro
     custo_a_mais_da_externa: Dinheiro
     fee_de_gravame_externo_para_empatar: Dinheiro | None
+    # Valor de fronteira: com ele a externa empata e com um centavo a menos não. Para o
+    # fee a margem é monótona e a fronteira é o menor valor que empata; para o gasto os
+    # arredondamentos fazem a margem oscilar centavos, e a fronteira é a mais próxima
+    # da estimativa, não necessariamente a menor.
     gasto_para_empatar: Dinheiro | None
     gasto_cabe_no_limite: bool | None  # gasto que empata ≤ saldo × LTV
     parceiro_interna: Dinheiro
@@ -254,8 +259,12 @@ def _valor_para_empatar(
     alvo: Dinheiro,
     passo: Dinheiro,
 ) -> Dinheiro | None:
-    """Menor valor da premissa em dinheiro `faixa.nome`, dentro da faixa aceita, com que
-    a externa alcança a margem da interna. As outras premissas ficam como estão."""
+    """Valor de fronteira da premissa em dinheiro `faixa.nome`, dentro da faixa aceita:
+    com ele a externa alcança a margem da interna e com um centavo a menos não.
+
+    É o menor valor que empata quando a margem é monótona nele (o fee). None quer dizer
+    que nem no máximo da faixa aceita a externa empata. As outras premissas ficam como
+    estão."""
     campo = faixa.nome.value
 
     def margem_com(centavos: int) -> int:
@@ -282,16 +291,19 @@ def _buscar_empate(
     minimo: int,
     maximo: int,
 ) -> int | None:
-    """Menor valor acima de `inicio`, em centavos e até `maximo`, cuja margem alcança o alvo.
+    """Valor de fronteira acima de `inicio`, em centavos e até `maximo`: a margem nele
+    alcança o alvo e um centavo a menos não alcança.
 
     Pré-condição: em `inicio` a margem ainda não alcança o alvo (a externa custa mais).
 
-    Mede a inclinação entre `inicio` e `inicio + passo`; se ela não for positiva, não há
-    empate. Pula para a estimativa da reta, corrige pela secante entre o início e a
-    estimativa, e então anda centavo a centavo (no máximo `MAXIMO_DE_PASSOS`) até a
-    fronteira: a margem no valor alcança o alvo e um centavo a menos não alcança. Se os
-    passos acabam antes, a fronteira sai por bissecção entre um valor que não empata e
-    um que empata. A resposta é confirmada recalculando a margem.
+    Mede a inclinação entre `inicio` e `inicio + passo`. Se ela não for positiva (o que
+    também acontece quando o passo é pequeno demais para mexer numa linha arredondada),
+    olha o máximo da faixa: se lá empata, a fronteira sai por bissecção entre o início
+    e o máximo; senão, None. Com inclinação positiva, pula para a estimativa da reta,
+    corrige pela secante entre o início e a estimativa, e anda centavo a centavo (no
+    máximo `MAXIMO_DE_PASSOS`); se os passos acabam, bissecção entre um valor que não
+    empata e um que empata. A resposta é confirmada recalculando a margem. None quer
+    dizer que no máximo da faixa a margem não alcança o alvo.
 
     Cada linha é arredondada, então a margem oscila um ou dois centavos em torno da reta.
     Quando a inclinação é pequena (o gasto mexe pouco na margem) pode haver mais de uma
@@ -310,7 +322,11 @@ def _buscar_empate(
         return None
     m_inicio = margem(inicio)
     if margem(segundo) <= m_inicio:
-        return None  # inclinação zero ou negativa: mais valor não fecha a diferença
+        # Inclinação não positiva nos dois pontos: só o máximo da faixa decide.
+        if margem(maximo) < alvo:
+            return None
+        fronteira = _bisseccao(margem, alvo, abaixo=inicio, acima=maximo)
+        return fronteira if _e_fronteira(margem_com, alvo, fronteira, minimo) else None
 
     def estimar(outro: int) -> int:
         inclinacao = Fraction(margem(outro) - m_inicio, outro - inicio)  # {centavo/centavo}

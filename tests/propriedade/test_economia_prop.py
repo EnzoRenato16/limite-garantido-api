@@ -17,15 +17,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import Decimal
 
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
+
+from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.analises import (
     analisar_tornado,
     comparar_interna_externa,
     ponto_de_equilibrio,
 )
-from hypothesis import assume, given, settings
-from hypothesis import strategies as st
-
-from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.calculo import (
     Linha,
     Parte,
@@ -231,7 +231,16 @@ def test_empate_da_interna_x_externa_confere(p: Premissas, perdas: TaxasDePerda)
     if not c.custo_a_mais_da_externa.positivo:
         assert c.fee_de_gravame_externo_para_empatar is None
         assert c.gasto_para_empatar is None
+        return
     fee = c.fee_de_gravame_externo_para_empatar
+    tem_fee = p.gravames_ao_mes > 0 and FonteDeReceita.fee_gravame in p.receitas_ligadas
+    teto_do_fee = Dinheiro.de_decimal(ESQUEMA[N.fee_gravame_externa].maximo)
+    teto_do_gasto = Dinheiro.de_decimal(ESQUEMA[N.gasto_mensal].maximo)
+    # None é verdade: no máximo da faixa aceita a externa não alcança a interna.
+    if fee is None and tem_fee:
+        assert margem(externa.com(fee_gravame_externa=teto_do_fee)) < c.margem_interna
+    if c.gasto_para_empatar is None:
+        assert margem(externa.com(gasto_mensal=teto_do_gasto)) < c.margem_interna
     if fee is not None:
         assert margem(externa.com(fee_gravame_externa=fee)) >= c.margem_interna
         if fee.positivo:

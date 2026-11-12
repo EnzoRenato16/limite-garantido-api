@@ -189,6 +189,25 @@ def test_gasto_para_empatar_avisa_quando_nao_cabe() -> None:
     assert _margem(externa.com(gasto_mensal=gasto - Dinheiro(1))) < c.margem_interna
 
 
+@pytest.mark.parametrize(
+    ("gravames", "mais_que"), [("0.005", 40000), ("0.01", 20000), ("0.02", 10000)]
+)
+def test_fee_empata_mesmo_com_poucos_gravames(gravames: str, mais_que: int) -> None:
+    # Com 0,005 gravame por mês, R$ 1,00 de fee mexe meio centavo na linha, que é
+    # arredondada para baixo: a inclinação medida em dois pontos sai zero. Mesmo assim
+    # há um fee na faixa aceita (até R$ 500,00) que empata.
+    p = premissas_base().com(execucoes_ao_ano=Decimal(0), gravames_ao_mes=Decimal(gravames))
+    c = comparar_interna_externa(p, PERDAS, ESQUEMA)
+
+    assert c.custo_a_mais_da_externa.positivo
+    fee = c.fee_de_gravame_externo_para_empatar
+    assert fee is not None
+    assert Dinheiro(mais_que) < fee <= Dinheiro(50000)
+    externa = p.com(**TODA_EXTERNA)
+    assert _margem(externa.com(fee_gravame_externa=fee)) >= c.margem_interna
+    assert _margem(externa.com(fee_gravame_externa=fee - Dinheiro(1))) < c.margem_interna
+
+
 def test_externa_melhor_nao_procura_empate() -> None:
     # Fee externo alto: a externa rende mais que a interna, não há o que empatar.
     p = premissas_base().com(fee_gravame_externa=Dinheiro(50000))
@@ -219,6 +238,9 @@ def test_fee_fora_da_faixa_aceita_nao_empata() -> None:
     c = comparar_interna_externa(p, PERDAS, ESQUEMA)
     assert c.custo_a_mais_da_externa.positivo
     assert c.fee_de_gravame_externo_para_empatar is None
+    # None é verdade: no teto da faixa aceita a externa continua abaixo da interna.
+    no_teto = p.com(**TODA_EXTERNA, fee_gravame_externa=Dinheiro(50000))
+    assert _margem(no_teto) < c.margem_interna
 
 
 def test_gasto_sem_inclinacao_positiva_nao_empata() -> None:
@@ -232,6 +254,8 @@ def test_gasto_sem_inclinacao_positiva_nao_empata() -> None:
     assert c.custo_a_mais_da_externa.positivo
     assert c.gasto_para_empatar is None
     assert c.gasto_cabe_no_limite is None
+    no_teto = p.com(**TODA_EXTERNA, gasto_mensal=Dinheiro(5000000))
+    assert _margem(no_teto) < c.margem_interna
 
 
 # ----------------------------------------------------------------------- tornado
@@ -361,6 +385,18 @@ def test_simular_negocio_rapido() -> None:
     assert time.perf_counter() - inicio < 1.0
 
 
+def test_simular_negocio_rapido_num_caso_dificil() -> None:
+    # Poucos gravames (a inclinação do fee sai zero em R$ 1,00) e 13 dias financiados
+    # (o gasto quase não mexe na margem: o intercâmbio mal paga o funding). As duas
+    # buscas precisam da bissecção e mesmo assim acham o empate.
+    p = premissas_base().com(gravames_ao_mes=Decimal("0.005"), dias_financiados=Decimal(13))
+    inicio = time.perf_counter()
+    r = simular_negocio(p, PERDAS, ESQUEMA)
+    assert time.perf_counter() - inicio < 1.0
+    assert r.interna_x_externa.fee_de_gravame_externo_para_empatar is not None
+    assert r.interna_x_externa.gasto_para_empatar is not None
+
+
 # ------------------------------------------------------------- busca do empate
 # Margem sintética em degraus: 1 centavo a cada R$ 50,00. A fronteira de 10 centavos
 # fica em R$ 500,00 (50.000 centavos).
@@ -375,6 +411,8 @@ def test_busca_acha_a_fronteira_pela_inclinacao() -> None:
 
 
 def test_busca_sem_inclinacao_positiva_ou_sem_espaco() -> None:
+    # Inclinação zero nos dois pontos, mas o máximo empata: bissecção até a fronteira.
+    assert _buscar_empate(_degraus, 10, 0, 100, 0, 10**6) == 50000
     assert _buscar_empate(lambda valor: -valor, 10, 0, 100, 0, 10**6) is None
     assert _buscar_empate(lambda valor: 0, 10, 0, 100, 0, 10**6) is None
     assert _buscar_empate(_degraus, 10, 10**6, 100, 0, 10**6) is None
@@ -383,10 +421,10 @@ def test_busca_sem_inclinacao_positiva_ou_sem_espaco() -> None:
 
 
 def test_busca_cai_na_bisseccao_quando_os_passos_acabam() -> None:
-    # Estimativa longe por baixo: mil centavos não chegam, a distância dobra e a
+    # Estimativa longe por baixo: os passos de um centavo não chegam, a distância dobra e a
     # bissecção acha a fronteira.
     assert _andar_ate_a_fronteira(_degraus, 10, 0, 20000, 0, 10**6) == 50000
-    # Longe por cima: mil centavos para baixo não chegam, bissecção desde o início.
+    # Longe por cima: os passos para baixo não chegam, bissecção desde o início.
     assert _andar_ate_a_fronteira(_degraus, 10, 0, 80000, 0, 10**6) == 50000
     # Por baixo e sem empate até o máximo.
     assert _andar_ate_a_fronteira(_degraus, 10, 0, 20000, 0, 40000) is None
