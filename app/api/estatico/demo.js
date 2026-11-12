@@ -64,6 +64,11 @@ const estado = {
   custodiantes: [],
   ultimoWebhook: 0,
   ultimaAtualizacao: 0,
+  // Cada `atualizar` ganha um número. Só a mais recente desenha: uma consulta antiga
+  // que responde por último não pode apagar da tela o que acabou de acontecer.
+  geracao: 0,
+  // A última consulta falhou: a próxima volta da consulta periódica tenta de novo.
+  desatualizado: false,
   // Para cada mensagem na tela, a "foto" do estado a que ela se refere. Quando o estado
   // muda, a mensagem velha some: um aviso de chamada de margem não pode continuar na
   // tela depois que a garantia foi executada.
@@ -316,13 +321,16 @@ function desenharFatura() {
 
 async function atualizar() {
   estado.ultimaAtualizacao = Date.now();
+  const geracao = ++estado.geracao;
   const [conta, garantias] = await Promise.all([
     chamar("GET", `/contas/${estado.contaId}`),
     chamar("GET", `/contas/${estado.contaId}/garantias?limite=50`),
   ]);
-  if (!conta.ok) return;
+  if (geracao !== estado.geracao) return;
+  estado.desatualizado = !conta.ok || !garantias.ok;
+  if (estado.desatualizado) return;
   estado.conta = conta.dados;
-  estado.garantias = garantias.ok ? garantias.dados.dados.slice().reverse() : [];
+  estado.garantias = garantias.dados.dados.slice().reverse();
   desenharRegua();
   desenharAviso();
   desenharGarantias();
@@ -625,7 +633,8 @@ async function buscarWebhooks() {
     // tempos: o aceite do pedido não gera aviso, mas muda a linha do tempo.
     const esperando = estado.garantias.some((g) => g.solicitacao);
     const faz = Date.now() - estado.ultimaAtualizacao;
-    if (estado.conta && (recebidos.length || (esperando && faz > INTERVALO_DE_RECONSULTA_EM_MS))) {
+    const reconsultar = esperando || estado.desatualizado;
+    if (recebidos.length || (reconsultar && faz > INTERVALO_DE_RECONSULTA_EM_MS)) {
       await atualizar();
     }
   } catch (erro) {
@@ -644,16 +653,25 @@ async function abrirConta() {
 }
 
 async function recomecar() {
-  sessionStorage.removeItem(GUARDADO);
-  $("eventos").replaceChildren();
-  $("vazio").hidden = false;
-  for (const id of ["resultado-garantia", "resultado-compra", "resultado-queda", "resultado-fatura"]) {
-    mostrar(id, "");
+  // Até a conta nova existir, nada na página pode ser clicado: um "Guardar" no meio do
+  // caminho iria para a conta antiga e sumiria da tela quando a nova aparecesse.
+  document.body.inert = true;
+  document.body.dataset.pronta = "false";
+  try {
+    sessionStorage.removeItem(GUARDADO);
+    $("eventos").replaceChildren();
+    $("vazio").hidden = false;
+    for (const id of ["resultado-garantia", "resultado-compra", "resultado-queda", "resultado-fatura"]) {
+      mostrar(id, "");
+    }
+    desenharDias(0);
+    await abrirConta();
+    $("conta-atual").textContent = estado.contaId;
+    await atualizar();
+  } finally {
+    document.body.inert = false;
+    document.body.dataset.pronta = "true";
   }
-  desenharDias(0);
-  await abrirConta();
-  $("conta-atual").textContent = estado.contaId;
-  await atualizar();
 }
 
 function preencherAtivos() {

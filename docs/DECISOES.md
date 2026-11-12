@@ -632,6 +632,12 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
 11. **Custodiante fora do ar travava o prazo.** A revisão por agente apontou, e um teste
     confirmou antes da correção: se a consulta ao custodiante falhava, a garantia nunca
     expirava.
+12. **"Guardar" logo depois de "Começar de novo" ia para a conta antiga.** O CI do PR
+    pegou (três testes de navegador da fase 2): se a conta nova demorava a ser criada, o
+    pedido de gravame ia para a conta anterior e a garantia sumia da tela quando a nova
+    aparecia. Reproduzido atrasando a criação da conta no navegador. Agora a página fica
+    travada (`inert`) até a conta nova existir, e só a consulta mais recente desenha a
+    tela: uma resposta antiga que chega por último é descartada.
 
 <a id="o-que-ficou-para-voce-decidir"></a>
 ## O que ficou para você decidir

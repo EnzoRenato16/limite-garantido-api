@@ -53,7 +53,11 @@ def _abrir_demo(pagina: Any) -> None:
     pagina.goto(f"{pagina.endereco}/demo")
     _esperar()(pagina.locator("body[data-pronta=true]")).to_have_count(1)
     # Conta nova a cada teste: a sessão do navegador é a mesma do servidor.
+    anterior = pagina.locator("#conta-atual").text_content()
     pagina.get_by_role("button", name="Começar de novo").click()
+    # "R$ 0,00" não serve de sinal: a conta anterior também podia estar zerada.
+    _esperar()(pagina.locator("#conta-atual")).not_to_have_text(anterior or "")
+    _esperar()(pagina.locator("body[data-pronta=true]")).to_have_count(1)
     _esperar()(pagina.locator("#disponivel")).to_have_text("R$ 0,00")
 
 
@@ -140,7 +144,11 @@ def test_fase_2_execucao_externa(pagina: Any) -> None:
     _abrir_demo(pagina)
     garantia = _guardar_externa(pagina, "custodiante_lento")
     garantia.get_by_role("button", name="Custodiante confirma").click()
-    esperar(pagina.locator("#disponivel")).to_have_text("R$ 9.500,00")
+    # Primeiro a mensagem: se a API recusar, o motivo aparece na falha do teste.
+    esperar(pagina.locator("#resultado-garantia")).to_contain_text("foi confirmado")
+    esperar(pagina.locator("#disponivel")).to_have_text(
+        "R$ 9.500,00", timeout=ESPERA_DO_WORKER_EM_MS
+    )
 
     pagina.locator("#valor-da-compra").fill("5.000,00")
     pagina.get_by_role("button", name="Comprar", exact=True).click()
@@ -158,6 +166,32 @@ def test_fase_2_execucao_externa(pagina: Any) -> None:
     garantia.get_by_role("button", name="Custodiante confirma").click()
     esperar(_webhook(pagina, "execucao.confirmada")).to_have_count(1)
     esperar(pagina.locator("#valor-usado")).not_to_have_text("R$ 5.000,00")
+
+
+def test_guardar_logo_depois_de_comecar_de_novo_vai_para_a_conta_nova(pagina: Any) -> None:
+    """Falhou no CI: com a conta nova demorando, o "Guardar" ia para a conta antiga e a
+    garantia sumia da tela assim que a nova aparecia."""
+    esperar = _esperar()
+    pagina.goto(f"{pagina.endereco}/demo")
+    esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
+    # Atrasa no navegador a criação da conta, como numa rede lenta.
+    pagina.evaluate(
+        """() => {
+          const original = window.fetch;
+          window.fetch = async (url, opcoes) => {
+            if (opcoes?.method === "POST" && url === "/v1/contas") {
+              await new Promise((pronto) => setTimeout(pronto, 1500));
+            }
+            return original(url, opcoes);
+          };
+        }"""
+    )
+    pagina.get_by_role("button", name="Começar de novo").click()
+    # Sem esperar nada: clica em seguida, como alguém com pressa.
+    garantia = _guardar_externa(pagina, "custodiante_lento")
+    esperar(garantia).to_contain_text("Custodiante Lento")
+    pagina.wait_for_timeout(2500)
+    esperar(pagina.locator("#garantias > li")).to_have_count(1)
 
 
 def test_aviso_antigo_some_quando_o_estado_muda(pagina: Any) -> None:
