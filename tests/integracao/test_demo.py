@@ -190,6 +190,31 @@ def test_painel_de_risco_e_servido_com_a_mesma_politica(cliente: TestClient) -> 
     assert "https://" not in resposta.text
 
 
+def test_pagina_negocio_servida_com_csp(cliente: TestClient) -> None:
+    resposta = cliente.get("/negocio")
+    assert resposta.status_code == 200
+    assert "Modelo econômico" in resposta.text
+    assert 'id="aviso-ilustrativo"' in resposta.text
+    # A mesma política do /risco, sem afrouxar nada para o download do CSV.
+    risco = cliente.get("/risco")
+    assert resposta.headers["Content-Security-Policy"] == risco.headers["Content-Security-Policy"]
+    assert resposta.headers["X-Content-Type-Options"] == "nosniff"
+    assert "http://" not in resposta.text
+    assert "https://" not in resposta.text
+    assert "<script>" not in resposta.text
+    for arquivo in ("negocio.css", "negocio.js", "demo.css"):
+        assert cliente.get(f"/demo/estatico/{arquivo}").status_code == 200
+
+
+def test_as_tres_paginas_tem_a_mesma_navegacao(cliente: TestClient) -> None:
+    for caminho in ("/demo", "/risco", "/negocio"):
+        html = cliente.get(caminho).text
+        assert '<nav class="paginas" aria-label="Páginas">' in html
+        for destino in ('href="/demo"', 'href="/risco"', 'href="/negocio"'):
+            assert destino in html
+        assert html.count('aria-current="page"') == 1
+
+
 def test_sem_demo_habilitada_a_pagina_nao_existe(
     url_do_banco: str, engine: Engine, relogio: RelogioFixo
 ) -> None:
@@ -202,6 +227,8 @@ def test_sem_demo_habilitada_a_pagina_nao_existe(
             "/demo/estatico/demo.js",
             "/risco",
             "/demo/estatico/risco.js",
+            "/negocio",
+            "/demo/estatico/negocio.js",
         ):
             assert cliente.get(caminho).status_code == 404
         assert cliente.post("/demo/webhooks", content=b"{}").status_code == 404

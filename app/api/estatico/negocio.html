@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modelo econômico por cliente · Limite Garantido</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/demo/estatico/demo.css">
+  <link rel="stylesheet" href="/demo/estatico/risco.css">
+  <link rel="stylesheet" href="/demo/estatico/negocio.css">
+  <script type="module" src="/demo/estatico/negocio.js"></script>
+</head>
+<body>
+  <nav class="paginas" aria-label="Páginas">
+    <span class="paginas-produto">Limite Garantido</span>
+    <a href="/demo">Demonstração</a>
+    <a href="/risco">Risco</a>
+    <a href="/negocio" aria-current="page">Negócio</a>
+  </nav>
+  <div class="palco">
+
+    <main class="app painel negocio" aria-label="Modelo econômico">
+      <header class="cabecalho">
+        <div>
+          <p class="marca">Modelo econômico por cliente</p>
+          <p class="nota">Quanto a plataforma e o parceiro ganham, por mês, com um cliente
+            ativo médio, e quantos clientes são precisos para pagar o custo fixo.</p>
+        </div>
+      </header>
+
+      <p class="aviso-ilustrativo" id="aviso-ilustrativo">
+        <strong>Números ilustrativos: premissas editáveis, carteira sintética, sem dado de
+          nenhuma empresa real.</strong>
+        <a href="/docs#/Negócio">Ver cada premissa e a origem dela na API</a>
+      </p>
+
+      <section aria-labelledby="titulo-conjuntos">
+        <h2 id="titulo-conjuntos" class="secao">Conjunto de premissas</h2>
+        <div class="cenarios" id="conjuntos" role="group" aria-label="Conjuntos prontos"></div>
+        <p class="descricao-cenario" id="descricao-conjunto"></p>
+      </section>
+
+      <form class="controles" id="controles" aria-label="Ajustar premissas" novalidate>
+        <fieldset>
+          <legend>Cliente médio</legend>
+          <div class="grade-controles">
+            <label>Gasto no cartão, R$ por mês
+              <input id="gasto" inputmode="decimal" autocomplete="off">
+            </label>
+            <label>Saldo em garantia, R$
+              <input id="saldo" inputmode="decimal" autocomplete="off">
+            </label>
+            <label>Garantia em outra instituição, %
+              <input id="externa" inputmode="decimal" autocomplete="off">
+            </label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Mercado e preço</legend>
+          <div class="grade-controles">
+            <label>CDI, % ao ano
+              <input id="cdi" inputmode="decimal" autocomplete="off">
+            </label>
+            <label>Intercâmbio, % do gasto
+              <input id="intercambio" inputmode="decimal" autocomplete="off">
+            </label>
+            <label>Fee da API, R$ por garantia por mês
+              <input id="fee-api" inputmode="decimal" autocomplete="off">
+            </label>
+            <label>Cenário de risco (dá a perda)
+              <select id="cenario-risco"></select>
+            </label>
+          </div>
+        </fieldset>
+        <div class="linha">
+          <button type="submit">Simular com estes valores</button>
+          <p class="resultado negado" id="erro" role="alert"></p>
+        </div>
+      </form>
+
+      <section class="numeros" aria-labelledby="titulo-numeros">
+        <div class="titulo-com-acao">
+          <h2 id="titulo-numeros" class="secao">Resultado</h2>
+          <button type="button" class="discreto pequeno" id="exportar">Exportar premissas e resultados (CSV)</button>
+        </div>
+        <dl class="destaques destaques-negocio">
+          <div>
+            <dt>Margem da plataforma, por cliente por mês</dt>
+            <dd><strong id="margem-plataforma" data-valor="">R$ 0,00</strong></dd>
+            <p class="detalhe" id="detalhe-plataforma"></p>
+          </div>
+          <div>
+            <dt>Margem do parceiro, por cliente por mês</dt>
+            <dd><strong id="margem-parceiro" data-valor="">R$ 0,00</strong></dd>
+            <p class="detalhe" id="detalhe-parceiro"></p>
+          </div>
+          <div>
+            <dt>Ponto de equilíbrio da plataforma</dt>
+            <dd><strong id="equilibrio" data-valor=""></strong></dd>
+            <p class="detalhe" id="detalhe-equilibrio"></p>
+          </div>
+          <div>
+            <dt>Resultado da carteira simulada, por mês</dt>
+            <dd><strong id="resultado-carteira" data-valor="">R$ 0,00</strong></dd>
+            <p class="detalhe" id="detalhe-carteira"></p>
+          </div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="titulo-cascata">
+        <h2 id="titulo-cascata" class="secao">Da receita à margem da plataforma</h2>
+        <p class="explica">Por cliente por mês. Cada degrau é um custo que sai da receita; o que
+          sobra no fim é a margem.</p>
+        <svg id="grafico-cascata" class="grafico" role="img" aria-labelledby="titulo-cascata"></svg>
+      </section>
+
+      <section aria-labelledby="titulo-fontes">
+        <h2 id="titulo-fontes" class="secao">Receita da plataforma por fonte</h2>
+        <svg id="grafico-fontes" class="grafico" role="img" aria-labelledby="titulo-fontes"></svg>
+      </section>
+
+      <section aria-labelledby="titulo-tornado">
+        <h2 id="titulo-tornado" class="secao">O que mais mexe na margem</h2>
+        <p class="explica">Cada premissa vai, uma de cada vez, aos extremos da faixa razoável.
+          A barra mostra a margem da plataforma por cliente por mês nesses extremos; as dez que
+          mais mexem aparecem primeiro.</p>
+        <p class="legenda-tornado">
+          <span><i class="cor cor-baixo"></i>premissa no extremo baixo</span>
+          <span><i class="cor cor-alto"></i>premissa no extremo alto</span>
+          <span><i class="traco-base"></i>margem com as premissas atuais</span>
+        </p>
+        <svg id="grafico-tornado" class="grafico" role="img" aria-labelledby="titulo-tornado"></svg>
+        <p class="explica" id="nota-tornado" hidden></p>
+      </section>
+
+      <section aria-labelledby="titulo-contas">
+        <h2 id="titulo-contas" class="secao">Duas contas por trás</h2>
+        <div class="contas">
+          <div>
+            <h3>Perda esperada</h3>
+            <p id="texto-perda"></p>
+          </div>
+          <div>
+            <h3>Garantia interna ou externa</h3>
+            <p id="texto-interna-externa"></p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-linhas">
+        <h2 id="titulo-linhas" class="secao">Quem paga quem</h2>
+        <p class="explica">Todas as linhas de dinheiro, por cliente por mês. As margens acima são
+          somas destas linhas, cada uma arredondada uma vez só.</p>
+        <table class="linhas-de-dinheiro" id="quem-paga-quem">
+          <thead>
+            <tr><th scope="col">Linha</th><th scope="col">De quem para quem</th><th scope="col" class="valor">Valor</th><th scope="col">Conta</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <aside class="bastidores leitura" aria-label="Como ler">
+      <header>
+        <h2>Como ler</h2>
+      </header>
+      <div class="texto-leitura">
+        <p>A unidade é <strong>um cliente ativo médio, em um mês</strong>. Cada linha da tabela
+          é dinheiro que sai de uma parte e chega a outra. A margem da plataforma é o que chega
+          a ela menos o que sai dela; a do parceiro, o mesmo do lado dele.</p>
+        <p><strong>Receita por cliente.</strong> Vem do intercâmbio (dividido com o parceiro),
+          do fee que o parceiro paga pela API por garantia ativa e por gravame, da parte retida
+          do rendimento da garantia, do rotativo e da taxa do FIDC. Num LaaS comum quase tudo
+          é juro; aqui o juro é pequeno, porque a garantia troca juro alto por limite.</p>
+        <p><strong>Custo de funding.</strong> Entre a compra e o pagamento da fatura, a
+          plataforma financia o gasto. Esse saldo custa CDI mais spread, no FIDC ou no
+          balanço. Por isso o CDI e os dias financiados pesam tanto no tornado.</p>
+        <p><strong>Perda.</strong> Vem do motor de risco, no cenário escolhido: só perde o que
+          a venda da garantia não cobre. Garantia em outra instituição perde mais, porque a
+          venda demora.</p>
+        <p><strong>Escala.</strong> O custo fixo não entra na margem por cliente; entra no
+          ponto de equilíbrio e no resultado da carteira. Com margem positiva, cada cliente a
+          mais diminui o prejuízo até o equilíbrio.</p>
+        <p>Conservador, base e otimista são <strong>conjuntos de premissas, não
+          previsões</strong>. Servem para ver a faixa de resultados, não para escolher um.</p>
+        <p class="aviso-leitura">Números ilustrativos: premissas editáveis, carteira sintética,
+          sem dado de nenhuma empresa real.</p>
+        <h3>De onde vêm as premissas dos controles</h3>
+        <dl class="premissas origens" id="origens"></dl>
+      </div>
+      <footer>
+        <span>Modelo econômico ilustrativo</span>
+        <a href="/docs#/Negócio">Documentação da API</a>
+      </footer>
+    </aside>
+
+  </div>
+</body>
+</html>

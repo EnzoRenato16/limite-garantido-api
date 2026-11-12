@@ -119,6 +119,19 @@ def montar_demo(app: FastAPI, recursos: Recursos) -> None:
             },
         )
 
+    @app.get("/negocio", include_in_schema=False)
+    def modelo_economico() -> FileResponse:
+        """Modelo econômico por cliente (plataforma e parceiro), no mesmo estilo do /demo."""
+        return FileResponse(
+            PASTA / "negocio.html",
+            headers={
+                "Content-Security-Policy": POLITICA_DE_SEGURANCA,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Cache-Control": "no-store",
+            },
+        )
+
     @rotas.get("/config", response_model=ConfiguracaoDaDemo)
     def configuracao() -> ConfiguracaoDaDemo:
         if config.demo_api_key is None:
