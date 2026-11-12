@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
 
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.analises import (
+    MOTIVO_EXTERNA_NAO_CUSTA_MAIS,
+    MOTIVO_FEE_DE_GRAVAME_DESLIGADO,
     MOTIVO_SEM_EQUILIBRIO,
+    MOTIVO_SEM_EQUILIBRIO_SEM_CUSTO_FIXO,
+    MOTIVO_SEM_GRAVAME,
     BarraDoTornado,
+    PontoDeEquilibrio,
     _andar_ate_a_fronteira,
     _buscar_empate,
     _e_fronteira,
+    _SemEmpate,
     analisar_tornado,
     comparar_interna_externa,
     ponto_de_equilibrio,
@@ -21,6 +28,7 @@ from app.dominio.economia.analises import (
 )
 from app.dominio.economia.calculo import ARRANJO, TaxasDePerda, calcular_mes
 from app.dominio.economia.premissas import FonteDeReceita, NomeDaPremissa, Premissas
+from app.dominio.erros import ValorInvalido
 from app.dominio.taxas import Fracao, TaxaAoAno
 from tests.economia_base import ESQUEMA, premissas_base
 
@@ -65,6 +73,21 @@ def test_sem_equilibrio_com_margem_zero_ou_negativa(margem: int) -> None:
     assert equilibrio.clientes is None
     assert equilibrio.motivo == MOTIVO_SEM_EQUILIBRIO
     assert "Não há ponto de equilíbrio" in MOTIVO_SEM_EQUILIBRIO
+
+
+@pytest.mark.parametrize("margem", [0, -1])
+def test_sem_custo_fixo_e_sem_margem_o_motivo_diz_isso(margem: int) -> None:
+    equilibrio = ponto_de_equilibrio(Dinheiro(margem), Dinheiro(0))
+    assert equilibrio.clientes is None
+    assert equilibrio.motivo == MOTIVO_SEM_EQUILIBRIO_SEM_CUSTO_FIXO
+    assert "custo fixo é zero" in equilibrio.motivo
+
+
+def test_equilibrio_tem_clientes_ou_motivo() -> None:
+    with pytest.raises(ValorInvalido):
+        PontoDeEquilibrio(None, None)
+    with pytest.raises(ValorInvalido):
+        PontoDeEquilibrio(5, "texto")
 
 
 def test_custo_fixo_zero_equilibrio_em_zero_clientes() -> None:
@@ -147,6 +170,7 @@ def test_fee_para_empatar_empata() -> None:
 
     fee = c.fee_de_gravame_externo_para_empatar
     assert fee is not None
+    assert c.motivo_fee is None
     assert fee > p.fee_gravame_externa
     externa = p.com(**TODA_EXTERNA)
     assert _margem(externa.com(fee_gravame_externa=fee)) >= c.margem_interna
@@ -160,6 +184,7 @@ def test_gasto_para_empatar_empata_e_cabe_no_base() -> None:
 
     gasto = c.gasto_para_empatar
     assert gasto is not None
+    assert c.motivo_gasto is None
     assert gasto > p.gasto_mensal
     externa = p.com(**TODA_EXTERNA)
     assert _margem(externa.com(gasto_mensal=gasto)) >= c.margem_interna
@@ -216,6 +241,7 @@ def test_externa_melhor_nao_procura_empate() -> None:
     assert c.fee_de_gravame_externo_para_empatar is None
     assert c.gasto_para_empatar is None
     assert c.gasto_cabe_no_limite is None
+    assert c.motivo_fee == c.motivo_gasto == MOTIVO_EXTERNA_NAO_CUSTA_MAIS
 
 
 def test_sem_gravame_nao_ha_fee_para_empatar() -> None:
@@ -223,11 +249,13 @@ def test_sem_gravame_nao_ha_fee_para_empatar() -> None:
     sem_gravames = comparar_interna_externa(base.com(gravames_ao_mes=Decimal(0)), PERDAS, ESQUEMA)
     assert sem_gravames.custo_a_mais_da_externa.positivo
     assert sem_gravames.fee_de_gravame_externo_para_empatar is None
+    assert sem_gravames.motivo_fee == MOTIVO_SEM_GRAVAME
 
     sem_fee = base.com(receitas_ligadas=base.receitas_ligadas - {FonteDeReceita.fee_gravame})
     desligado = comparar_interna_externa(sem_fee, PERDAS, ESQUEMA)
     assert desligado.custo_a_mais_da_externa.positivo
     assert desligado.fee_de_gravame_externo_para_empatar is None
+    assert desligado.motivo_fee == MOTIVO_FEE_DE_GRAVAME_DESLIGADO
 
 
 def test_fee_fora_da_faixa_aceita_nao_empata() -> None:
@@ -238,13 +266,18 @@ def test_fee_fora_da_faixa_aceita_nao_empata() -> None:
     c = comparar_interna_externa(p, PERDAS, ESQUEMA)
     assert c.custo_a_mais_da_externa.positivo
     assert c.fee_de_gravame_externo_para_empatar is None
-    # None é verdade: no teto da faixa aceita a externa continua abaixo da interna.
-    no_teto = p.com(**TODA_EXTERNA, fee_gravame_externa=Dinheiro(50000))
-    assert _margem(no_teto) < c.margem_interna
+    assert c.motivo_fee == (
+        "Nenhum fee de gravame externo na faixa aceita, de R$ 0,00 a R$ 500,00, empata a "
+        "externa com a interna."
+    )
+    # None é verdade: nas duas pontas da faixa aceita a externa continua abaixo da interna.
+    for fee in (Dinheiro(0), Dinheiro(50000)):
+        assert _margem(p.com(**TODA_EXTERNA, fee_gravame_externa=fee)) < c.margem_interna
 
 
-def test_gasto_sem_inclinacao_positiva_nao_empata() -> None:
-    # Sem intercâmbio, sem rotativo e sem FIDC, mais gasto só traz custo de funding.
+def test_gasto_que_so_traz_custo_empata_com_gasto_menor() -> None:
+    # Sem intercâmbio, sem rotativo e sem FIDC, mais gasto só traz custo de funding: a
+    # margem da externa sobe quando o gasto cai, e é para baixo que se procura.
     base = premissas_base()
     p = base.com(
         receitas_ligadas=base.receitas_ligadas
@@ -252,10 +285,46 @@ def test_gasto_sem_inclinacao_positiva_nao_empata() -> None:
     )
     c = comparar_interna_externa(p, PERDAS, ESQUEMA)
     assert c.custo_a_mais_da_externa.positivo
+    gasto = c.gasto_para_empatar
+    assert gasto is not None
+    assert c.motivo_gasto is None
+    assert gasto < p.gasto_mensal
+    externa = p.com(**TODA_EXTERNA)
+    assert _margem(externa.com(gasto_mensal=gasto)) >= c.margem_interna
+    # Fronteira: um centavo mais perto do gasto atual já não empata.
+    assert _margem(externa.com(gasto_mensal=gasto + Dinheiro(1))) < c.margem_interna
+    assert c.gasto_cabe_no_limite is True
+
+
+def test_gasto_sem_empate_em_lado_nenhum_diz_o_motivo() -> None:
+    # Só o fee por garantia ativa como receita e execução externa cara: a externa perde
+    # mais que a interna com qualquer gasto da faixa aceita.
+    base = premissas_base()
+    p = base.com(
+        receitas_ligadas=frozenset({FonteDeReceita.fee_garantia_ativa}),
+        execucoes_ao_ano=Decimal(12),
+        custo_de_execucao_externa=Dinheiro(500000),
+    )
+    c = comparar_interna_externa(p, PERDAS, ESQUEMA)
+    assert c.custo_a_mais_da_externa.positivo
     assert c.gasto_para_empatar is None
     assert c.gasto_cabe_no_limite is None
-    no_teto = p.com(**TODA_EXTERNA, gasto_mensal=Dinheiro(5000000))
-    assert _margem(no_teto) < c.margem_interna
+    assert c.motivo_gasto == (
+        "Nenhum gasto mensal na faixa aceita, de R$ 0,00 a R$ 50.000,00, empata a externa "
+        "com a interna."
+    )
+    for gasto in (Dinheiro(0), Dinheiro(5000000)):
+        assert _margem(p.com(**TODA_EXTERNA, gasto_mensal=gasto)) < c.margem_interna
+
+
+def test_comparacao_tem_valor_ou_motivo() -> None:
+    c = comparar_interna_externa(premissas_base(), PERDAS, ESQUEMA)
+    with pytest.raises(ValorInvalido):
+        replace(c, motivo_fee="texto")
+    with pytest.raises(ValorInvalido):
+        replace(c, gasto_para_empatar=None)
+    with pytest.raises(ValorInvalido):
+        replace(c, gasto_para_empatar=None, motivo_gasto="texto")
 
 
 # ----------------------------------------------------------------------- tornado
@@ -378,21 +447,18 @@ def test_simular_negocio_inclui_o_tornado() -> None:
     assert r.interna_x_externa == comparar_interna_externa(p, PERDAS, ESQUEMA)
 
 
-def test_simular_negocio_rapido() -> None:
-    p = premissas_base()
-    inicio = time.perf_counter()
-    simular_negocio(p, PERDAS, ESQUEMA)
-    assert time.perf_counter() - inicio < 1.0
-
-
 def test_simular_negocio_rapido_num_caso_dificil() -> None:
     # Poucos gravames (a inclinação do fee sai zero em R$ 1,00) e 13 dias financiados
     # (o gasto quase não mexe na margem: o intercâmbio mal paga o funding). As duas
-    # buscas precisam da bissecção e mesmo assim acham o empate.
+    # buscas precisam da bissecção e mesmo assim acham o empate. O tempo é o menor de
+    # três rodadas, para não depender de uma máquina ocupada.
     p = premissas_base().com(gravames_ao_mes=Decimal("0.005"), dias_financiados=Decimal(13))
-    inicio = time.perf_counter()
-    r = simular_negocio(p, PERDAS, ESQUEMA)
-    assert time.perf_counter() - inicio < 1.0
+    tempos = []
+    for _ in range(3):
+        inicio = time.perf_counter()
+        r = simular_negocio(p, PERDAS, ESQUEMA)
+        tempos.append(time.perf_counter() - inicio)
+    assert min(tempos) < 1.0
     assert r.interna_x_externa.fee_de_gravame_externo_para_empatar is not None
     assert r.interna_x_externa.gasto_para_empatar is not None
 
@@ -411,13 +477,48 @@ def test_busca_acha_a_fronteira_pela_inclinacao() -> None:
 
 
 def test_busca_sem_inclinacao_positiva_ou_sem_espaco() -> None:
+    fora = _SemEmpate.fora_da_faixa
     # Inclinação zero nos dois pontos, mas o máximo empata: bissecção até a fronteira.
     assert _buscar_empate(_degraus, 10, 0, 100, 0, 10**6) == 50000
-    assert _buscar_empate(lambda valor: -valor, 10, 0, 100, 0, 10**6) is None
-    assert _buscar_empate(lambda valor: 0, 10, 0, 100, 0, 10**6) is None
-    assert _buscar_empate(_degraus, 10, 10**6, 100, 0, 10**6) is None
+    assert _buscar_empate(lambda valor: -valor, 10, 0, 100, 0, 10**6) is fora
+    assert _buscar_empate(lambda valor: 0, 10, 0, 100, 0, 10**6) is fora
     # Fora da faixa: o empate fica em 50.000, mas o máximo é 40.000.
-    assert _buscar_empate(_degraus, 10, 0, 10000, 0, 40000) is None
+    assert _buscar_empate(_degraus, 10, 0, 10000, 0, 40000) is fora
+
+
+def _degraus_que_descem(valor: int) -> int:
+    return -(valor // 5000)
+
+
+def test_busca_para_baixo_quando_a_margem_cai_com_o_valor() -> None:
+    # A margem cai 1 centavo a cada R$ 50,00 e o início é o máximo da faixa: só há espaço
+    # para baixo. Fronteira: 54.999 empata (−10) e um centavo mais perto do início
+    # (55.000) dá −11.
+    assert _buscar_empate(_degraus_que_descem, -10, 10**6, 10000, 0, 10**6) == 54999
+    # Sem inclinação nos dois pontos e o mínimo empata: bissecção para baixo.
+    assert _buscar_empate(lambda v: (10**6 - v) // 5000, 10, 10**6, 100, 0, 10**6) == 950000
+
+
+def test_busca_olha_a_outra_ponta_quando_o_lado_que_sobe_nao_empata() -> None:
+    # Sobe a partir de 1.000, mas nem o máximo alcança 50; o mínimo, sim (vale 100).
+    def margem(valor: int) -> int:
+        return 100 if valor < 1000 else valor // 5000
+
+    assert _buscar_empate(margem, 50, 1000, 10000, 0, 200000) == 999
+
+
+def test_busca_que_nao_se_confirma_nao_devolve_valor() -> None:
+    # Margem que muda ao ser recalculada (não determinística): a confirmação sem memória
+    # recusa o valor achado, e a busca diz que não confirmou.
+    vistos: set[int] = set()
+
+    def instavel(valor: int) -> int:
+        if valor in vistos:
+            return -1
+        vistos.add(valor)
+        return _degraus(valor)
+
+    assert _buscar_empate(instavel, 10, 0, 10000, 0, 10**6) is _SemEmpate.nao_confirmado
 
 
 def test_busca_cai_na_bisseccao_quando_os_passos_acabam() -> None:

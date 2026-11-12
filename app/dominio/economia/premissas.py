@@ -184,7 +184,9 @@ def _descricao_da_unidade(esquema: EsquemaDaPremissa) -> str:
         case TipoDaPremissa.taxa_ao_mes:
             return "ao mês, fração: 0,08 = 8%"
         case TipoDaPremissa.fracao:
-            return "fração: 0,30 = 30%"
+            # "fração do gasto" diz mais que "fração": usa a unidade quando ela é uma fração.
+            unidade = esquema.unidade if esquema.unidade.startswith("fração") else "fração"
+            return f"{unidade}: 0,30 = 30%"
         case _:
             return esquema.unidade
 

@@ -9,7 +9,8 @@ multiplicar por inteiros mantém a conta fechando centavo por centavo.
   em centavos inteiros. Sem margem positiva não há N.
 - **Interna x externa**: a margem da plataforma por cliente com toda garantia interna e
   com toda externa. Se a externa rende menos, procura em centavos o fee de gravame
-  externo e o gasto mensal que empatam.
+  externo e o gasto mensal que empatam, na direção em que a margem da externa sobe.
+  Quando não há valor, o motivo diz por quê.
 - **Tornado**: cada premissa com faixa razoável vai aos dois extremos dela, cortados
   para respeitar a coerência, e a barra vai do mínimo ao máximo de {baixo, base, alto}.
 """
@@ -20,6 +21,7 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, Decimal, localcontext
+from enum import Enum
 from fractions import Fraction
 
 from app.dominio.dinheiro import Dinheiro
@@ -37,6 +39,7 @@ from app.dominio.economia.premissas import (
     Premissas,
     converter_para_o_campo,
 )
+from app.dominio.erros import ValorInvalido
 from app.dominio.taxas import MESES_NO_ANO, Fracao
 
 N = NomeDaPremissa
@@ -44,6 +47,21 @@ N = NomeDaPremissa
 MOTIVO_SEM_EQUILIBRIO = (
     "Não há ponto de equilíbrio: a margem da plataforma por cliente é zero ou negativa, "
     "então nenhum número de clientes paga o custo fixo."
+)
+MOTIVO_SEM_EQUILIBRIO_SEM_CUSTO_FIXO = (
+    "Não há ponto de equilíbrio: o custo fixo é zero, mas a margem da plataforma por "
+    "cliente é zero ou negativa, então nenhum cliente dá lucro."
+)
+
+# Por que não há fee ou gasto que empata a externa com a interna.
+MOTIVO_EXTERNA_NAO_CUSTA_MAIS = (
+    "A garantia externa não custa mais que a interna: não há diferença para empatar."
+)
+MOTIVO_SEM_GRAVAME = (
+    "Sem gravame por cliente (0 por mês), o fee de gravame externo não mexe na margem."
+)
+MOTIVO_FEE_DE_GRAVAME_DESLIGADO = (
+    "A receita de fee de gravame está desligada: o fee de gravame externo não entra na conta."
 )
 
 # Busca do valor que empata: passos de um centavo a partir da estimativa, no máximo
@@ -65,10 +83,15 @@ _UM = Fracao(Decimal(1))
 # ------------------------------------------------------------------ resultados
 @dataclass(frozen=True, slots=True)
 class PontoDeEquilibrio:
-    """Clientes ativos que pagam o custo fixo, ou None com o motivo."""
+    """Clientes ativos que pagam o custo fixo, ou None com o motivo. Um dos dois, nunca
+    os dois nem nenhum."""
 
     clientes: int | None
     motivo: str | None
+
+    def __post_init__(self) -> None:
+        if (self.clientes is None) == (self.motivo is None):
+            raise ValorInvalido("Ponto de equilíbrio tem clientes ou motivo, só um dos dois")
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,21 +111,36 @@ class ComparacaoInternaExterna:
     """Margem por cliente por mês com toda garantia interna e com toda externa.
 
     `custo_a_mais_da_externa` é da plataforma e pode ser negativo (a externa rende
-    mais). Os valores de empate só existem quando a externa custa mais.
+    mais). Os valores de empate só existem quando a externa custa mais. Cada valor vem
+    com um motivo, e só um dos dois existe: o valor, ou o porquê de não haver valor (a
+    externa não custa mais; sem gravame; fonte desligada; nenhum valor na faixa aceita
+    empata).
     """
 
     margem_interna: Dinheiro
     margem_externa: Dinheiro
     custo_a_mais_da_externa: Dinheiro
     fee_de_gravame_externo_para_empatar: Dinheiro | None
-    # Valor de fronteira: com ele a externa empata e com um centavo a menos não. Para o
-    # fee a margem é monótona e a fronteira é o menor valor que empata; para o gasto os
+    motivo_fee: str | None
+    # Valor de fronteira: com ele a externa empata e um centavo mais perto do valor atual
+    # não empata. A busca vai para onde a margem da externa sobe: o fee para cima; o
+    # gasto para cima ou para baixo, conforme ele traga mais receita ou mais custo. Para
+    # o fee a margem é monótona e a fronteira é o menor valor que empata; para o gasto os
     # arredondamentos fazem a margem oscilar centavos, e a fronteira é a mais próxima
-    # da estimativa, não necessariamente a menor.
+    # da estimativa.
     gasto_para_empatar: Dinheiro | None
-    gasto_cabe_no_limite: bool | None  # gasto que empata ≤ saldo × LTV
+    motivo_gasto: str | None
+    gasto_cabe_no_limite: bool | None  # gasto que empata ≤ saldo × LTV; None sem gasto
     parceiro_interna: Dinheiro
     parceiro_externa: Dinheiro
+
+    def __post_init__(self) -> None:
+        if (self.fee_de_gravame_externo_para_empatar is None) == (self.motivo_fee is None):
+            raise ValorInvalido("Fee para empatar tem valor ou motivo, só um dos dois")
+        if (self.gasto_para_empatar is None) == (self.motivo_gasto is None):
+            raise ValorInvalido("Gasto para empatar tem valor ou motivo, só um dos dois")
+        if (self.gasto_para_empatar is None) != (self.gasto_cabe_no_limite is None):
+            raise ValorInvalido("Só o gasto que empata diz se cabe no limite")
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,9 +235,10 @@ def ponto_de_equilibrio(
 ) -> PontoDeEquilibrio:
     """N = ⌈F ÷ m⌉ em centavos: N clientes pagam o custo fixo e N − 1 não pagam."""
     m = margem_por_cliente_mes.centavos
-    if m <= 0:
-        return PontoDeEquilibrio(None, MOTIVO_SEM_EQUILIBRIO)
     f = max(custo_fixo_mes.centavos, 0)
+    if m <= 0:
+        motivo = MOTIVO_SEM_EQUILIBRIO if f > 0 else MOTIVO_SEM_EQUILIBRIO_SEM_CUSTO_FIXO
+        return PontoDeEquilibrio(None, motivo)
     return PontoDeEquilibrio(-(-f // m), None)
 
 
@@ -222,19 +261,27 @@ def comparar_interna_externa(
     fee: Dinheiro | None = None
     gasto: Dinheiro | None = None
     cabe: bool | None = None
-    if custo_a_mais.positivo:
+    if not custo_a_mais.positivo:
+        motivo_fee: str | None = MOTIVO_EXTERNA_NAO_CUSTA_MAIS
+        motivo_gasto: str | None = MOTIVO_EXTERNA_NAO_CUSTA_MAIS
+    else:
         # O fee só fecha a diferença se houver gravame e a receita de fee estiver ligada.
-        tem_fee = (
-            premissas.gravames_ao_mes > 0
-            and FonteDeReceita.fee_gravame in premissas.receitas_ligadas
-        )
-        if tem_fee:
-            fee = _valor_para_empatar(
-                toda_externa, perdas, esquema[N.fee_gravame_externa], alvo, PASSO_DO_FEE
+        if premissas.gravames_ao_mes <= 0:
+            motivo_fee = MOTIVO_SEM_GRAVAME
+        elif FonteDeReceita.fee_gravame not in premissas.receitas_ligadas:
+            motivo_fee = MOTIVO_FEE_DE_GRAVAME_DESLIGADO
+        else:
+            fee, motivo_fee = _valor_para_empatar(
+                toda_externa,
+                perdas,
+                esquema[N.fee_gravame_externa],
+                alvo,
+                PASSO_DO_FEE,
+                "fee de gravame externo",
             )
         # O gasto é procurado sem exigir coerência; o limite só entra na resposta.
-        gasto = _valor_para_empatar(
-            toda_externa, perdas, esquema[N.gasto_mensal], alvo, PASSO_DO_GASTO
+        gasto, motivo_gasto = _valor_para_empatar(
+            toda_externa, perdas, esquema[N.gasto_mensal], alvo, PASSO_DO_GASTO, "gasto mensal"
         )
         if gasto is not None:
             limite = premissas.saldo_em_garantia.aplicar_razao(premissas.ltv_medio.valor)
@@ -245,11 +292,20 @@ def comparar_interna_externa(
         margem_externa=externa.plataforma.margem,
         custo_a_mais_da_externa=custo_a_mais,
         fee_de_gravame_externo_para_empatar=fee,
+        motivo_fee=motivo_fee,
         gasto_para_empatar=gasto,
+        motivo_gasto=motivo_gasto,
         gasto_cabe_no_limite=cabe,
         parceiro_interna=interna.parceiro.margem,
         parceiro_externa=externa.parceiro.margem,
     )
+
+
+class _SemEmpate(Enum):
+    """Por que a busca não devolveu valor."""
+
+    fora_da_faixa = "fora_da_faixa"  # nem a busca nem as duas pontas da faixa empatam
+    nao_confirmado = "nao_confirmado"  # o recálculo da margem não confirmou a fronteira
 
 
 def _valor_para_empatar(
@@ -258,13 +314,10 @@ def _valor_para_empatar(
     faixa: EsquemaDaPremissa,
     alvo: Dinheiro,
     passo: Dinheiro,
-) -> Dinheiro | None:
-    """Valor de fronteira da premissa em dinheiro `faixa.nome`, dentro da faixa aceita:
-    com ele a externa alcança a margem da interna e com um centavo a menos não.
-
-    É o menor valor que empata quando a margem é monótona nele (o fee). None quer dizer
-    que nem no máximo da faixa aceita a externa empata. As outras premissas ficam como
-    estão."""
+    rotulo: str,
+) -> tuple[Dinheiro | None, str | None]:
+    """Valor de fronteira da premissa em dinheiro `faixa.nome`, dentro da faixa aceita,
+    ou None e o motivo. As outras premissas ficam como estão."""
     campo = faixa.nome.value
 
     def margem_com(centavos: int) -> int:
@@ -272,15 +325,23 @@ def _valor_para_empatar(
         return _margem_da_plataforma(variada, perdas).centavos
 
     atual: Dinheiro = getattr(toda_externa, campo)
+    minimo = Dinheiro.de_decimal(faixa.minimo)
+    maximo = Dinheiro.de_decimal(faixa.maximo)
     achado = _buscar_empate(
-        margem_com,
-        alvo.centavos,
-        atual.centavos,
-        passo.centavos,
-        Dinheiro.de_decimal(faixa.minimo).centavos,
-        Dinheiro.de_decimal(faixa.maximo).centavos,
+        margem_com, alvo.centavos, atual.centavos, passo.centavos, minimo.centavos, maximo.centavos
     )
-    return None if achado is None else Dinheiro(achado)
+    match achado:
+        case _SemEmpate.fora_da_faixa:
+            return None, (
+                f"Nenhum {rotulo} na faixa aceita, de {minimo.formatado()} a "
+                f"{maximo.formatado()}, empata a externa com a interna."
+            )
+        case _SemEmpate.nao_confirmado:
+            return None, (
+                f"A busca do {rotulo} que empata não se confirmou ao recalcular a margem."
+            )
+        case _:
+            return Dinheiro(achado), None
 
 
 def _buscar_empate(
@@ -290,20 +351,23 @@ def _buscar_empate(
     passo: int,
     minimo: int,
     maximo: int,
-) -> int | None:
-    """Valor de fronteira acima de `inicio`, em centavos e até `maximo`: a margem nele
-    alcança o alvo e um centavo a menos não alcança.
+) -> int | _SemEmpate:
+    """Valor de fronteira em centavos, entre `minimo` e `maximo`: a margem nele alcança o
+    alvo e um centavo mais perto de `inicio` não alcança.
 
     Pré-condição: em `inicio` a margem ainda não alcança o alvo (a externa custa mais).
 
-    Mede a inclinação entre `inicio` e `inicio + passo`. Se ela não for positiva (o que
-    também acontece quando o passo é pequeno demais para mexer numa linha arredondada),
-    olha o máximo da faixa: se lá empata, a fronteira sai por bissecção entre o início
-    e o máximo; senão, None. Com inclinação positiva, pula para a estimativa da reta,
-    corrige pela secante entre o início e a estimativa, e anda centavo a centavo (no
-    máximo `MAXIMO_DE_PASSOS`); se os passos acabam, bissecção entre um valor que não
-    empata e um que empata. A resposta é confirmada recalculando a margem. None quer
-    dizer que no máximo da faixa a margem não alcança o alvo.
+    Mede a inclinação de `inicio` a `inicio + passo` e de `inicio` a `inicio - passo` e
+    procura primeiro para o lado em que a margem sobe: pula para a estimativa da reta,
+    corrige pela secante e anda centavo a centavo (no máximo `MAXIMO_DE_PASSOS`); se os
+    passos acabam, bissecção entre um valor que não empata e um que empata. Se por esse
+    lado nada empata, ou se a margem não sobe para lado nenhum (o que também acontece
+    quando o passo é pequeno demais para mexer numa linha arredondada), olha a ponta da
+    faixa de cada lado e, se ela empata, a fronteira sai por bissecção entre o início e
+    ela. A resposta é confirmada recalculando a margem.
+
+    Sem valor, diz por quê: `fora_da_faixa` quando nem a busca nem as pontas da faixa
+    alcançam o alvo; `nao_confirmado` quando o recálculo não confirma a fronteira.
 
     Cada linha é arredondada, então a margem oscila um ou dois centavos em torno da reta.
     Quando a inclinação é pequena (o gasto mexe pouco na margem) pode haver mais de uma
@@ -317,23 +381,48 @@ def _buscar_empate(
         return memoria[valor]
 
     inicio = min(max(inicio, minimo), maximo)
-    segundo = min(inicio + passo, maximo)
-    if segundo <= inicio:
-        return None
     m_inicio = margem(inicio)
-    if margem(segundo) <= m_inicio:
-        # Inclinação não positiva nos dois pontos: só o máximo da faixa decide.
-        if margem(maximo) < alvo:
-            return None
-        fronteira = _bisseccao(margem, alvo, abaixo=inicio, acima=maximo)
-        return fronteira if _e_fronteira(margem_com, alvo, fronteira, minimo) else None
+    acima = min(inicio + passo, maximo)
+    abaixo = max(inicio - passo, minimo)
+    if acima > inicio and margem(acima) > m_inicio:
+        sentidos = ((1, True), (-1, False))
+    elif abaixo < inicio and margem(abaixo) > m_inicio:
+        sentidos = ((-1, True), (1, False))
+    else:
+        sentidos = ((1, False), (-1, False))
+
+    for sentido, pela_reta in sentidos:
+        # Para baixo é para cima no espelho: x = −valor, com a faixa invertida.
+        def espelhada(x: int, s: int = sentido) -> int:
+            return margem(s * x)
+
+        def espelhada_sem_memoria(x: int, s: int = sentido) -> int:
+            return margem_com(s * x)
+
+        de, ate = (minimo, maximo) if sentido == 1 else (-maximo, -minimo)
+        if pela_reta:
+            achado = _procurar_pela_reta(espelhada, alvo, sentido * inicio, passo, de, ate)
+        else:
+            achado = _procurar_pela_ponta(espelhada, alvo, sentido * inicio, ate)
+        if achado is not None:
+            if not _e_fronteira(espelhada_sem_memoria, alvo, achado, de):
+                return _SemEmpate.nao_confirmado
+            return sentido * achado
+    return _SemEmpate.fora_da_faixa
+
+
+def _procurar_pela_reta(
+    margem: Callable[[int], int], alvo: int, inicio: int, passo: int, minimo: int, maximo: int
+) -> int | None:
+    """Para cima a partir de `inicio`, onde a margem sobe: estimativa, secante e passos."""
+    m_inicio = margem(inicio)
 
     def estimar(outro: int) -> int:
         inclinacao = Fraction(margem(outro) - m_inicio, outro - inicio)  # {centavo/centavo}
         salto = math.ceil((alvo - m_inicio) / inclinacao)
         return min(max(inicio + salto, minimo), maximo)
 
-    valor = estimar(segundo)
+    valor = estimar(min(inicio + passo, maximo))
     for _ in range(_CORRECOES):
         if valor == inicio or (margem(valor) - m_inicio) * (valor - inicio) <= 0:
             break
@@ -341,11 +430,16 @@ def _buscar_empate(
         if corrigido == valor:
             break
         valor = corrigido
+    return _andar_ate_a_fronteira(margem, alvo, inicio, valor, minimo, maximo)
 
-    achado = _andar_ate_a_fronteira(margem, alvo, inicio, valor, minimo, maximo)
-    if achado is None or not _e_fronteira(margem_com, alvo, achado, minimo):
+
+def _procurar_pela_ponta(
+    margem: Callable[[int], int], alvo: int, inicio: int, maximo: int
+) -> int | None:
+    """Sem inclinação para seguir: se a ponta da faixa empata, bissecção até ela."""
+    if maximo <= inicio or margem(maximo) < alvo:
         return None
-    return achado
+    return _bisseccao(margem, alvo, abaixo=inicio, acima=maximo)
 
 
 def _andar_ate_a_fronteira(

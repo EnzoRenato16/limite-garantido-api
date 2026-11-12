@@ -22,6 +22,7 @@ from hypothesis import strategies as st
 
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.analises import (
+    MOTIVO_EXTERNA_NAO_CUSTA_MAIS,
     analisar_tornado,
     comparar_interna_externa,
     ponto_de_equilibrio,
@@ -231,26 +232,38 @@ def test_empate_da_interna_x_externa_confere(p: Premissas, perdas: TaxasDePerda)
     if not c.custo_a_mais_da_externa.positivo:
         assert c.fee_de_gravame_externo_para_empatar is None
         assert c.gasto_para_empatar is None
+        assert c.motivo_fee == c.motivo_gasto == MOTIVO_EXTERNA_NAO_CUSTA_MAIS
         return
     fee = c.fee_de_gravame_externo_para_empatar
     tem_fee = p.gravames_ao_mes > 0 and FonteDeReceita.fee_gravame in p.receitas_ligadas
-    teto_do_fee = Dinheiro.de_decimal(ESQUEMA[N.fee_gravame_externa].maximo)
-    teto_do_gasto = Dinheiro.de_decimal(ESQUEMA[N.gasto_mensal].maximo)
-    # None é verdade: no máximo da faixa aceita a externa não alcança a interna.
+    pontas_do_fee = (
+        Dinheiro.de_decimal(ESQUEMA[N.fee_gravame_externa].minimo),
+        Dinheiro.de_decimal(ESQUEMA[N.fee_gravame_externa].maximo),
+    )
+    pontas_do_gasto = (
+        Dinheiro.de_decimal(ESQUEMA[N.gasto_mensal].minimo),
+        Dinheiro.de_decimal(ESQUEMA[N.gasto_mensal].maximo),
+    )
+    # Sempre um valor ou um motivo, nunca os dois.
+    assert (fee is None) != (c.motivo_fee is None)
+    assert (c.gasto_para_empatar is None) != (c.motivo_gasto is None)
+    # None é verdade: nas duas pontas da faixa aceita a externa não alcança a interna.
     if fee is None and tem_fee:
-        assert margem(externa.com(fee_gravame_externa=teto_do_fee)) < c.margem_interna
+        for ponta in pontas_do_fee:
+            assert margem(externa.com(fee_gravame_externa=ponta)) < c.margem_interna
     if c.gasto_para_empatar is None:
-        assert margem(externa.com(gasto_mensal=teto_do_gasto)) < c.margem_interna
+        for ponta in pontas_do_gasto:
+            assert margem(externa.com(gasto_mensal=ponta)) < c.margem_interna
     if fee is not None:
         assert margem(externa.com(fee_gravame_externa=fee)) >= c.margem_interna
-        if fee.positivo:
-            antes = externa.com(fee_gravame_externa=fee - Dinheiro(1))
-            assert margem(antes) < c.margem_interna
+        # Fronteira: um centavo mais perto do fee atual já não empata.
+        vizinho = fee - Dinheiro(1) if fee > p.fee_gravame_externa else fee + Dinheiro(1)
+        assert margem(externa.com(fee_gravame_externa=vizinho)) < c.margem_interna
     gasto = c.gasto_para_empatar
     assert (gasto is None) == (c.gasto_cabe_no_limite is None)
     if gasto is not None:
         assert margem(externa.com(gasto_mensal=gasto)) >= c.margem_interna
-        if gasto.positivo:
-            assert margem(externa.com(gasto_mensal=gasto - Dinheiro(1))) < c.margem_interna
+        vizinho = gasto - Dinheiro(1) if gasto > p.gasto_mensal else gasto + Dinheiro(1)
+        assert margem(externa.com(gasto_mensal=vizinho)) < c.margem_interna
         limite = p.saldo_em_garantia.aplicar_razao(p.ltv_medio.valor)
         assert c.gasto_cabe_no_limite == (gasto <= limite)

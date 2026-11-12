@@ -51,6 +51,13 @@ def test_frequencia_divide_por_12() -> None:
     assert FrequenciaAoAno(Decimal(0)).ao_mes() == 0
 
 
+def test_perda_ao_ano_vira_mensal_dividindo_por_12() -> None:
+    # Perda esperada é soma de eventos, não juros: vai ao mês dividindo por 12.
+    assert TaxaAoAno(Decimal(6)).ao_mes_linear() == TaxaAoMes(Decimal("0.5"))
+    assert TaxaAoAno(Decimal("0.012")).ao_mes_linear() == TaxaAoMes(Decimal("0.001"))
+    assert TaxaAoAno(Decimal(0)).ao_mes_linear() == TaxaAoMes(Decimal(0))
+
+
 def test_dias_para_meses() -> None:
     with localcontext() as ctx:
         ctx.prec = 34

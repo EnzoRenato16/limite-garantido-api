@@ -3,13 +3,15 @@
 O TOML tem o esquema das 34 premissas (faixas e unidades) e os conjuntos prontos. Um
 arquivo quebrado é erro de implantação, não de entrada: levanta `ErroNoArquivoDePremissas`
 na carga, com o nome da chave. A perda condicional de cada cenário sai de duas rodadas de
-`simular_painel` sobre a carteira sintética, com toda garantia interna e com toda externa.
+`simular_painel` sobre os mesmos clientes da carteira sintética: uma com toda garantia
+interna e outra com toda garantia que não é depósito em outro custodiante.
 """
 
 from __future__ import annotations
 
+import random
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
@@ -26,9 +28,10 @@ from app.dominio.economia.premissas import (
     TipoDaPremissa,
     montar_premissas,
 )
-from app.dominio.stress import simular_painel
+from app.dominio.politica import TipoAtivo
+from app.dominio.stress import ContaNaCarteira, GarantiaNaCarteira, simular_painel
 from app.dominio.taxas import Fracao
-from app.infra.carteira_sintetica import carregar_parametros, gerar_carteira
+from app.infra.carteira_sintetica import Cenario, carregar_parametros, gerar_carteira
 from app.infra.politica_referencia import carregar_politica_de_referencia
 
 ARQUIVO_PADRAO = Path(__file__).resolve().parent.parent / "premissas_economia.toml"
@@ -44,6 +47,11 @@ _TIPOS_DE_TAXA = {
 
 class ErroNoArquivoDePremissas(RuntimeError):
     """O TOML de premissas está quebrado: é bug de implantação, não entrada do usuário."""
+
+
+class ErroNaPerdaDoCenario(RuntimeError):
+    """A carteira sintética não dá uma perda condicional com sentido (exposição zero ou
+    perda maior que a dívida): é configuração quebrada, não entrada do usuário."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,14 +90,11 @@ def _texto(tabela: Mapping[str, Any], campo: str, chave: str) -> str:
     return valor
 
 
-def _ler_esquema(chave_nome: str, tabela: object) -> EsquemaDaPremissa:
-    chave = f"premissas.{chave_nome}"
+def _ler_esquema(nome: NomeDaPremissa, tabela: object) -> EsquemaDaPremissa:
+    # O nome já foi conferido contra NomeDaPremissa: o conjunto de tabelas é exato.
+    chave = f"premissas.{nome.value}"
     if not isinstance(tabela, dict):
         raise ErroNoArquivoDePremissas(f"{chave}: precisa ser uma tabela")
-    try:
-        nome = NomeDaPremissa(chave_nome)
-    except ValueError:
-        raise ErroNoArquivoDePremissas(f"{chave}: nome fora de NomeDaPremissa") from None
     try:
         tipo = TipoDaPremissa(_texto(tabela, "tipo", chave))
     except ValueError:
@@ -169,7 +174,10 @@ def _ler_conjunto(conjunto_id: str, tabela: object) -> Conjunto:
 
 
 @lru_cache
-def carregar_parametros_da_economia(arquivo: Path = ARQUIVO_PADRAO) -> ParametrosDaEconomia:
+def carregar_parametros_da_economia(arquivo: Path | None = None) -> ParametrosDaEconomia:
+    """Lê e valida o TOML (o padrão é `ARQUIVO_PADRAO`). A API chama na subida, então um
+    arquivo quebrado impede a aplicação de subir em vez de virar 500 depois."""
+    arquivo = ARQUIVO_PADRAO if arquivo is None else arquivo
     with arquivo.open("rb") as conteudo:
         dados = tomllib.load(conteudo)
     brutas = dados.get("premissas")
@@ -181,7 +189,7 @@ def carregar_parametros_da_economia(arquivo: Path = ARQUIVO_PADRAO) -> Parametro
             f"premissas: faltam {sorted(esperados - set(brutas))} "
             f"e sobram {sorted(set(brutas) - esperados)}"
         )
-    esquema = {NomeDaPremissa(n): _ler_esquema(n, brutas[n]) for n in NomeDaPremissa}
+    esquema = {nome: _ler_esquema(nome, brutas[nome.value]) for nome in NomeDaPremissa}
     brutos = dados.get("conjuntos")
     if not isinstance(brutos, dict) or not brutos:
         raise ErroNoArquivoDePremissas("conjuntos: faltam as tabelas [conjuntos.<id>]")
@@ -223,9 +231,75 @@ def cenarios_de_risco() -> list[tuple[str, str]]:
     return [(c.id, c.nome) for c in carregar_parametros().cenarios.values()]
 
 
+def carteiras_da_perda() -> tuple[list[ContaNaCarteira], list[ContaNaCarteira]]:
+    """Os mesmos clientes em duas versões: toda garantia interna e toda externa.
+
+    Uma carteira só, com a semente de sempre. Na interna, nenhuma garantia tem custodiante.
+    Na externa, toda garantia que não é depósito fica num custodiante: a que já tinha um
+    continua com ele, e a que não tinha ganha um sorteado pelos pesos da carteira, com um
+    gerador separado de mesma semente, na ordem das contas e das garantias. Assim a
+    diferença entre as duas perdas é só a garantia externa, não clientes diferentes.
+    """
+    parametros = carregar_parametros()
+    carteira = gerar_carteira(
+        parametros,
+        TAMANHO_DA_CARTEIRA_DE_RISCO,
+        SEMENTE_DA_CARTEIRA_DE_RISCO,
+        carregar_politica_de_referencia(),
+    )
+    sorteio = random.Random(SEMENTE_DA_CARTEIRA_DE_RISCO)  # noqa: S311 - simulação
+    custodiantes = sorted(parametros.pesos_por_custodiante)
+    pesos = [parametros.pesos_por_custodiante[c] for c in custodiantes]
+
+    def para_fora(garantia: GarantiaNaCarteira) -> GarantiaNaCarteira:
+        if garantia.tipo_ativo is TipoAtivo.DEPOSITO or garantia.custodiante_id is not None:
+            return garantia
+        return replace(garantia, custodiante_id=sorteio.choices(custodiantes, pesos)[0])
+
+    interna = [
+        replace(
+            conta,
+            garantias=tuple(replace(g, custodiante_id=None) for g in conta.garantias),
+        )
+        for conta in carteira
+    ]
+    externa = [
+        replace(conta, garantias=tuple(para_fora(g) for g in conta.garantias)) for conta in carteira
+    ]
+    return interna, externa
+
+
+def perda_condicional(carteira: Sequence[ContaNaCarteira], cenario: Cenario) -> Fracao:
+    """Perda esperada ÷ exposição do cenário: {BRL} ÷ {BRL} -> {1} por evento."""
+    painel = simular_painel(
+        carteira,
+        cenario.choques,
+        carregar_politica_de_referencia(),
+        cenario.taxa_sem_reforco,
+        cenario.premissas,
+    )
+    exposicao = painel.perda.exposicao.centavos
+    perda = painel.perda.perda_esperada_total.centavos
+    if exposicao <= 0:
+        raise ErroNaPerdaDoCenario(
+            f'Cenário "{cenario.id}": a carteira sintética tem exposição zero; '
+            "confira app/carteira_sintetica.toml e a política de referência"
+        )
+    if not 0 <= perda <= exposicao:
+        raise ErroNaPerdaDoCenario(
+            f'Cenário "{cenario.id}": perda de {perda} centavos com exposição de '
+            f"{exposicao}; a perda condicional precisa ficar entre 0 e 1"
+        )
+    return Fracao(Decimal(perda) / Decimal(exposicao))
+
+
 @lru_cache
 def taxas_de_perda(cenario_id: str) -> TaxasDePerda:
-    """Perda esperada ÷ exposição do cenário, com toda garantia interna e com toda externa."""
+    """Perda esperada ÷ exposição do cenário, nos mesmos clientes com toda garantia
+    interna e com toda externa (`carteiras_da_perda`).
+
+    Cenário desconhecido é erro de quem pede (422). Exposição zero ou perda maior que a
+    dívida é configuração quebrada: levanta `ErroNaPerdaDoCenario` (500)."""
     parametros = carregar_parametros()
     cenario = parametros.cenarios.get(cenario_id)
     if cenario is None:
@@ -239,28 +313,10 @@ def taxas_de_perda(cenario_id: str) -> TaxasDePerda:
                 }
             ],
         )
-    politica = carregar_politica_de_referencia()
-
-    def condicional(fracao_externa: Decimal) -> Fracao:
-        carteira = gerar_carteira(
-            replace(parametros, fracao_externa=fracao_externa),
-            TAMANHO_DA_CARTEIRA_DE_RISCO,
-            SEMENTE_DA_CARTEIRA_DE_RISCO,
-            politica,
-        )
-        painel = simular_painel(
-            carteira, cenario.choques, politica, cenario.taxa_sem_reforco, cenario.premissas
-        )
-        exposicao = painel.perda.exposicao
-        if exposicao.centavos == 0:
-            return Fracao(Decimal(0))
-        return Fracao(
-            Decimal(painel.perda.perda_esperada_total.centavos) / Decimal(exposicao.centavos)
-        )
-
+    interna, externa = carteiras_da_perda()
     return TaxasDePerda(
         cenario_id=cenario.id,
         nome=cenario.nome,
-        condicional_interna=condicional(Decimal(0)),
-        condicional_externa=condicional(Decimal(1)),
+        condicional_interna=perda_condicional(interna, cenario),
+        condicional_externa=perda_condicional(externa, cenario),
     )

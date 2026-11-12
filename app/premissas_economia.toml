@@ -6,6 +6,8 @@
 # Convenções de conversão (as mesmas do código):
 #   - taxa ao ano vira taxa ao mês por juros compostos: (1 + a)^(1/12) - 1;
 #   - frequência de eventos (vezes por ano) vira mensal dividindo por 12, sem composição;
+#   - perda esperada ao ano (base + frequência x perda por evento) é soma de eventos e
+#     também vira mensal dividindo por 12;
 #   - dias corridos viram mês por 365/12;
 #   - taxa e fração são frações: 0.1365 = 13,65%. Dinheiro em reais, até 2 casas.
 # Faixa aceita (`minimo`/`maximo`): o que a validação deixa passar, nas duas pontas.

@@ -21,6 +21,7 @@ from app.dominio.taxas import (
     DIAS_CORRIDOS_NO_ANO,
     MESES_NO_ANO,
     Fracao,
+    FrequenciaAoAno,
     TaxaAoAno,
     TaxaAoMes,
 )
@@ -311,7 +312,10 @@ def test_perda_usa_mistura_das_condicionais() -> None:
     assert conta.condicional_mista == Fracao(mista)
     ao_ano = Decimal("0.005") + Decimal("0.05") * mista
     assert conta.taxa_ao_ano == TaxaAoAno(ao_ano)
-    assert conta.taxa_ao_mes == TaxaAoAno(ao_ano).ao_mes()
+    # Perda esperada ao ano é soma de eventos: vai ao mês dividindo por 12.
+    with localcontext() as contexto:
+        contexto.prec = 34
+        assert conta.taxa_ao_mes == TaxaAoMes(ao_ano / MESES_NO_ANO)
     assert conta.taxa_base_ao_ano == p.taxa_base_de_perda_ao_ano
     assert conta.frequencia_ao_ano == p.frequencia_do_cenario_ao_ano
 
@@ -328,6 +332,22 @@ def test_perda_usa_mistura_das_condicionais() -> None:
     )
     assert externa.perda.condicional_mista == PERDAS.condicional_externa
     assert _linha(externa, "perda_esperada").valor >= perda.valor
+
+
+def test_perda_do_evento_vai_ao_mes_por_12_e_nao_por_composicao() -> None:
+    # 12 eventos por ano, cada um perde metade do saldo: 6 ao ano, 0,5 ao mês. Composta,
+    # daria 7^(1/12) - 1, perto de 17,6% ao mês, e esconderia dois terços da perda.
+    p = premissas_base().com(
+        taxa_base_de_perda_ao_ano=TaxaAoAno(Decimal(0)),
+        frequencia_do_cenario_ao_ano=FrequenciaAoAno(Decimal(12)),
+    )
+    metade = Fracao(Decimal("0.5"))
+    perdas = TaxasDePerda("teste", "Teste", metade, metade)
+    r = calcular_mes(p, perdas)
+    assert r.perda.taxa_ao_ano == TaxaAoAno(Decimal(6))
+    assert r.perda.taxa_ao_mes == TaxaAoMes(Decimal("0.5"))
+    assert _linha(r, "perda_esperada").valor == Dinheiro(_para_cima(_saldo_exato(p) / 2))
+    assert "÷ 12" in _linha(r, "perda_esperada").formula
 
 
 def test_funding_e_fidc_dividem_o_saldo_pela_fracao_cedida() -> None:

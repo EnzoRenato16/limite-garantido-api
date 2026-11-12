@@ -2,7 +2,8 @@
 
 Taxa ao ano vira taxa ao mês por juros compostos: (1 + a)^(1/12) - 1. É o mesmo que
 tomar 21 dos 252 dias úteis do CDI. Frequência de eventos (vezes por ano) vira mensal
-dividindo por 12, porque frequência não se compõe. Dias corridos viram mês por 365/12.
+dividindo por 12, porque frequência não se compõe; a perda esperada ao ano, que é soma de
+eventos e não juros, também (`ao_mes_linear`). Dias corridos viram mês por 365/12.
 
 Tudo em `Decimal`, com 34 dígitos de precisão, nunca `float`.
 """
@@ -65,6 +66,16 @@ class TaxaAoAno:
             contexto.prec = _PRECISAO
             mensal = (1 + self.valor) ** (Decimal(1) / Decimal(MESES_NO_ANO)) - 1
         return TaxaAoMes(mensal)
+
+    def ao_mes_linear(self) -> TaxaAoMes:
+        """a / 12: {1/ano} -> {1/mês}, para taxa que é soma de eventos (perda esperada).
+
+        Perda não rende sobre perda: 12 eventos por ano que levam metade do saldo cada são
+        6 ao ano e 0,5 ao mês. A composição daria 7^(1/12) - 1 e esconderia a maior parte.
+        """
+        with localcontext() as contexto:
+            contexto.prec = _PRECISAO
+            return TaxaAoMes(self.valor / Decimal(MESES_NO_ANO))
 
     def composta_com(self, spread: TaxaAoAno) -> TaxaAoAno:
         """CDI + spread por composição: (1 + a)(1 + s) - 1, tudo {1/ano}."""

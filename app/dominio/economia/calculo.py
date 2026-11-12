@@ -110,7 +110,7 @@ class ContaDaPerda:
     condicional_externa: Fracao
     condicional_mista: Fracao  # fi × interna + fe × externa
     taxa_ao_ano: TaxaAoAno  # base + frequência × mista
-    taxa_ao_mes: TaxaAoMes
+    taxa_ao_mes: TaxaAoMes  # taxa_ao_ano ÷ 12: perda é soma de eventos, não se compõe
     saldo_financiado: Dinheiro  # arredondado para cima; as linhas usam o valor exato
 
 
@@ -393,10 +393,10 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
             Parte.inadimplencia,
             _para_cima(saldo * conta.taxa_ao_mes.valor),
             f"{texto_do_saldo} × {_percentual(conta.taxa_ao_mes.valor)} a.m. "
-            f"({_percentual(conta.taxa_base_ao_ano.valor)} a.a. + "
+            f"(({_percentual(conta.taxa_base_ao_ano.valor)} a.a. + "
             f"{_numero(conta.frequencia_ao_ano.valor)} evento/ano × "
-            f"{_percentual(conta.condicional_mista.valor)} por evento = "
-            f"{_percentual(conta.taxa_ao_ano.valor)} a.a.)",
+            f"{_percentual(conta.condicional_mista.valor)} por evento) ÷ 12 = "
+            f"{_percentual(conta.taxa_ao_ano.valor)} a.a. ÷ 12)",
             (
                 *premissas_do_saldo,
                 N.taxa_base_de_perda_ao_ano,
@@ -500,7 +500,10 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
 
 
 def _conta_da_perda(p: Premissas, perdas: TaxasDePerda, saldo: Dinheiro) -> ContaDaPerda:
-    """Taxa anual = base + frequência × (fi × interna + fe × externa)."""
+    """Taxa anual = base + frequência × (fi × interna + fe × externa); mensal = anual ÷ 12.
+
+    A taxa anual é perda esperada, soma de eventos, e vai ao mês dividindo por 12, como as
+    execuções: perda não se compõe como juros."""
     fi = p.fracao_interna.valor
     fe = p.fracao_externa.valor
     # A mistura de duas frações com pesos que somam 1 fica em [0, 1]; o min só protege
@@ -520,7 +523,7 @@ def _conta_da_perda(p: Premissas, perdas: TaxasDePerda, saldo: Dinheiro) -> Cont
         condicional_externa=perdas.condicional_externa,
         condicional_mista=Fracao(mista),
         taxa_ao_ano=ao_ano,
-        taxa_ao_mes=ao_ano.ao_mes(),
+        taxa_ao_mes=ao_ano.ao_mes_linear(),
         saldo_financiado=saldo,
     )
 

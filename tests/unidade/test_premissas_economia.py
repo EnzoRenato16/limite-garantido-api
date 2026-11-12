@@ -72,6 +72,15 @@ def test_fora_da_faixa_lista_campo_e_unidade() -> None:
     assert "fração" in erros[0]["mensagem"]
 
 
+def test_fracao_com_unidade_propria_cita_a_unidade() -> None:
+    (erro,) = _erros(taxa_de_intercambio="1.2")
+    assert erro["campo"] == "taxa_de_intercambio"
+    assert "fração do gasto: 0,30 = 30%" in erro["mensagem"]
+    # Fração sem unidade própria continua "fração".
+    (erro,) = _erros(fracao_cedida_ao_fidc="1.2")
+    assert "(fração: 0,30 = 30%)" in erro["mensagem"]
+
+
 def test_taxa_em_percentual_e_recusada_com_unidade() -> None:
     (erro,) = _erros(cdi_ao_ano="13.65")
     assert erro["campo"] == "cdi_ao_ano"
