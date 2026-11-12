@@ -521,6 +521,135 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
 - **Decisão.** Enquanto alguma garantia tem pedido em aberto, a página reconsulta a
   conta a cada 1,5 s. Sem pedido em aberto, volta a depender só dos webhooks.
 
+## Modelo econômico (`/negocio`)
+
+### 57. Ponto de partida
+- **Pedido.** Um modelo econômico simples, transparente e editável: quanto a
+  plataforma e o parceiro ganham por cliente, ponto de equilíbrio, garantia interna x
+  externa e sensibilidade, numa página `/negocio`. O plano está em
+  [plano-economia.md](plano-economia.md).
+- **Branch.** Como na fase 2, o branch de trabalho foi reiniciado a partir do `main`
+  depois do merge do PR #3, sem empilhar commits no histórico já mergeado.
+- **Suíte de partida.** Ruff, formatação e mypy limpos; 653 testes passando em SQLite
+  (os 14 de Postgres pulados sem o banco); 11 testes de navegador passando.
+
+### 58. Como a construção foi conduzida
+- **Brainstorming.** O pedido dispensa perguntas, e a skill termina quando o dono
+  dispensa. As decisões de desenho foram minhas e estão nesta seção e no topo do plano.
+- **Plano e execução.** O plano seguiu `writing-plans`. A execução seguiu
+  `subagent-driven-development`, com teste antes do código em cada tarefa.
+- **Dados públicos.** Buscados na web (item 65). O Context7 serve para documentação de
+  biblioteca, e esta entrega não usa biblioteca nova.
+
+### 59. Unidade de análise e quem paga quem
+- **Decisão.** Tudo parte de um cliente ativo médio por mês. Ano é 12 vezes o mês; o
+  parceiro médio e a carteira são o mês vezes o número de clientes.
+- **Partes.** Cliente, lojista, parceiro, plataforma, FIDC, custodiante, fornecedores,
+  financiadores, governo e inadimplência (o que não volta). Cada linha tem origem e
+  destino.
+- **Sem dupla contagem.** A visão do arranjo (plataforma e parceiro juntos) ignora as
+  linhas que vão de um para o outro: o repasse do intercâmbio e os fees da API. Elas
+  aparecem nos dois lados com o mesmo valor, arredondado uma vez. Plataforma + parceiro
+  = arranjo por construção, e há teste de propriedade para isso.
+- **Intercâmbio.** Entra como receita da plataforma, que é a emissora, e a parte do
+  parceiro sai como repasse. É o fluxo real do dinheiro e mostra a transferência.
+
+### 60. Convenção de período
+- **Decisão.** Toda taxa ao ano vira mensal por juros compostos, (1 + a)^(1/12) − 1. Para
+  o CDI, isso é o mesmo que 21 dos 252 dias úteis, a base em que ele é divulgado.
+  "CDI + spread" é composto: (1 + CDI) × (1 + spread) − 1. Frequência de eventos (vezes
+  por ano) vira mensal dividindo por 12, porque frequência não se compõe. Dias corridos
+  viram mês por 365/12.
+- **Por que uma só.** Misturar linear e composto entre linhas faria a mesma taxa render
+  valores diferentes conforme a linha. Em taxas pequenas (0,3% ao ano) a diferença é
+  desprezível; no CDI ela importa.
+
+### 61. Arredondamento
+- **Decisão.** Cada linha é calculada em `Decimal` com 34 dígitos e arredondada para
+  centavos uma única vez: receita para baixo, custo para cima. Totais são a soma das
+  linhas arredondadas, e ano e carteira são múltiplos inteiros das linhas do mês. A
+  soma das partes bate centavo por centavo por construção.
+- **Transferências.** Um valor que é receita de uma parte e custo da outra precisa ser o
+  mesmo dos dois lados. Arredonda para baixo: é um preço de contrato, e quem o emite é a
+  plataforma, que fica com o lado prudente.
+
+### 62. Perda anual a partir do painel de risco
+- **Problema.** O painel calcula a perda *condicional* a um choque, não uma perda por
+  ano.
+- **Decisão.** Taxa anual de perda = taxa base ao ano + frequência anual do cenário ×
+  taxa condicional do cenário. A taxa condicional é `perda_esperada_total / exposicao`
+  do `simular_painel` na carteira sintética de 1.000 clientes (semente 42), medida duas
+  vezes: com toda garantia interna e com toda externa (o depósito continua interno, como
+  no gerador). Para uma fração externa f, a condicional é a mistura linear das duas. A
+  taxa anual vira mensal pela convenção do item 60 e incide sobre o saldo financiado
+  médio do cliente.
+- **Por que duas carteiras.** Mudar a fração externa do gerador muda todo o sorteio, e a
+  perda pularia de forma ruidosa. Medir nos dois extremos dá uma conta monótona e
+  explicável, roda o motor duas vezes por cenário (com cache) e nenhuma variação do
+  tornado precisa rodar o motor de novo.
+- **Limitação.** A carteira sintética usa entre 0% e 95% do limite. Se o cliente médio
+  usar menos, a taxa medida tende a ser maior que a dele, o que erra para o lado
+  prudente. A tela mostra a conta inteira.
+
+### 63. Rotativo e o teto legal
+- **Regra.** A Lei 14.690/2023, regulamentada pela Resolução CMN 5.112/2023, limita juros
+  e encargos do rotativo e do parcelamento da fatura a 100% do valor original da dívida,
+  para dívidas a partir de 3/1/2024 (fontes em [economia.md](economia.md)).
+- **Decisão.** A cada mês, uma parte do gasto vai para o rotativo e fica n meses. Os juros
+  dessa leva são o valor rolado × min((1 + i)^n − 1, 100%). Em regime, a receita mensal
+  é a de uma leva inteira. A fórmula na tela avisa quando o teto foi aplicado.
+- **IOF.** É do governo e não entra como receita.
+
+### 64. Juros e perda ficam com a plataforma
+- **Decisão.** A plataforma é a credora: recebe os juros do rotativo e arca com a perda
+  esperada, inclusive da parte cedida ao FIDC. Equivale a reter a cota subordinada ou
+  dar coobrigação, o caso comum quando quem origina quer custo de cota menor.
+- **Por quê.** É a leitura prudente para quem avalia a plataforma. Dividir juros com o
+  parceiro seria só mais uma transferência e fica fácil de acrescentar.
+
+### 65. Dados públicos e o que é ilustrativo
+- **Com fonte.** O CDI de 13,65% ao ano (DI-B3 de 6/11/2026, ANBIMA). O teto de
+  intercâmbio da Resolução BCB 246/2022, que vale para débito (0,5%) e pré-pago (0,7%);
+  não encontrei teto para crédito, e o produto aqui é crédito. O teto do rotativo do
+  item 63. A taxa média do rotativo divulgada pelo Banco Central (15,18% ao mês em
+  agosto de 2026, segundo a imprensa citando o BC).
+- **Ilustrativo.** Todo o resto: intercâmbio de crédito, fees, custos, spreads, perdas,
+  frequências e tamanhos. Cada premissa tem uma linha de origem no TOML, e
+  [economia.md](economia.md) marca uma a uma.
+
+### 66. Frações interna e externa entram as duas
+- **Decisão.** A API recebe `fracao_interna` e `fracao_externa` e recusa se não
+  somarem 100%. A tela tem um controle só e manda as duas.
+- **Por quê.** O pedido quer a coerência explícita, e um erro de digitação numa das duas
+  vira erro claro, em vez de uma premissa calculada em silêncio.
+
+### 67. Tornado
+- **Faixa.** Cada premissa tem duas faixas: a aceita (validação) e a razoável (o que o
+  tornado testa). Nenhuma é ±10% fixo.
+- **Métrica.** Margem da plataforma por cliente por mês, a que paga o custo fixo.
+- **Base dentro da barra.** A barra vai do menor ao maior entre {baixo, base, alto}.
+  Algumas premissas não são monótonas (meses no rotativo: o teto trava os juros e o
+  funding continua crescendo), então o valor base pode ficar fora do intervalo entre
+  os dois extremos.
+- **Coerência.** Quando um extremo quebraria a coerência (gasto acima do limite), ele é
+  cortado no valor coerente mais próximo, e a barra avisa.
+- **Frações.** Variar a externa ajusta a interna junto.
+
+### 68. Quanto a garantia externa precisa gerar para empatar
+- **Decisão.** O modelo responde de duas formas, sempre pela margem da plataforma: o fee
+  de gravame externo que zera a diferença, e o gasto mensal que zera a diferença,
+  dizendo se esse gasto cabe no limite que a garantia gera. A busca é em centavos e
+  confirma o resultado recalculando.
+
+### 69. CSV para Excel em português
+- **Formato.** UTF-8 com BOM, separador `;`, vírgula decimal sem separador de milhar,
+  linhas `\r\n`. Taxas saem como fração decimal (0,1365) com a unidade numa coluna,
+  porque "13,65%" depende da configuração do Excel.
+- **Injeção de fórmula.** Toda célula de texto que começa com `=`, `+`, `-`, `@`, tab
+  ou CR ganha um apóstrofo na frente. Números saem do próprio formatador e não passam
+  por isso: "-1234,56" continua número. Hoje nenhum texto livre do usuário chega ao
+  CSV, mas a proteção vale para qualquer texto.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
