@@ -686,8 +686,9 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   e perda altos), o negócio não para de pé.
 - **Base.** Fica pouco acima do equilíbrio na carteira base: R$ 4,14 por cliente por mês,
   96.619 clientes de equilíbrio contra 100.000 na carteira.
-- **Otimista.** Usa o `crash_da_bolsa`, cuja perda condicional na carteira sintética é
-  zero (a margem de segurança das ações absorve a queda), então a perda anual fica na
+- **Otimista.** Usa o `crash_da_bolsa`, cuja perda condicional na carteira sintética de
+  semente 42 dá zero (é efeito da amostra: com outras sementes ela é pequena, mas não
+  nula), então a perda anual fica na
   taxa base, 0,30%, e a margem sobe para R$ 19,32.
 - **Aviso.** São conjuntos de premissas ilustrativas, não previsões. Os números completos
   estão em [economia.md](economia.md).

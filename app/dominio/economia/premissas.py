@@ -298,7 +298,7 @@ def _checar_coerencia(
             falha(
                 NomeDaPremissa.gasto_mensal,
                 f"gasto_mensal não pode passar do limite que a garantia gera, "
-                f"saldo_em_garantia x ltv_medio = {limite.formatado()} (R$/mês)",
+                f"saldo_em_garantia x ltv_medio = {limite.formatado()} (limite em R$)",
             )
     if NomeDaPremissa.parceiros in v and NomeDaPremissa.clientes_por_parceiro in v:
         total = (

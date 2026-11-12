@@ -151,9 +151,11 @@ Condicionais medidas, por cenário:
 | Alta de juros (prefixado -10%) | 0,00% | 0,00% |
 | Custodiante fora do ar | 0,00% | 7,8435% |
 
-Nos três primeiros cenários nenhum cliente da carteira sintética fica descoberto depois
-da venda da garantia, e a perda condicional é zero dos dois lados. Só com o custodiante
-fora do ar a garantia externa deixa dívida sem cobertura.
+Nos três primeiros cenários nenhum cliente da carteira sintética (semente 42) fica
+descoberto depois da venda da garantia, e a perda condicional dá zero dos dois lados. É
+um resultado desta amostra, não uma lei: com outras sementes aparecem perdas pequenas
+(da ordem de 0,01% da exposição). Só com o custodiante fora do ar a garantia externa
+deixa dívida sem cobertura relevante.
 
 **Conta do conjunto Base** (cenário Custodiante fora do ar):
 
@@ -268,8 +270,8 @@ em cada conjunto (com todas as fontes de receita ligadas).
   de esconder.
 - **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 14.000,00 por mês sobre
   100.000 clientes. O resultado é sensível ao que o tornado mostra.
-- **Otimista** usa o crash da bolsa, cuja perda condicional na carteira sintética é zero
-  (a margem de segurança das ações absorve a queda; ver o painel de risco). Por isso a
+- **Otimista** usa o crash da bolsa, cuja perda condicional na carteira sintética de semente
+  42 dá zero (com outras sementes ela é pequena, mas não nula). Por isso a
   perda anual fica só na taxa base, 0,30%, e a margem sobe.
 
 Os conjuntos são pontos de partida. A página permite editar cada premissa.
