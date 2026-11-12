@@ -37,8 +37,7 @@ unidade = "fração"
 minimo = "0.60"
 maximo = "1.00"
 razoavel = ["0.70", "0.95"]
-origem = "Média ilustrativa dentro dos LTVs da política de referência, que vão de 0,60 (ações) a 1,00 (depósito)."
-fonte = "Política de referência do projeto (LTVs de 0,60 a 1,00)"
+origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,60 (ações) a 1,00 (depósito)."
 
 [premissas.fracao_interna]
 nome = "Fração interna"
@@ -55,8 +54,7 @@ unidade = "fração"
 minimo = "0"
 maximo = "1"
 razoavel = ["0", "1"]
-origem = "Parcela das garantias em custódia externa; o valor base repete a fração da carteira sintética do painel de risco (0,30)."
-fonte = "Carteira sintética do painel de risco (fração externa 0,30)"
+origem = "Premissa ilustrativa: parcela das garantias em custódia externa; o valor base repete a fração da carteira sintética do painel de risco (0,30)."
 
 [premissas.garantias_por_cliente]
 nome = "Garantias por cliente"
@@ -65,8 +63,7 @@ unidade = "garantia/cliente"
 minimo = "1"
 maximo = "10"
 razoavel = ["1", "3"]
-origem = "Média da carteira sintética do painel de risco (pesos 60/30/10 para 1, 2 e 3 garantias)."
-fonte = "Carteira sintética do painel de risco (pesos 60/30/10 de 1, 2 e 3 garantias)"
+origem = "Premissa ilustrativa: média da carteira sintética do painel de risco (pesos 60/30/10 para 1, 2 e 3 garantias)."
 
 [premissas.gravames_ao_mes]
 nome = "Gravames ao mês"
@@ -203,7 +200,7 @@ unidade = "1/ano"
 minimo = "0"
 maximo = "0.50"
 razoavel = ["0.10", "0.16"]
-origem = "Taxa DI-B3 vigente na data da análise; muda a cada reunião do Copom."
+origem = "Taxa DI-B3 vigente na data da análise; o DI acompanha a Selic, definida pelo Copom."
 fonte = "DI-B3 13,65% a.a. em 06/11/2026, ANBIMA"
 
 [premissas.spread_fidc_ao_ano]

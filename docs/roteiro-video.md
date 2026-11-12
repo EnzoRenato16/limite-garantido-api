@@ -1,17 +1,18 @@
-# Roteiro do vídeo (até 2 min 30 s)
+# Roteiro do vídeo (até 3 min)
 
-Gravação de tela das páginas `/demo` e `/risco`, falada em primeira pessoa. No `/demo`, a
+Gravação de tela das páginas `/demo`, `/risco` e `/negocio`, falada em primeira pessoa. No `/demo`, a
 coluna da esquerda é o app de um parceiro fictício; a da direita mostra os webhooks
 chegando.
 
 **Antes de gravar**
 
 - `docker compose up --build` (ou `./scripts/dev.sh`) e abrir
-  `http://localhost:8000/demo` numa aba e `http://localhost:8000/risco` em outra.
+  `http://localhost:8000/demo` numa aba, `http://localhost:8000/risco` em outra e
+  `http://localhost:8000/negocio` numa terceira.
 - Janela do navegador em 1440 × 900, zoom em 100%. A régua fica presa no topo, então dá
   para rolar a página sem perder os números.
 - No `/demo`, clicar em **Começar de novo** para sair de uma conta zerada.
-- Falar devagar. Os tempos abaixo somam 2 min 25 s.
+- Falar devagar. Os tempos abaixo somam 2 min 50 s.
 
 ---
 
@@ -75,7 +76,20 @@ fora do ar** e apontar a perda adicional da garantia externa.
 > custodiante sai do ar, a perda aparece, e ela vem inteira da garantia que estava fora.
 > Os números são de uma carteira inventada, mas a pergunta é a que um time de risco faria.
 
-### 2:10 a 2:25 · Fechamento
+### 2:10 a 2:35 · O modelo econômico (25 segundos)
+
+**Na tela:** abrir a aba do `/negocio`, no conjunto **Base**. Apontar a margem da
+plataforma e a do parceiro por cliente por mês e o ponto de equilíbrio. Clicar em
+**Conservador** e mostrar a margem negativa e o "não há ponto de equilíbrio".
+
+> E o negócio fecha? Esta página mostra, por cliente por mês, quanto a plataforma e o
+> parceiro ganham, e quantos clientes a plataforma precisa para pagar o custo fixo. Os
+> números são ilustrativos: premissas minhas, editáveis, sem dado de empresa nenhuma.
+> No conjunto base, a margem é de uns quatro reais por cliente e o equilíbrio fica logo
+> abaixo da carteira. No conservador, a margem é negativa e não existe equilíbrio: com
+> premissa ruim, a conta não fecha, e eu preferi deixar isso à vista.
+
+### 2:35 a 2:50 · Fechamento
 
 **Na tela:** voltar ao `/demo` e abrir um **ver o JSON entregue**.
 

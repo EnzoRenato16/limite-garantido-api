@@ -50,7 +50,7 @@ máquina de estados do Hypothesis consegue sortear milhares de sequências de op
 
 | Camada | O que mora ali | O que não pode fazer |
 |---|---|---|
-| `app/dominio` | `Conta`, `Garantia`, `Lancamento`, `PoliticaRisco`, `Dinheiro`, simulador de stress | Importar qualquer coisa fora da biblioteca padrão |
+| `app/dominio` | `Conta`, `Garantia`, `Lancamento`, `PoliticaRisco`, `Dinheiro`, simulador de stress, modelo econômico (`economia/`, ver [economia.md](economia.md)) | Importar qualquer coisa fora da biblioteca padrão |
 | `app/aplicacao` | Casos de uso e as portas (interfaces) de que eles precisam | Falar SQL ou HTTP |
 | `app/infra` | SQLAlchemy, Alembic, worker, rotinas, logs, métricas, provedor de preços | Decidir regra de crédito |
 | `app/api` | Rotas, esquemas, erros, idempotência, página `/demo` | Ter regra de negócio |

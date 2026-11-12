@@ -650,6 +650,27 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   por isso: "-1234,56" continua número. Hoje nenhum texto livre do usuário chega ao
   CSV, mas a proteção vale para qualquer texto.
 
+### 70. Os três conjuntos e o que eles mostram
+- **Conservador.** Dá margem negativa para a plataforma e nenhum ponto de equilíbrio
+  (R$ -4,07 por cliente por mês; sem equilíbrio). Foi mantido de propósito: é a mensagem
+  honesta de que, com premissas ruins (gasto e saldo baixos, mais gente na externa, custo
+  e perda altos), o negócio não para de pé.
+- **Base.** Fica pouco acima do equilíbrio na carteira base: R$ 4,13 por cliente por mês,
+  96.853 clientes de equilíbrio contra 100.000 na carteira.
+- **Otimista.** Usa o `crash_da_bolsa`, cuja perda condicional é pequena (a margem de
+  segurança das ações absorve a queda), então a perda anual cai a 0,30% e a margem sobe
+  para R$ 19,32.
+- **Aviso.** São conjuntos de premissas ilustrativas, não previsões. Os números completos
+  estão em [economia.md](economia.md).
+
+### 71. Como a construção foi conduzida, na prática
+- **Execução.** Tarefas por subagentes, cada uma com teste antes do código e uma revisão
+  por tarefa.
+- **Decisões de percurso.** As tarefas 1 e 2 foram feitas juntas; um auxiliar de teste
+  comum; o `ano` das premissas indexado por texto (`str`); a busca do fee e do gasto de
+  empate com bisseção como alternativa; o `ESQUEMA` lido do TOML, e não repetido no
+  código.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
@@ -767,6 +788,13 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
     aparecia. Reproduzido atrasando a criação da conta no navegador. Agora a página fica
     travada (`inert`) até a conta nova existir, e só a consulta mais recente desenha a
     tela: uma resposta antiga que chega por último é descartada.
+13. **Ponto de equilíbrio sem resposta para gravames pequenos.** A busca do fee de
+    gravame externo que empata devolvia "nenhum fee empata" quando o gravame era pequeno.
+    A revisão pegou; a correção foi uma alternativa limitada (bisseção).
+14. **Saldo financiado dividia antes de multiplicar.** Isso movia o arredondamento em um
+    centavo em casos exatos. O teste de propriedade pegou, depois da revisão.
+15. **Premissas só com etiqueta, sem origem.** Cada premissa tinha uma tag em vez de uma
+    frase de origem. A revisão pegou, e o TOML passou a ter a origem em uma frase.
 
 <a id="o-que-ficou-para-voce-decidir"></a>
 ## O que ficou para você decidir
