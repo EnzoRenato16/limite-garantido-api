@@ -9,6 +9,7 @@ números da tela são conferidos contra a própria API: a página só formata o 
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -58,9 +59,25 @@ def _esperados(resultado: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _reais(texto: str) -> str:
+    """O que Intl.NumberFormat pt-BR mostra, com o menos tipográfico da página."""
+    valor = Decimal(texto)
+    inteiro, centavos = divmod(abs(valor).quantize(Decimal("0.01")) * 100, 100)
+    milhar = f"{int(inteiro):,}".replace(",", ".")
+    return f"{'\u2212' if valor < 0 else ''}R$\u00a0{milhar},{int(centavos):02d}"
+
+
 def _conferir_destaques(pagina: Any, resultado: dict[str, Any]) -> None:
+    esperar = _esperar()
     for id_, valor in _esperados(resultado).items():
-        _esperar()(pagina.locator(f"#{id_}")).to_have_attribute("data-valor", valor)
+        esperar(pagina.locator(f"#{id_}")).to_have_attribute("data-valor", valor)
+    # O texto exibido é o mesmo número da API, formatado em reais.
+    mes = resultado["por_cliente_mes"]
+    esperar(pagina.locator("#margem-plataforma")).to_have_text(_reais(mes["plataforma"]["margem"]))
+    esperar(pagina.locator("#margem-parceiro")).to_have_text(_reais(mes["parceiro"]["margem"]))
+    esperar(pagina.locator("#resultado-carteira")).to_have_text(
+        _reais(resultado["carteira"]["plataforma_mes"])
+    )
 
 
 def _simular_com_controles(pagina: Any, valores: dict[str, str]) -> dict[str, Any]:
@@ -103,9 +120,13 @@ def test_negocio_conjuntos_batem_com_a_api(pagina: Any) -> None:
             min(10, len(resultado["tornado"]))
         )
         esperar(pagina.locator("#quem-paga-quem tbody tr")).to_have_count(len(resultado["linhas"]))
-        # O texto exibido é o mesmo número, formatado em reais.
-        centavos = resultado["por_cliente_mes"]["plataforma"]["margem"].split(".")[1]
-        esperar(pagina.locator("#margem-plataforma")).to_contain_text(f",{centavos}")
+        ix = resultado["interna_x_externa"]
+        texto = pagina.locator("#texto-interna-externa")
+        for valor, motivo in (
+            (ix["fee_de_gravame_externo_para_empatar"], ix["motivo_fee"]),
+            (ix["gasto_para_empatar"], ix["motivo_gasto"]),
+        ):
+            esperar(texto).to_contain_text(motivo if valor is None else _reais(valor))
         _fotografar(pagina, f"negocio-{conjunto}.png")
     esperar(pagina.locator("#aviso-ilustrativo")).to_be_visible()
     esperar(pagina.locator("#aviso-ilustrativo")).to_contain_text("Números ilustrativos")
@@ -143,6 +164,49 @@ def test_negocio_controles_mandam_o_que_a_tela_mostra(pagina: Any) -> None:
     }
     _esperar()(pagina.locator("[aria-pressed=true]")).to_have_count(0)
     _conferir_destaques(pagina, _api(pagina.endereco, corpo).json())
+
+
+def test_negocio_le_ponto_e_virgula_como_a_pessoa_digita(pagina: Any) -> None:
+    _abrir(pagina)
+    corpo = _simular_com_controles(pagina, {"fee-api": "3.25", "gasto": "1.500,00"})
+    assert corpo["premissas"]["fee_por_garantia_ativa"] == "3.25"
+    assert corpo["premissas"]["gasto_mensal"] == "1500.00"
+    corpo = _simular_com_controles(pagina, {"fee-api": "1.5", "gasto": "1.500"})
+    assert corpo["premissas"]["fee_por_garantia_ativa"] == "1.50"
+    assert corpo["premissas"]["gasto_mensal"] == "1500.00"
+    corpo = _simular_com_controles(pagina, {"fee-api": "2", "gasto": "12.345,6"})
+    assert corpo["premissas"]["gasto_mensal"] == "12345.60"
+
+
+@pytest.mark.parametrize("digitado", ["1,2,3", "1.50.0", "1.5000", "3,256", "abc"])
+def test_negocio_recusa_numero_ambiguo_sem_chamar_a_api(pagina: Any, digitado: str) -> None:
+    esperar = _esperar()
+    _abrir(pagina)
+    pedidos: list[str] = []
+    pagina.on(
+        "request",
+        lambda r: pedidos.append(r.url) if r.url.endswith("/v1/negocio/simulacoes") else None,
+    )
+    pagina.locator("#gasto").fill(digitado)
+    pagina.get_by_role("button", name="Simular com estes valores").click()
+    esperar(pagina.locator("#erro")).to_contain_text("Gasto no cartão")
+    esperar(pagina.locator("#erro")).to_contain_text(digitado)
+    esperar(pagina.locator("#erro")).to_contain_text("vírgula")
+    pagina.wait_for_timeout(300)
+    assert pedidos == []
+
+
+def test_negocio_mostra_o_percentual_usado(pagina: Any) -> None:
+    esperar = _esperar()
+    _abrir(pagina)
+    esperar(pagina.locator("#usado-cdi")).to_have_text("usado: 13,65% ao ano")
+    esperar(pagina.locator("#usado-intercambio")).to_have_text("usado: 1,2% do gasto")
+    esperar(pagina.locator("#usado-externa")).to_have_text("usado: 30% das garantias")
+    esperar(pagina.locator("#cdi")).to_have_attribute("placeholder", "em %, ex.: 13,65")
+    # Uma fração digitada no campo de % aparece como o que é: 0,1365% ao ano.
+    corpo = _simular_com_controles(pagina, {"cdi": "0,1365"})
+    assert corpo["premissas"]["cdi_ao_ano"] == "0.001365"
+    esperar(pagina.locator("#usado-cdi")).to_have_text("usado: 0,1365% ao ano")
 
 
 def test_negocio_valor_extremo_mostra_erro_da_api(pagina: Any) -> None:

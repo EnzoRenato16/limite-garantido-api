@@ -38,6 +38,15 @@
 .grade-controles input,
 .grade-controles select { width: 100%; min-width: 0; }
 
+/* O que a última simulação usou, ao lado dos campos em %. */
+.grade-controles .valor-usado {
+  display: block;
+  min-height: 1.2em;
+  color: var(--tinta-suave);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------- destaques */
 .titulo-com-acao {
   display: flex;

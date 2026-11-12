@@ -51,7 +51,8 @@
               <input id="saldo" inputmode="decimal" autocomplete="off">
             </label>
             <label>Garantia em outra instituição, %
-              <input id="externa" inputmode="decimal" autocomplete="off">
+              <input id="externa" inputmode="decimal" autocomplete="off" placeholder="em %, ex.: 30">
+              <span class="valor-usado" id="usado-externa" aria-live="polite"></span>
             </label>
           </div>
         </fieldset>
@@ -59,10 +60,12 @@
           <legend>Mercado e preço</legend>
           <div class="grade-controles">
             <label>CDI, % ao ano
-              <input id="cdi" inputmode="decimal" autocomplete="off">
+              <input id="cdi" inputmode="decimal" autocomplete="off" placeholder="em %, ex.: 13,65">
+              <span class="valor-usado" id="usado-cdi" aria-live="polite"></span>
             </label>
             <label>Intercâmbio, % do gasto
-              <input id="intercambio" inputmode="decimal" autocomplete="off">
+              <input id="intercambio" inputmode="decimal" autocomplete="off" placeholder="em %, ex.: 1,2">
+              <span class="valor-usado" id="usado-intercambio" aria-live="polite"></span>
             </label>
             <label>Fee da API, R$ por garantia por mês
               <input id="fee-api" inputmode="decimal" autocomplete="off">
@@ -170,14 +173,15 @@
           a ela menos o que sai dela; a do parceiro, o mesmo do lado dele.</p>
         <p><strong>Receita por cliente.</strong> Vem do intercâmbio (dividido com o parceiro),
           do fee que o parceiro paga pela API por garantia ativa e por gravame, da parte retida
-          do rendimento da garantia, do rotativo e da taxa do FIDC. Num LaaS comum quase tudo
-          é juro; aqui o juro é pequeno, porque a garantia troca juro alto por limite.</p>
+          do rendimento da garantia, do rotativo e da taxa do FIDC. O gráfico de fontes mostra
+          quanto cada uma pesa nas premissas escolhidas.</p>
         <p><strong>Custo de funding.</strong> Entre a compra e o pagamento da fatura, a
           plataforma financia o gasto. Esse saldo custa CDI mais spread, no FIDC ou no
           balanço. Por isso o CDI e os dias financiados pesam tanto no tornado.</p>
         <p><strong>Perda.</strong> Vem do motor de risco, no cenário escolhido: só perde o que
-          a venda da garantia não cobre. Garantia em outra instituição perde mais, porque a
-          venda demora.</p>
+          a venda da garantia não cobre. As duas perdas, com garantia interna e com externa,
+          são medidas nos mesmos clientes; a externa nunca perde menos, porque a venda dela
+          demora mais, e perde bem mais quando o custodiante sai do ar.</p>
         <p><strong>Escala.</strong> O custo fixo não entra na margem por cliente; entra no
           ponto de equilíbrio e no resultado da carteira. Com margem positiva, cada cliente a
           mais diminui o prejuízo até o equilíbrio.</p>

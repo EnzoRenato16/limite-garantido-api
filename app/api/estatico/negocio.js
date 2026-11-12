@@ -96,12 +96,33 @@ function complementar(fracao) {
   return comCasas(um - BigInt(int + frac), frac.length);
 }
 
-// "1.500,00", "1500" ou "R$ 3,25" (como a pessoa digita) -> "1500.00" (como a API espera).
+// Reais como a pessoa digita -> "1500.00" (como a API espera). Com vírgula, a vírgula é
+// o decimal e os pontos só podem separar milhar, em grupos de 3: "1.500,00", "3,25".
+// Sem vírgula, pontos em grupos de 3 são milhar ("1.500", "12.345.678") e um único ponto
+// com 1 ou 2 casas é decimal ("3.25", "1.5"). Qualquer outra forma é recusada (null).
 function paraDecimal(digitado) {
-  const limpo = String(digitado).trim().replace(/^R\$\s*/, "").replace(/\./g, "").replace(",", ".");
-  if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return null;
-  const [int, frac = ""] = limpo.split(".");
-  return `${int}.${frac.padEnd(2, "0")}`;
+  const limpo = String(digitado).trim().replace(/^R\$\s*/, "");
+  let inteiro;
+  let centavos = "";
+  if (limpo.includes(",")) {
+    const partes = /^(\d{1,3}(?:\.\d{3})+|\d+),(\d{1,2})$/.exec(limpo);
+    if (!partes) return null;
+    [, inteiro, centavos] = partes;
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(limpo)) {
+    inteiro = limpo;
+  } else {
+    const partes = /^(\d+)(?:\.(\d{1,2}))?$/.exec(limpo);
+    if (!partes) return null;
+    [, inteiro, centavos = ""] = partes;
+  }
+  return `${BigInt(inteiro.replace(/\./g, ""))}.${centavos.padEnd(2, "0")}`;
+}
+
+// "1094.93" -> 109493n: centavos em inteiro, para comparar sem float.
+function centavos(texto) {
+  const [int, frac = ""] = String(texto).replace("-", "").split(".");
+  const valor = BigInt(int + frac.padEnd(2, "0").slice(0, 2));
+  return String(texto).trim().startsWith("-") ? -valor : valor;
 }
 
 // "1500" -> "1.500,00", para preencher o campo como a pessoa digitaria.
@@ -177,23 +198,30 @@ function preencherControles(conjunto) {
   $("cenario-risco").value = conjunto.cenario_de_risco;
 }
 
+const DICA_DE_REAIS = "use vírgula para os centavos e ponto só para o milhar, como 1.500,00";
+const DICA_DE_PERCENTUAL = "em %, com vírgula e até 4 casas, como 13,65";
+
 function lerControles() {
-  const ler = (id, converter, nome) => {
+  const ler = (id, converter, nome, dica) => {
     const valor = converter($(id).value);
-    if (valor === null) throw new Error(`${nome}: valor inválido (${$(id).value || "vazio"})`);
+    if (valor === null) {
+      throw new Error(`${nome}: valor inválido (${$(id).value || "vazio"}); ${dica}`);
+    }
     return valor;
   };
-  const externa = ler("externa", percentualParaFracao, "Garantia em outra instituição");
+  const reaisDe = (id, nome) => ler(id, paraDecimal, nome, DICA_DE_REAIS);
+  const fracaoDe = (id, nome) => ler(id, percentualParaFracao, nome, DICA_DE_PERCENTUAL);
+  const externa = fracaoDe("externa", "Garantia em outra instituição");
   return {
     conjunto: estado.conjuntoAtual,
     premissas: {
-      gasto_mensal: ler("gasto", paraDecimal, "Gasto no cartão"),
-      saldo_em_garantia: ler("saldo", paraDecimal, "Saldo em garantia"),
+      gasto_mensal: reaisDe("gasto", "Gasto no cartão"),
+      saldo_em_garantia: reaisDe("saldo", "Saldo em garantia"),
       fracao_externa: externa,
       fracao_interna: complementar(externa),
-      cdi_ao_ano: ler("cdi", percentualParaFracao, "CDI"),
-      taxa_de_intercambio: ler("intercambio", percentualParaFracao, "Intercâmbio"),
-      fee_por_garantia_ativa: ler("fee-api", paraDecimal, "Fee da API"),
+      cdi_ao_ano: fracaoDe("cdi", "CDI"),
+      taxa_de_intercambio: fracaoDe("intercambio", "Intercâmbio"),
+      fee_por_garantia_ativa: reaisDe("fee-api", "Fee da API"),
     },
     cenario_de_risco: $("cenario-risco").value,
   };
@@ -312,6 +340,12 @@ function mostrar(r) {
     `${inteiro.format(carteira.clientes_ativos)} clientes vezes a margem, menos ` +
     `${reais(fixo)} de custo fixo; ${reais(carteira.plataforma_ano)} no ano`;
 
+  // Ao lado de cada campo em %, o que a API usou: uma fração digitada no lugar do
+  // percentual ("0,1365" para 13,65%) aparece aqui como 0,1365%.
+  $("usado-externa").textContent = `usado: ${fracaoParaCampo(valores.fracao_externa)}% das garantias`;
+  $("usado-cdi").textContent = `usado: ${fracaoParaCampo(valores.cdi_ao_ano)}% ao ano`;
+  $("usado-intercambio").textContent = `usado: ${fracaoParaCampo(valores.taxa_de_intercambio)}% do gasto`;
+
   desenharGraficos();
   mostrarContas(r);
   mostrarLinhas(r.linhas);
@@ -332,30 +366,44 @@ function mostrarContas(r) {
   $("texto-perda").textContent =
     `Cenário ${p.cenario.nome}: ${percentual(p.taxa_base_ao_ano)} ao ano de perda base, mais ` +
     `${numeroLegivel(p.frequencia_ao_ano)} evento por ano × ${percentual(p.condicional_mista, 4)} ` +
-    `de perda por evento, dá ${percentual(p.taxa_ao_ano, 4)} ao ano, ou ` +
-    `${percentual(p.taxa_ao_mes, 4)} ao mês. A perda por evento mistura a da garantia interna ` +
+    `de perda por evento, dá ${percentual(p.taxa_ao_ano, 4)} ao ano; dividido por 12 (perda ` +
+    `não se compõe como juro), ${percentual(p.taxa_ao_mes, 4)} ao mês. A perda por evento ` +
+    `mistura a da garantia interna ` +
     `(${percentual(p.condicional_interna, 4)}) e a da externa (${percentual(p.condicional_externa, 4)}). ` +
     `Sobre o saldo financiado de ${reais(p.saldo_financiado)}, são ` +
     `${linhaDaPerda ? reais(linhaDaPerda.valor) : "R$ 0,00"} por cliente por mês.` +
     (r.rotativo_no_teto ? " O rotativo bateu no teto legal de 100% do valor original." : "");
 
+  // Cada valor de empate vem da API com o motivo de quando não há valor.
   const ie = r.interna_x_externa;
   const fee = ie.fee_de_gravame_externo_para_empatar;
   const gasto = ie.gasto_para_empatar;
   const partes = [
     `Com toda a garantia na plataforma, ela ganha ${reais(ie.margem_interna)} por cliente por ` +
-      `mês; com toda a garantia em outra instituição, ${reais(ie.margem_externa)}. A externa ` +
-      `custa ${reais(ie.custo_a_mais_da_externa)} a mais.`,
-    fee === null
-      ? "Nenhum fee de gravame externo empata as duas."
-      : `Empata com um fee de gravame externo de ${reais(fee)} por operação,`,
-    gasto === null
-      ? "e nenhum gasto mensal dentro da busca empata."
-      : `${fee === null ? "Também empata" : "ou"} com um gasto de ${reais(gasto)} por mês, que ` +
-        `${ie.gasto_cabe_no_limite ? "cabe" : "não cabe"} no limite que a garantia gera.`,
+      `mês; com toda a garantia em outra instituição, ${reais(ie.margem_externa)}.`,
+  ];
+  if (centavos(ie.custo_a_mais_da_externa) > 0n) {
+    partes.push(`A externa custa ${reais(ie.custo_a_mais_da_externa)} a mais.`);
+    partes.push(
+      fee === null ? ie.motivo_fee : `Empata com um fee de gravame externo de ${reais(fee)} por operação.`,
+    );
+    if (gasto === null) {
+      partes.push(ie.motivo_gasto);
+    } else {
+      const lado = centavos(gasto) < centavos(r.premissas.valores.gasto_mensal) ? "menor" : "maior";
+      partes.push(
+        `${fee === null ? "Empata" : "Também empata"} com um gasto de ${reais(gasto)} por mês, ` +
+          `${lado} que o atual, que ${ie.gasto_cabe_no_limite ? "cabe" : "não cabe"} no limite ` +
+          "que a garantia gera.",
+      );
+    }
+  } else {
+    partes.push(ie.motivo_fee);
+  }
+  partes.push(
     `O parceiro ganha ${reais(ie.parceiro_interna)} com a interna e ` +
       `${reais(ie.parceiro_externa)} com a externa.`,
-  ];
+  );
   $("texto-interna-externa").textContent = partes.join(" ");
 }
 
