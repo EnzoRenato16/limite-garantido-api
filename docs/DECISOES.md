@@ -555,14 +555,17 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   parceiro sai como repasse. É o fluxo real do dinheiro e mostra a transferência.
 
 ### 60. Convenção de período
-- **Decisão.** Toda taxa ao ano vira mensal por juros compostos, (1 + a)^(1/12) − 1. Para
-  o CDI, isso é o mesmo que 21 dos 252 dias úteis, a base em que ele é divulgado.
-  "CDI + spread" é composto: (1 + CDI) × (1 + spread) − 1. Frequência de eventos (vezes
-  por ano) vira mensal dividindo por 12, porque frequência não se compõe. Dias corridos
-  viram mês por 365/12.
-- **Por que uma só.** Misturar linear e composto entre linhas faria a mesma taxa render
-  valores diferentes conforme a linha. Em taxas pequenas (0,3% ao ano) a diferença é
-  desprezível; no CDI ela importa.
+- **Decisão.** Taxa ao ano de juros ou rendimento (CDI, spreads, FIDC, rendimento retido)
+  vira mensal por juros compostos, (1 + a)^(1/12) − 1. Para o CDI, isso é o mesmo que 21
+  dos 252 dias úteis, a base em que ele é divulgado. "CDI + spread" é composto:
+  (1 + CDI) × (1 + spread) − 1. Frequência de eventos (vezes por ano) vira mensal
+  dividindo por 12, porque frequência não se compõe. A taxa anual de perda esperada é
+  soma de eventos e também vira mensal dividindo por 12 (item 62). Dias corridos viram
+  mês por 365/12.
+- **Por que assim.** A regra segue o que a grandeza é: juro rende sobre juro e se compõe;
+  evento e perda não rendem sobre si mesmos e se dividem. Usar duas regras para a mesma
+  grandeza faria a mesma frequência valer diferente nas execuções e na perda, que era o
+  que acontecia antes da revisão final (a perda era composta).
 
 ### 61. Arredondamento
 - **Decisão.** Cada linha é calculada em `Decimal` com 34 dígitos e arredondada para
@@ -581,12 +584,28 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   do `simular_painel` na carteira sintética de 1.000 clientes (semente 42), medida duas
   vezes: com toda garantia interna e com toda externa (o depósito continua interno, como
   no gerador). Para uma fração externa f, a condicional é a mistura linear das duas. A
-  taxa anual vira mensal pela convenção do item 60 e incide sobre o saldo financiado
-  médio do cliente.
-- **Por que duas carteiras.** Mudar a fração externa do gerador muda todo o sorteio, e a
-  perda pularia de forma ruidosa. Medir nos dois extremos dá uma conta monótona e
+  taxa anual vira mensal dividindo por 12 e incide sobre o saldo financiado médio do
+  cliente.
+- **Por que ÷ 12 e não composição.** A taxa anual é perda esperada: soma de eventos, não
+  juro. Com 12 eventos por ano que levam metade do saldo cada, são 6 ao ano e 0,5 ao mês;
+  composta, a conta daria cerca de 17,6% ao mês e esconderia dois terços da perda. Nos
+  três conjuntos a diferença fica abaixo de 0,002 ponto percentual ao mês, mas nas pontas
+  da faixa aceita (frequência até 12 por ano) ela é grande. A revisão final (análise dimensional) pegou.
+- **Os mesmos clientes nas duas pontas.** Uma carteira só, gerada com os parâmetros de
+  sempre (1.000 clientes, semente 42). A versão interna tira o custodiante de todas as
+  garantias. A versão externa põe num custodiante toda garantia que não é depósito: a que
+  já tinha um fica com ele, e a que não tinha ganha um sorteado pelos pesos da carteira,
+  com um gerador à parte de mesma semente, na ordem das contas e das garantias. A
+  primeira versão gerava duas carteiras com frações externas 0 e 1; como o gerador só
+  sorteia custodiante para a externa, a mesma semente dava clientes diferentes, e a
+  diferença entre interna e externa era ruído de amostragem (a interna chegava a perder
+  mais que a externa). Com os mesmos clientes, a externa nunca perde menos, e há teste.
+- **Por que só as duas pontas.** Medir nos dois extremos dá uma conta monótona e
   explicável, roda o motor duas vezes por cenário (com cache) e nenhuma variação do
   tornado precisa rodar o motor de novo.
+- **Perda sem sentido é erro de configuração.** Exposição zero ou perda maior que a
+  dívida levanta `ErroNaPerdaDoCenario` (500, registrado no log), em vez de devolver 0
+  ou um 422 que culparia quem pediu. Só cenário desconhecido é 422.
 - **Limitação.** A carteira sintética usa entre 0% e 95% do limite. Se o cliente médio
   usar menos, a taxa medida tende a ser maior que a dele, o que erra para o lado
   prudente. A tela mostra a conta inteira.
@@ -640,6 +659,16 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   de gravame externo que zera a diferença, e o gasto mensal que zera a diferença,
   dizendo se esse gasto cabe no limite que a garantia gera. A busca é em centavos e
   confirma o resultado recalculando.
+- **Direção.** A busca vai para o lado em que a margem da externa sobe: o fee para cima;
+  o gasto para cima quando o intercâmbio e os juros pagam o funding e a perda, e para
+  baixo quando não pagam. Se por esse lado nada empata, ela olha a outra ponta da faixa
+  aceita. O valor é uma fronteira: empata, e um centavo mais perto do valor atual não
+  empata. A primeira versão só olhava para cima e, no conjunto conservador, dizia que
+  nenhum gasto empatava; empata com R$ 408,74, abaixo dos R$ 1.000,00 do conjunto.
+- **Valor ou motivo.** Quando não há valor, a resposta diz por quê (`motivo_fee`,
+  `motivo_gasto`): a externa não custa mais; não há gravame; a receita de fee de gravame
+  está desligada; nenhum valor da faixa aceita empata. O domínio recusa valor e motivo
+  juntos, ou nenhum dos dois, e a API, o CSV e a tela mostram o motivo.
 
 ### 69. CSV para Excel em português
 - **Formato.** UTF-8 com BOM, separador `;`, vírgula decimal sem separador de milhar,
@@ -652,14 +681,14 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
 
 ### 70. Os três conjuntos e o que eles mostram
 - **Conservador.** Dá margem negativa para a plataforma e nenhum ponto de equilíbrio
-  (R$ -4,07 por cliente por mês; sem equilíbrio). Foi mantido de propósito: é a mensagem
+  (R$ -4,05 por cliente por mês; sem equilíbrio). Foi mantido de propósito: é a mensagem
   honesta de que, com premissas ruins (gasto e saldo baixos, mais gente na externa, custo
   e perda altos), o negócio não para de pé.
-- **Base.** Fica pouco acima do equilíbrio na carteira base: R$ 4,13 por cliente por mês,
-  96.853 clientes de equilíbrio contra 100.000 na carteira.
-- **Otimista.** Usa o `crash_da_bolsa`, cuja perda condicional é pequena (a margem de
-  segurança das ações absorve a queda), então a perda anual cai a 0,30% e a margem sobe
-  para R$ 19,32.
+- **Base.** Fica pouco acima do equilíbrio na carteira base: R$ 4,14 por cliente por mês,
+  96.619 clientes de equilíbrio contra 100.000 na carteira.
+- **Otimista.** Usa o `crash_da_bolsa`, cuja perda condicional na carteira sintética é
+  zero (a margem de segurança das ações absorve a queda), então a perda anual fica na
+  taxa base, 0,30%, e a margem sobe para R$ 19,32.
 - **Aviso.** São conjuntos de premissas ilustrativas, não previsões. Os números completos
   estão em [economia.md](economia.md).
 
@@ -751,6 +780,63 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
   `/code-review` e as demais revisões pendentes da v1.0. Nesta entrega não entrou
   nenhuma dependência nova.
 
+### Revisão final do modelo econômico
+
+**O que rodou** (somente leitura, sobre `origin/main...HEAD`, com os relatórios guardados
+fora do repositório)
+
+- **`code-review`** (esforço alto): nenhum crítico. Achou a perda interna e a externa
+  medidas em carteiras com clientes diferentes, a busca do gasto que empata só para
+  cima (errada no conjunto conservador) e o `paraDecimal` da página lendo "3.25" como
+  R$ 325,00; e, entre os menores, o texto de interna x externa mal formado, `Accept` sem
+  q nem `Vary` e duplicações na rota.
+- **`pr-review-toolkit:review-pr`** (falhas silenciosas, testes, tipos e comentários,
+  feito sem subagentes): o TOML quebrado só aparecia na primeira chamada, como 500;
+  exposição zero virava perda zero e erro interno virava 422; ramos de erro do
+  carregador sem teste (83%); testes de tempo frágeis; `None` com três sentidos no
+  empate e no equilíbrio.
+- **`dimensional-analysis`**: a perda anual, que é soma de eventos, era convertida ao
+  mês por composição. Os demais pontos são limitações (abaixo).
+- **`insecure-defaults`** (à mão, sem o pipeline da skill): nenhum crítico nem
+  importante; `Vary: Accept` faltando e o tornado ligado por padrão.
+- **`sharp-edges`**: o mesmo `paraDecimal`; fração digitada em campo de % passando
+  calada; `Accept` sem q, sem caixa e sem `Vary`; `receitas_ligadas` que sobrescreve
+  fonte a fonte sem dizer.
+
+**O que foi corrigido**
+
+- Perda mensal = anual ÷ 12 (itens 60 e 62).
+- Perda interna e externa nos mesmos clientes (item 62).
+- Busca do empate na direção em que a margem sobe, olhando as duas pontas, com motivo
+  quando não há valor (item 68); motivo verdadeiro do equilíbrio com custo fixo zero.
+- TOML carregado e validado na subida da API; exposição zero e perda maior que a dívida
+  viram erro de configuração (500); invariante quebrada no cálculo vira 500, não 422.
+- Carregador do TOML com todos os ramos de erro testados (100%); tempo pelo menor de
+  três rodadas, um teste no domínio e um na API.
+- `Accept` lido com q e sem diferenciar maiúsculas, com `Vary: Accept` nas duas
+  respostas; `receitas_ligadas` documentado ("sobrescreve só as fontes enviadas").
+- Página: ponto e vírgula lidos como a pessoa digita, com recusa clara do que é ambíguo;
+  ao lado de cada campo em % o valor usado na última simulação; textos com os motivos da
+  API; saiu a frase de mercado sem fonte sobre "LaaS".
+- Testes de limite da API (41 premissas, NaN, 1e9999, corpo acima de 64 kB), CSV com
+  margem negativa e com texto neutralizado, e o e2e conferindo o texto formatado das
+  margens e do resultado da carteira contra a API.
+
+**O que ficou para depois, com o motivo** (está em "Próximos passos" no README)
+
+- **CSV só em pt-BR.** O pedido era abrir no Excel em português; um formato com ponto
+  decimal fica para quando houver quem precise.
+- **Utilização da carteira sintética maior que a do cliente médio.** A perda medida sai
+  prudente (maior); medir na utilização do cliente médio exige mudar o gerador do painel
+  de risco, que é do `main`.
+- **Fração interna/externa por contagem, não por valor.** Vale se as garantias internas e
+  externas tiverem o mesmo saldo médio; separar contagem e valor dobraria as premissas.
+- **Rotativo sem capitalização no saldo.** O saldo financiado conta o principal rolado;
+  funding e perda sobre os juros capitalizados ficam de fora, um efeito pequeno com dois
+  meses no rotativo.
+- **Tornado ligado por padrão.** É o que a página usa; o custo por chamada é limitado
+  pelo rate limit por parceiro e pelo teto do corpo.
+
 ## O que os testes pegaram
 
 1. **`Decimal` virando `float`.** Na reconstrução da 0.1, o `jsonable_encoder` do
@@ -795,6 +881,14 @@ Para completar depois, numa sessão nova: `/pr-review-toolkit:review-pr`,
     centavo em casos exatos. O teste de propriedade pegou, depois da revisão.
 15. **Premissas só com etiqueta, sem origem.** Cada premissa tinha uma tag em vez de uma
     frase de origem. A revisão pegou, e o TOML passou a ter a origem em uma frase.
+16. **Carteiras com clientes diferentes.** A perda interna e a externa vinham de duas
+    carteiras geradas com a mesma semente, mas o gerador só sorteia custodiante para a
+    externa, e os clientes divergiam. A revisão final mediu a interna perdendo 2,5 vezes
+    a externa em três cenários; o teste novo confere que as duas versões têm as mesmas
+    contas, dívidas e valores e que a externa nunca perde menos.
+17. **Busca do gasto só para cima.** No conjunto conservador a margem da externa cai
+    quando o gasto sobe, e a busca dizia "nenhum gasto empata". O teste novo acha o
+    empate abaixo do gasto do conjunto e confere a fronteira.
 
 <a id="o-que-ficou-para-voce-decidir"></a>
 ## O que ficou para você decidir

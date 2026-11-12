@@ -52,7 +52,7 @@ os meses no rotativo.
 | `taxa_fidc` | Taxa do FIDC | fidc → plataforma | saldo financiado × fc × taxa ao ano convertida para o mês | para baixo |
 | `funding_fidc` | Funding do FIDC | plataforma → fidc | saldo financiado × fc × (CDI ⊕ spread do FIDC) no mês | para cima |
 | `funding_balanco` | Funding de balanço | plataforma → financiadores | saldo financiado × (1 − fc) × (CDI ⊕ spread de balanço) no mês | para cima |
-| `perda_esperada` | Perda esperada | plataforma → inadimplência | saldo financiado × taxa anual de perda convertida para o mês | para cima |
+| `perda_esperada` | Perda esperada | plataforma → inadimplência | saldo financiado × taxa anual de perda ÷ 12 | para cima |
 | `processamento` | Processamento do cartão | plataforma → fornecedores | custo por cartão ativo | para cima |
 | `gravame_custodiante` | Gravame no custodiante | plataforma → custodiante | gravames/mês × fe × custo do gravame externo | para cima |
 | `execucao_interna` | Execução de garantia interna | plataforma → fornecedores | execuções/ano ÷ 12 × fi × custo interno | para cima |
@@ -63,9 +63,10 @@ os meses no rotativo.
 - **Saldo financiado** = G × dias financiados ÷ (365/12), mais R × n.
 - **R** = G × fração dos clientes no rotativo × fração da fatura rolada.
 - **⊕** é a composição "CDI + spread": (1 + CDI) × (1 + spread) − 1.
-- Toda taxa ao ano vira mensal por juros compostos, (1 + a)^(1/12) − 1. Frequência de
-  eventos (vezes por ano) vira mensal dividindo por 12, porque frequência não se
-  compõe. Dias corridos viram mês por 365/12.
+- Toda taxa ao ano de juros ou rendimento vira mensal por juros compostos,
+  (1 + a)^(1/12) − 1. Frequência de eventos (vezes por ano) vira mensal dividindo por 12,
+  porque frequência não se compõe. A taxa anual de perda esperada é soma de eventos, não
+  juro, e também vira mensal dividindo por 12. Dias corridos viram mês por 365/12.
 
 **As transferências entre plataforma e parceiro.** São três linhas:
 `repasse_intercambio`, `fee_garantia_ativa` e `fee_gravame`. Cada uma é receita de um
@@ -128,23 +129,43 @@ Para o modelo, a taxa anual de perda é:
 
 > taxa base ao ano + frequência do cenário ao ano × taxa condicional do cenário
 
+e a mensal é a anual dividida por 12. A perda é soma de eventos, não juro: perda não
+rende sobre perda. Com 12 eventos por ano que levam metade do saldo cada, são 6 ao ano e
+0,5 ao mês; pela composição sairiam cerca de 17,6% ao mês, e a conta esconderia a maior
+parte da perda.
+
 A taxa condicional é `perda_esperada_total / exposicao` do `simular_painel` na carteira
-sintética (1.000 clientes, semente 42), medida duas vezes: com toda a garantia interna e
-com toda a externa. Para uma fração externa fe, a condicional é a mistura linear:
-fi × condicional interna + fe × condicional externa. Variar a fração não roda o motor de
-novo.
+sintética (1.000 clientes, semente 42), medida duas vezes **nos mesmos clientes**: uma
+com toda garantia interna (nenhuma com custodiante) e outra com toda garantia que não é
+depósito num custodiante (a que já tinha um continua com ele; a que não tinha ganha um
+sorteado pelos pesos da carteira, com um gerador à parte de mesma semente). Para uma
+fração externa fe, a condicional é a mistura linear: fi × condicional interna + fe ×
+condicional externa. Variar a fração não roda o motor de novo.
+
+Condicionais medidas, por cenário:
+
+| Cenário | Toda interna | Toda externa |
+|---|---:|---:|
+| Dia normal | 0,00% | 0,00% |
+| Crash da bolsa (ações -30%) | 0,00% | 0,00% |
+| Alta de juros (prefixado -10%) | 0,00% | 0,00% |
+| Custodiante fora do ar | 0,00% | 7,8435% |
+
+Nos três primeiros cenários nenhum cliente da carteira sintética fica descoberto depois
+da venda da garantia, e a perda condicional é zero dos dois lados. Só com o custodiante
+fora do ar a garantia externa deixa dívida sem cobertura.
 
 **Conta do conjunto Base** (cenário Custodiante fora do ar):
 
-1. Condicional interna: 0,0052%; condicional externa: 8,5520%.
-2. Condicional mista: 70% × 0,0052% + 30% × 8,5520% = 2,5692%.
-3. Taxa anual: 0,50% + 0,05 evento/ano × 2,5692% = 0,6285% ao ano.
-4. Taxa mensal: (1 + 0,6285%)^(1/12) − 1 = 0,0522% ao mês.
+1. Condicional interna: 0,00%; condicional externa: 7,8435%.
+2. Condicional mista: 70% × 0,00% + 30% × 7,8435% = 2,3531%.
+3. Taxa anual: 0,50% + 0,05 evento/ano × 2,3531% = 0,6177% ao ano.
+4. Taxa mensal: 0,6177% ÷ 12 = 0,0515% ao mês.
 5. Saldo financiado: R$ 1.500,00 × 10 ÷ (365/12) = R$ 493,1507, mais
    R$ 1.500,00 × 5% × 30% = R$ 22,50 por mês no rotativo × 2 meses = R$ 45,00;
-   total de R$ 538,1507, que a linha arredonda para cima: R$ 538,16.
-6. Perda esperada: R$ 538,16 × 0,0522% = R$ 0,28, que a linha arredonda para cima:
-   **R$ 0,29 por cliente por mês**.
+   total de R$ 538,1507 (a tela mostra R$ 538,16).
+6. Perda esperada: R$ 538,1507 × 0,0515% = R$ 0,2770, que a linha arredonda para cima:
+   **R$ 0,28 por cliente por mês**.
 
 A carteira sintética usa entre 0% e 95% do limite. Se o cliente médio usar menos, a taxa
 medida tende a ser maior que a dele: erra para o lado prudente.
@@ -153,9 +174,10 @@ medida tende a ser maior que a dele: erra para o lado prudente.
 
 N = ⌈custo fixo mensal ÷ margem da plataforma por cliente por mês⌉, em centavos
 inteiros. Se a margem for zero ou negativa, nenhum número de clientes paga o custo fixo,
-e o resultado é "não existe", com o motivo.
+e o resultado é "não existe", com o motivo (se o custo fixo também for zero, o motivo diz
+que nenhum cliente dá lucro).
 
-No conjunto Base: R$ 400.000,00 ÷ R$ 4,13 = 96.852,3, ou seja, **96.853 clientes**. A
+No conjunto Base: R$ 400.000,00 ÷ R$ 4,14 = 96.618,4, ou seja, **96.619 clientes**. A
 carteira Base tem 100.000. Fica pouco acima do ponto de equilíbrio, de propósito.
 
 ## Interna x externa
@@ -164,23 +186,36 @@ O modelo calcula a margem da plataforma por cliente com toda a garantia interna 
 e com toda a externa (fe = 1). A diferença é o custo a mais da garantia em outra
 instituição. Para empatar, ele procura, em centavos:
 
-- o **fee de gravame externo** que zera a diferença, se houver gravames;
+- o **fee de gravame externo** que zera a diferença, se houver gravames e a receita de
+  fee de gravame estiver ligada;
 - o **gasto mensal** que zera a diferença, dizendo se esse gasto cabe no limite que a
   garantia gera (S × LTV).
 
-Conjunto Base (ilustrativo): margem interna R$ 4,71, externa R$ 2,79, diferença
-R$ 1,92. A externa empata com um fee de gravame externo de R$ 29,30 (a base é R$ 8,00)
-ou com um gasto mensal de R$ 2.465,84, que cabe no limite. Para os outros conjuntos:
+A busca vai para o lado em que a margem da externa sobe. Mais fee sempre ajuda; mais
+gasto ajuda quando o intercâmbio e os juros que ele traz pagam o funding e a perda, e
+atrapalha quando não pagam, e aí o empate está num gasto **menor** que o atual. Se por
+esse lado nada empata, a busca ainda olha a outra ponta da faixa aceita. O valor achado é
+uma fronteira: com ele a externa empata e um centavo mais perto do valor atual, não. Sem
+valor, a resposta traz o motivo (`motivo_fee`, `motivo_gasto`): a externa não custa
+mais, não há gravame, a receita de fee de gravame está desligada ou nenhum valor da faixa
+aceita empata.
+
+Conjunto Base (ilustrativo): margem interna R$ 4,71, externa R$ 2,80, diferença
+R$ 1,91. A externa empata com um fee de gravame externo de R$ 29,20 (a base é R$ 8,00)
+ou com um gasto mensal de R$ 2.452,50, que cabe no limite. Para os outros conjuntos:
 
 | | Conservador | Base | Otimista |
 |---|---:|---:|---:|
 | Margem da plataforma, toda interna | R$ -3,05 | R$ 4,71 | R$ 19,84 |
-| Margem da plataforma, toda externa | R$ -5,08 | R$ 2,79 | R$ 16,45 |
-| Custo a mais da externa | R$ 2,03 | R$ 1,92 | R$ 3,39 |
-| Fee de gravame externo que empata | R$ 30,50 | R$ 29,30 | R$ 45,70 |
-| Gasto mensal que empata | não existe | R$ 2.465,84 | R$ 3.030,72 |
+| Margem da plataforma, toda externa | R$ -5,03 | R$ 2,80 | R$ 16,45 |
+| Custo a mais da externa | R$ 1,98 | R$ 1,91 | R$ 3,39 |
+| Fee de gravame externo que empata | R$ 30,00 | R$ 29,20 | R$ 45,70 |
+| Gasto mensal que empata | R$ 408,74 | R$ 2.452,50 | R$ 3.030,72 |
+| Gasto mensal do conjunto | R$ 1.000,00 | R$ 1.500,00 | R$ 2.500,00 |
 
-No Conservador, nenhum gasto empata (a margem é negativa nos dois lados).
+No Conservador, o gasto que empata é **menor** que o do conjunto: ali cada real a mais de
+gasto custa mais em funding e perda do que traz de intercâmbio, e a margem da externa
+cai quando o gasto sobe.
 
 ## Tornado
 
@@ -192,15 +227,15 @@ porque algumas premissas não são monótonas (meses no rotativo: o teto legal t
 juros e o funding continua crescendo). As barras são ordenadas pela amplitude.
 
 No conjunto Base, as cinco que mais mexem (margem em R$ por cliente por mês, no extremo
-baixo e no alto da faixa razoável; a base é R$ 4,13):
+baixo e no alto da faixa razoável; a base é R$ 4,14):
 
 | Premissa | Faixa | Margem no baixo | Margem no alto |
 |---|---|---:|---:|
-| Dias financiados | 0 a 30 | R$ 10,95 | R$ -9,52 |
+| Dias financiados | 0 a 30 | R$ 10,95 | R$ -9,51 |
 | Meses no rotativo | 1 a 6 | R$ 2,69 | R$ 11,40 |
 | Fração de clientes no rotativo | 0 a 0,15 | R$ 1,39 | R$ 9,63 |
-| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,04 | R$ 9,33 |
-| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,53 | R$ 7,73 |
+| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,04 | R$ 9,34 |
+| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,54 | R$ 7,74 |
 
 Quem financia o gasto por mais dias perde margem (funding), e quem tem mais gente no
 rotativo ganha (juros). Com o rotativo limitado por lei, parte dessa margem é frágil.
@@ -215,28 +250,41 @@ em cada conjunto (com todas as fontes de receita ligadas).
 | Cenário de risco | Custodiante fora do ar | Custodiante fora do ar | Crash da bolsa (ações -30%) |
 | Clientes (parceiros × clientes por parceiro) | 30.000 | 100.000 | 320.000 |
 | Receita da plataforma por cliente por mês | R$ 15,17 | R$ 26,57 | R$ 51,16 |
-| Custo da plataforma por cliente por mês | R$ 19,24 | R$ 22,44 | R$ 31,84 |
-| **Margem da plataforma por cliente por mês** | **R$ -4,07** | **R$ 4,13** | **R$ 19,32** |
+| Custo da plataforma por cliente por mês | R$ 19,22 | R$ 22,43 | R$ 31,84 |
+| **Margem da plataforma por cliente por mês** | **R$ -4,05** | **R$ 4,14** | **R$ 19,32** |
 | **Margem do parceiro por cliente por mês** | **R$ 1,05** | **R$ 4,79** | **R$ 12,55** |
-| Margem do arranjo por cliente por mês | R$ -3,02 | R$ 8,92 | R$ 31,87 |
+| Margem do arranjo por cliente por mês | R$ -3,00 | R$ 8,93 | R$ 31,87 |
 | Custo fixo mensal | R$ 600.000,00 | R$ 400.000,00 | R$ 300.000,00 |
-| Ponto de equilíbrio (clientes) | não existe | 96.853 | 15.528 |
-| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -722.100,00 | R$ 13.000,00 | R$ 5.882.400,00 |
-| Resultado anual da plataforma na carteira | R$ -8.665.200,00 | R$ 156.000,00 | R$ 70.588.800,00 |
+| Ponto de equilíbrio (clientes) | não existe | 96.619 | 15.528 |
+| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -721.500,00 | R$ 14.000,00 | R$ 5.882.400,00 |
+| Resultado anual da plataforma na carteira | R$ -8.658.000,00 | R$ 168.000,00 | R$ 70.588.800,00 |
 | Resultado mensal do parceiro médio | R$ 10.500,00 | R$ 95.800,00 | R$ 502.000,00 |
-| Taxa anual de perda | 1,86% | 0,63% | 0,30% |
+| Taxa anual de perda | 1,78% | 0,62% | 0,30% |
+| Perda esperada por cliente por mês | R$ 0,77 | R$ 0,28 | R$ 0,13 |
 
 - **Conservador** dá margem negativa para a plataforma e não tem ponto de equilíbrio.
   Foi mantido assim de propósito: com premissas ruins (gasto e saldo baixos, mais gente
   na externa, custos e perda altos), o negócio não para de pé, e o modelo diz isso em vez
   de esconder.
-- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 13.000,00 por mês sobre
+- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 14.000,00 por mês sobre
   100.000 clientes. O resultado é sensível ao que o tornado mostra.
-- **Otimista** usa o crash da bolsa, cuja perda condicional é pequena (a margem de
-  segurança das ações absorve a queda; ver o painel de risco). Por isso a perda anual
-  cai e a margem sobe.
+- **Otimista** usa o crash da bolsa, cuja perda condicional na carteira sintética é zero
+  (a margem de segurança das ações absorve a queda; ver o painel de risco). Por isso a
+  perda anual fica só na taxa base, 0,30%, e a margem sobe.
 
 Os conjuntos são pontos de partida. A página permite editar cada premissa.
+
+## Pela API
+
+- `GET /v1/negocio/premissas` traz o esquema, os conjuntos e os cenários;
+  `POST /v1/negocio/simulacoes` simula. O TOML é lido e validado quando a API sobe: um
+  arquivo quebrado impede a subida, com o nome da chave no erro.
+- `premissas` sobrescreve só as premissas enviadas. `receitas_ligadas` **sobrescreve só
+  as fontes enviadas; as ausentes seguem o conjunto; premissas de fonte desligada não
+  entram na conta.** Para deixar ligada só uma fonte, mande as outras como `false`.
+- O CSV sai com `Accept: text/csv` quando `text/csv` tem q > 0 e q não menor que o de
+  `application/json` e o de `*/*`; em qualquer outro caso, JSON. As duas respostas levam
+  `Vary: Accept`. O CSV é em português (`;` e vírgula decimal).
 
 <a id="dados-publicos"></a>
 ## Dados públicos
@@ -272,7 +320,10 @@ Só entra aqui o que tem fonte. O resto é "premissa ilustrativa".
 - A perda vem de uma carteira sintética de 1.000 clientes, e a conversão em perda anual
   depende da frequência escolhida para o cenário, que é premissa.
 - Os juros do rotativo entram em regime (uma leva por mês), e o IOF fica de fora por ser
-  do governo.
+  do governo. O saldo financiado conta só o principal rolado, sem os juros capitalizados
+  no saldo; funding e perda incidem sobre esse principal.
+- As frações interna e externa são frações das garantias por contagem, e pesam o yield e
+  a perda como se as garantias internas e externas tivessem o mesmo saldo médio.
 - Não é parecer jurídico, tributário ou contábil.
 
 As decisões de desenho estão em `docs/DECISOES.md`, itens 57 a 71.

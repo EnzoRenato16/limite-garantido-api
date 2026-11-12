@@ -343,6 +343,18 @@ O que um especialista criticaria, e que não está resolvido aqui.
   BC: os valores citados vêm da imprensa, citando o Banco Central.
 - Todas as premissas fora dos dados públicos são ilustrativas e precisam ser trocadas por
   números de quem opera.
+- O CSV sai só em português (`;` e vírgula decimal). Um Excel em inglês lê errado; falta
+  uma opção com ponto decimal.
+- A carteira sintética que dá a perda usa mais do limite que o cliente médio do modelo, o
+  que deixa a perda prudente (maior). Medir a perda na utilização do cliente médio é o
+  passo seguinte.
+- As frações interna e externa são por contagem de garantias, não por valor: pesam o
+  rendimento e a perda como se as duas tivessem o mesmo saldo médio.
+- O saldo do rotativo conta só o principal rolado, sem os juros capitalizados; funding e
+  perda sobre esse saldo saem um pouco menores.
+- O tornado vem ligado por padrão na API e refaz o mês duas vezes por premissa (66
+  cálculos no conjunto base); com uso alto, convém desligá-lo por padrão ou dar a ele um
+  limite próprio.
 
 **Engenharia**
 
