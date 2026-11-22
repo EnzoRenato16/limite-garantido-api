@@ -50,7 +50,7 @@
             <label>Saldo em garantia, R$
               <input id="saldo" inputmode="decimal" autocomplete="off">
             </label>
-            <label>Garantia em outra instituição, %
+            <label>Garantia de fora, %
               <input id="externa" inputmode="decimal" autocomplete="off" placeholder="em %, ex.: 30">
               <span class="valor-usado" id="usado-externa" aria-live="polite"></span>
             </label>
@@ -144,10 +144,15 @@
             <p id="texto-perda"></p>
           </div>
           <div>
-            <h3>Garantia interna ou externa</h3>
+            <h3>Garantia dentro de casa ou de fora</h3>
             <p id="texto-interna-externa"></p>
           </div>
         </div>
+      </section>
+
+      <section aria-labelledby="titulo-notas">
+        <h2 id="titulo-notas" class="secao">O que a conta não inclui</h2>
+        <ul class="explica" id="notas"></ul>
       </section>
 
       <section aria-labelledby="titulo-linhas">
@@ -179,9 +184,15 @@
           plataforma financia o gasto. Esse saldo custa CDI mais spread, no FIDC ou no
           balanço. Por isso o CDI e os dias financiados pesam tanto no tornado.</p>
         <p><strong>Perda.</strong> Vem do motor de risco, no cenário escolhido: só perde o que
-          a venda da garantia não cobre. As duas perdas, com garantia interna e com externa,
-          são medidas nos mesmos clientes; a externa nunca perde menos, porque a venda dela
-          demora mais, e perde bem mais quando o custodiante sai do ar.</p>
+          a venda da garantia não cobre. As duas perdas, com garantia dentro de casa e de fora,
+          são medidas nos mesmos clientes; a de fora nunca perde menos, porque a venda dela
+          pode demorar mais, e perde mais quando o agente de custódia atrasa ou o emissor quebra.
+          Com os LTVs abaixo de 100%, a perda esperada pode ficar perto de zero sem que o risco
+          tenha sumido: a garantia reduz a perda, e continuam o risco do emissor, o de preço,
+          o de liquidez e o de execução.</p>
+        <p><strong>IOF.</strong> O cliente paga IOF ao governo só sobre o que financia a
+          crédito (o que rola da fatura); a compra paga integralmente não gera IOF. A linha
+          vai do cliente ao governo e não entra na margem da plataforma nem na do parceiro.</p>
         <p><strong>Escala.</strong> O custo fixo não entra na margem por cliente; entra no
           ponto de equilíbrio e no resultado da carteira. Com margem positiva, cada cliente a
           mais diminui o prejuízo até o equilíbrio.</p>

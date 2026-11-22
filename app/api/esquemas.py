@@ -1058,11 +1058,15 @@ class PerdaDoNegocioResposta(BaseModel):
 
 
 class InternaXExternaResposta(BaseModel):
+    """Garantia dentro de casa (`interna`) contra garantia de fora (`externa`)."""
+
+    rotulo_interna: str = Field(examples=["dentro de casa"])
+    rotulo_externa: str = Field(examples=["de fora"])
     margem_interna: ValorDeSaida
     margem_externa: ValorDeSaida
     custo_a_mais_da_externa: ValorDeSaida
     fee_de_gravame_externo_para_empatar: ValorDeSaida | None = Field(
-        description="Fee de gravame externo com que a externa empata; nulo com `motivo_fee`"
+        description="Fee de gravame de fora com que ela empata; nulo com `motivo_fee`"
     )
     motivo_fee: str | None = Field(
         description="Por que não há fee para empatar: a externa não custa mais, não há "
@@ -1110,6 +1114,9 @@ class ResultadoDoNegocio(BaseModel):
     rotativo_no_teto: bool
     interna_x_externa: InternaXExternaResposta
     tornado: list[BarraDoTornadoResposta]
+    notas: list[str] = Field(
+        description="O que o modelo não conta: IR da execução, alívio de capital e o parcelado"
+    )
     aviso: str = Field(examples=[AVISO_DO_NEGOCIO])
 
     model_config = ConfigDict(

@@ -42,21 +42,21 @@ razoavel = ["0.70", "0.90"]
 origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,50 (ações, FIIs e ETFs) a 0,90 (Tesouro Selic), no início das faixas do catálogo regulatório. A faixa aceita acompanha esses extremos."
 
 [premissas.fracao_interna]
-nome = "Fração interna"
+nome = "Fração dentro de casa"
 tipo = "fracao"
 unidade = "fração"
 minimo = "0"
 maximo = "1"
-origem = "Premissa ilustrativa: parcela das garantias custodiadas na própria plataforma; soma com a fração externa e dá 1."
+origem = "Premissa ilustrativa: parcela das garantias custodiadas dentro de casa (na CTVM do grupo); soma com a fração de fora e dá 1."
 
 [premissas.fracao_externa]
-nome = "Fração externa"
+nome = "Fração de fora"
 tipo = "fracao"
 unidade = "fração"
 minimo = "0"
 maximo = "1"
 razoavel = ["0", "1"]
-origem = "Premissa ilustrativa: parcela das garantias em custódia externa; o valor base repete a fração da carteira sintética do painel de risco (0,30)."
+origem = "Premissa ilustrativa: parcela das garantias de fora (em outro custodiante); o valor base repete a fração da carteira sintética do painel de risco (0,30)."
 
 [premissas.garantias_por_cliente]
 nome = "Garantias por cliente"
@@ -114,22 +114,22 @@ razoavel = ["0.50", "5.00"]
 origem = "Premissa ilustrativa: tarifa mensal que o parceiro paga à plataforma por garantia ativa; sem fonte de mercado."
 
 [premissas.fee_gravame_interna]
-nome = "Fee de gravame interno"
+nome = "Fee de gravame dentro de casa"
 tipo = "dinheiro"
 unidade = "R$/operação"
 minimo = "0"
 maximo = "500"
 razoavel = ["0", "3"]
-origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia interna, cobrada do parceiro; sem fonte de mercado."
+origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia dentro de casa, cobrada do parceiro; sem fonte de mercado."
 
 [premissas.fee_gravame_externa]
-nome = "Fee de gravame externo"
+nome = "Fee de gravame de fora"
 tipo = "dinheiro"
 unidade = "R$/operação"
 minimo = "0"
 maximo = "500"
 razoavel = ["3", "20"]
-origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia externa, mais alta que a interna por repassar o custo do custodiante; sem fonte de mercado."
+origem = "Premissa ilustrativa: tarifa por operação de gravame em garantia de fora, mais alta que a de dentro de casa por repassar o custo do custodiante; sem fonte de mercado."
 
 [premissas.taxa_sobre_investimento_ao_ano]
 nome = "Taxa sobre investimento ao ano"
@@ -251,13 +251,13 @@ razoavel = ["1", "8"]
 origem = "Premissa ilustrativa: custo mensal de processadora por cartão ativo; sem fonte de mercado."
 
 [premissas.custo_do_gravame_externo]
-nome = "Custo do gravame externo"
+nome = "Custo do gravame de fora"
 tipo = "dinheiro"
 unidade = "R$/operação"
 minimo = "0"
 maximo = "500"
 razoavel = ["2", "15"]
-origem = "Premissa ilustrativa: custo por operação de gravame pago ao custodiante externo; sem fonte de mercado."
+origem = "Premissa ilustrativa: custo por operação de gravame pago ao custodiante de fora; sem fonte de mercado."
 
 [premissas.execucoes_ao_ano]
 nome = "Execuções ao ano"
@@ -269,7 +269,7 @@ razoavel = ["0", "0.10"]
 origem = "Premissa ilustrativa: execuções de garantia por cliente ao ano, quando a garantia é executada por inadimplência; sem fonte de mercado."
 
 [premissas.custo_de_execucao_interna]
-nome = "Custo de execução interna"
+nome = "Custo de execução dentro de casa"
 tipo = "dinheiro"
 unidade = "R$/execução"
 minimo = "0"
@@ -278,13 +278,13 @@ razoavel = ["5", "50"]
 origem = "Premissa ilustrativa: custo operacional por execução de garantia na própria plataforma; sem fonte de mercado."
 
 [premissas.custo_de_execucao_externa]
-nome = "Custo de execução externa"
+nome = "Custo de execução de fora"
 tipo = "dinheiro"
 unidade = "R$/execução"
 minimo = "0"
 maximo = "5000"
 razoavel = ["20", "200"]
-origem = "Premissa ilustrativa: custo por execução de garantia em custodiante externo, maior que o interno por envolver terceiros; sem fonte de mercado."
+origem = "Premissa ilustrativa: custo por execução de garantia em custodiante de fora, maior que a de dentro de casa por envolver terceiros; sem fonte de mercado."
 
 [premissas.aliquota_sobre_receita]
 nome = "Alíquota sobre a receita"
@@ -294,6 +294,24 @@ minimo = "0"
 maximo = "0.50"
 razoavel = ["0.06", "0.17"]
 origem = "Premissa ilustrativa: alíquota única de tributos sobre a receita; não representa o regime tributário de nenhuma empresa."
+
+[premissas.iof_diario]
+nome = "IOF diário"
+tipo = "fracao"
+unidade = "fração ao dia"
+minimo = "0"
+maximo = "0.001"
+origem = "IOF-crédito de pessoa física: 0,0082% ao dia, até 365 dias, sobre o saldo financiado. Norma: Decreto 6.306/2007, art. 7º, I (alíquota do Decreto 8.392/2015)."
+fonte = "Decreto 6.306/2007, art. 7º, I (norma)"
+
+[premissas.iof_adicional]
+nome = "IOF adicional"
+tipo = "fracao"
+unidade = "fração, uma vez"
+minimo = "0"
+maximo = "0.01"
+origem = "Adicional de 0,38% sobre o principal da operação de crédito. Norma: Decreto 6.306/2007, art. 7º, §15 (redação do Decreto 12.499/2025)."
+fonte = "Decreto 6.306/2007, art. 7º, §15 (norma)"
 
 [premissas.custo_fixo_mensal]
 nome = "Custo fixo mensal"
@@ -324,7 +342,7 @@ origem = "Premissa ilustrativa: clientes ativos por parceiro; sem fonte de merca
 
 [conjuntos.conservador]
 nome = "Conservador"
-descricao = "Gasto e saldo menores, mais gente na externa, custos e perda mais altos, receitas mais baixas."
+descricao = "Gasto e saldo menores, mais gente com garantia de fora, custos e perda mais altos, receitas mais baixas."
 cenario_de_risco = "agente_perde_participacao"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
@@ -360,6 +378,8 @@ execucoes_ao_ano = "0.04"
 custo_de_execucao_interna = "15.00"
 custo_de_execucao_externa = "90.00"
 aliquota_sobre_receita = "0.10"
+iof_diario = "0.000082"
+iof_adicional = "0.0038"
 custo_fixo_mensal = "600000"
 parceiros = "3"
 clientes_por_parceiro = "10000"
@@ -402,13 +422,15 @@ execucoes_ao_ano = "0.02"
 custo_de_execucao_interna = "15.00"
 custo_de_execucao_externa = "60.00"
 aliquota_sobre_receita = "0.10"
+iof_diario = "0.000082"
+iof_adicional = "0.0038"
 custo_fixo_mensal = "400000"
 parceiros = "5"
 clientes_por_parceiro = "20000"
 
 [conjuntos.otimista]
 nome = "Otimista"
-descricao = "Gasto e saldo maiores, mais gente na interna, custos e perda mais baixos."
+descricao = "Gasto e saldo maiores, mais gente com garantia dentro de casa, custos e perda mais baixos."
 cenario_de_risco = "crash_da_bolsa"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
@@ -444,6 +466,8 @@ execucoes_ao_ano = "0.01"
 custo_de_execucao_interna = "15.00"
 custo_de_execucao_externa = "50.00"
 aliquota_sobre_receita = "0.10"
+iof_diario = "0.000082"
+iof_adicional = "0.0038"
 custo_fixo_mensal = "300000"
 parceiros = "8"
 clientes_por_parceiro = "40000"

@@ -34,7 +34,7 @@ def _erros(**mudancas: str) -> list[dict[str, str]]:
 
 
 def test_sao_34_premissas_e_o_esquema_cobre_todas() -> None:
-    assert len(N) == 34
+    assert len(N) == 36
     assert set(ESQUEMA) == set(N)
     assert set(VALORES_BASE) == set(N)
 

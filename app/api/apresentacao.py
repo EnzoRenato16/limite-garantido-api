@@ -510,6 +510,10 @@ def cenario(valor: Cenario) -> esquemas.CenarioDoPainel:
 
 
 # ------------------------------------------------------------------- negócio
+ROTULO_DENTRO_DE_CASA = "dentro de casa"
+ROTULO_DE_FORA = "de fora"
+
+
 def _decimal_texto(valor: Decimal) -> str:
     """Decimal sem notação científica: `"0.1365"`, nunca `"1.365E-1"`."""
     return format(valor, "f")
@@ -627,6 +631,8 @@ def resultado_do_negocio(
         ),
         rotativo_no_teto=r.mes.rotativo_no_teto,
         interna_x_externa=esquemas.InternaXExternaResposta(
+            rotulo_interna=ROTULO_DENTRO_DE_CASA,
+            rotulo_externa=ROTULO_DE_FORA,
             margem_interna=ix.margem_interna.texto(),
             margem_externa=ix.margem_externa.texto(),
             custo_a_mais_da_externa=ix.custo_a_mais_da_externa.texto(),
@@ -656,5 +662,6 @@ def resultado_do_negocio(
             )
             for b in r.tornado
         ],
+        notas=list(r.mes.notas),
         aviso=esquemas.AVISO_DO_NEGOCIO,
     )

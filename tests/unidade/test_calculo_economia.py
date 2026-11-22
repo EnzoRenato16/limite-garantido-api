@@ -46,6 +46,7 @@ CUSTOS = (
     "execucao_externa",
     "tributos_plataforma",
     "tributos_parceiro",
+    "iof_credito",
 )
 
 ENTRE_PLATAFORMA_E_PARCEIRO = {"repasse_intercambio", "fee_garantia_ativa", "fee_gravame"}
@@ -105,7 +106,7 @@ def test_tudo_desligado_e_custos_zerados_da_margem_zero() -> None:
     assert r.rotativo_no_teto is False
 
 
-def test_base_tem_as_16_linhas_na_ordem_do_desenho() -> None:
+def test_base_tem_as_17_linhas_na_ordem_do_desenho() -> None:
     r = calcular_mes(premissas_base(), PERDAS)
     assert _ids(r) == [
         "intercambio",
@@ -431,3 +432,62 @@ def test_cada_linha_cita_premissas_e_tem_formula() -> None:
         assert linha.nome
         assert linha.premissas
         assert all(isinstance(nome, NomeDaPremissa) for nome in linha.premissas)
+
+
+# ------------------------------------------------------------------------ IOF
+def test_iof_incide_so_sobre_o_saldo_financiado_a_credito() -> None:
+    # Gasto de R$ 1.500,00, 5% no rotativo, 30% da fatura rolada: R$ 22,50 por mês viram
+    # crédito por 2 meses (365/12 x 2 dias). IOF: 22,50 x (0,000082 x 60,83.. + 0,0038).
+    r = calcular_mes(premissas_base(), PERDAS)
+    iof = _linha(r, "iof_credito")
+    assert (iof.origem, iof.destino) == (Parte.cliente, Parte.governo)
+    dias = Decimal(2) * Decimal(365) / 12
+    exato = Decimal("2250") * (Decimal("0.000082") * dias + Decimal("0.0038"))
+    assert iof.valor == Dinheiro(int(exato.to_integral_value(rounding="ROUND_CEILING")))
+    assert iof.valor.positivo
+
+
+def test_compra_paga_integralmente_nao_gera_iof() -> None:
+    # Sem rotativo, tudo o que o cliente compra é pago na fatura: não há crédito, nem IOF.
+    sem_rotativo = premissas_base().com(
+        receitas_ligadas=frozenset(
+            set(premissas_base().receitas_ligadas) - {FonteDeReceita.juros_rotativo}
+        )
+    )
+    r = calcular_mes(sem_rotativo, PERDAS)
+    assert _linha(r, "iof_credito").valor == Dinheiro(0)
+    # E o saldo que financia a compra (dias entre a compra e a fatura) continua existindo.
+    assert r.perda.saldo_financiado.positivo
+
+
+def test_iof_nao_muda_a_margem_de_ninguem() -> None:
+    base = calcular_mes(premissas_base(), PERDAS)
+    sem_iof = calcular_mes(
+        premissas_base().com(iof_diario=Fracao(Decimal(0)), iof_adicional=Fracao(Decimal(0))),
+        PERDAS,
+    )
+    assert _linha(sem_iof, "iof_credito").valor == Dinheiro(0)
+    for parte in ("plataforma", "parceiro", "arranjo"):
+        assert getattr(base, parte).margem == getattr(sem_iof, parte).margem
+        assert getattr(base, parte).receita == getattr(sem_iof, parte).receita
+        assert getattr(base, parte).custo == getattr(sem_iof, parte).custo
+
+
+def test_iof_para_no_prazo_de_365_dias() -> None:
+    # Acima de 12 meses a parte diária não cresce mais (Decreto 6.306, art. 7º, I).
+    doze = calcular_mes(premissas_base().com(meses_no_rotativo=12), PERDAS)
+    vinte_e_quatro = calcular_mes(premissas_base().com(meses_no_rotativo=24), PERDAS)
+    um_mes = calcular_mes(premissas_base().com(meses_no_rotativo=1), PERDAS)
+    assert _linha(doze, "iof_credito").valor == _linha(vinte_e_quatro, "iof_credito").valor
+    assert _linha(um_mes, "iof_credito").valor < _linha(doze, "iof_credito").valor
+
+
+def test_as_tres_notas_do_resultado() -> None:
+    r = calcular_mes(premissas_base(), PERDAS)
+    assert len(r.notas) == 3
+    ir, capital, teto = r.notas
+    assert "IR da execução é do cliente" in ir
+    assert "retém" in ir
+    assert "Circular BCB 3.809/2016, art. 4º" in capital
+    assert "Lei 14.690/2023, art. 28" in teto
+    assert "parcelado" in teto

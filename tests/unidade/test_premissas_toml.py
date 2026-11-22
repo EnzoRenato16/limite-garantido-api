@@ -32,7 +32,7 @@ CONJUNTOS = ("conservador", "base", "otimista")
 def test_toml_tem_todas_as_premissas() -> None:
     parametros = carregar_parametros_da_economia()
     assert set(parametros.esquema) == set(NomeDaPremissa)
-    assert len(parametros.esquema) == 34
+    assert len(parametros.esquema) == 36
     assert tuple(parametros.esquema) == tuple(NomeDaPremissa)
     assert set(parametros.conjuntos) == set(CONJUNTOS)
     for conjunto in parametros.conjuntos.values():

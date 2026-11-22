@@ -1,6 +1,6 @@
 """Premissas do modelo econômico em TOML, e a perda que vem do motor de risco.
 
-O TOML tem o esquema das 34 premissas (faixas e unidades) e os conjuntos prontos. Um
+O TOML tem o esquema das 36 premissas (faixas e unidades) e os conjuntos prontos. Um
 arquivo quebrado é erro de implantação, não de entrada: levanta `ErroNoArquivoDePremissas`
 na carga, com o nome da chave. A perda condicional de cada cenário sai de duas rodadas de
 `simular_painel` sobre os mesmos clientes da carteira sintética: uma com toda garantia

@@ -4,6 +4,7 @@
 - Plataforma + parceiro = arranjo.
 - Mais perda, mais CDI ou mais spread nunca aumentam a margem da plataforma.
 - Mais intercâmbio nunca diminui a receita da plataforma nem a do parceiro.
+- O IOF vai do cliente ao governo e não mexe na margem de ninguém.
 - O ponto de equilíbrio N paga o custo fixo e N − 1 não paga.
 - Cada barra do tornado contém a base e usa extremos válidos e coerentes.
 - O empate da interna x externa confere quando recalculado.
@@ -92,6 +93,22 @@ def test_soma_das_linhas_bate_com_as_tres_visoes(p: Premissas, perdas: TaxasDePe
 def test_plataforma_mais_parceiro_e_o_arranjo(p: Premissas, perdas: TaxasDePerda) -> None:
     r = calcular_mes(p, perdas)
     assert r.plataforma.margem + r.parceiro.margem == r.arranjo.margem
+
+
+@PROPRIEDADE
+@given(premissas_validas(), taxas_de_perda())
+def test_iof_nao_entra_na_margem_de_ninguem(p: Premissas, perdas: TaxasDePerda) -> None:
+    com = calcular_mes(p, perdas)
+    sem = calcular_mes(
+        p.com(iof_diario=Fracao(Decimal(0)), iof_adicional=Fracao(Decimal(0))), perdas
+    )
+    iof = next(x for x in com.linhas if x.id == "iof_credito")
+    assert (iof.origem, iof.destino) == (Parte.cliente, Parte.governo)
+    assert iof.valor >= Dinheiro.zero()
+    for parte in ("plataforma", "parceiro", "arranjo"):
+        assert getattr(com, parte) == getattr(sem, parte)
+    if FonteDeReceita.juros_rotativo not in p.receitas_ligadas:
+        assert iof.valor == Dinheiro.zero()  # compra paga integralmente: sem IOF
 
 
 @PROPRIEDADE

@@ -211,7 +211,7 @@ function lerControles() {
   };
   const reaisDe = (id, nome) => ler(id, paraDecimal, nome, DICA_DE_REAIS);
   const fracaoDe = (id, nome) => ler(id, percentualParaFracao, nome, DICA_DE_PERCENTUAL);
-  const externa = fracaoDe("externa", "Garantia em outra instituição");
+  const externa = fracaoDe("externa", "Garantia de fora");
   return {
     conjunto: estado.conjuntoAtual,
     premissas: {
@@ -368,8 +368,8 @@ function mostrarContas(r) {
     `${numeroLegivel(p.frequencia_ao_ano)} evento por ano × ${percentual(p.condicional_mista, 4)} ` +
     `de perda por evento, dá ${percentual(p.taxa_ao_ano, 4)} ao ano; dividido por 12 (perda ` +
     `não se compõe como juro), ${percentual(p.taxa_ao_mes, 4)} ao mês. A perda por evento ` +
-    `mistura a da garantia interna ` +
-    `(${percentual(p.condicional_interna, 4)}) e a da externa (${percentual(p.condicional_externa, 4)}). ` +
+    `mistura a da garantia dentro de casa ` +
+    `(${percentual(p.condicional_interna, 4)}) e a da garantia de fora (${percentual(p.condicional_externa, 4)}). ` +
     `Sobre o saldo financiado de ${reais(p.saldo_financiado)}, são ` +
     `${linhaDaPerda ? reais(linhaDaPerda.valor) : "R$ 0,00"} por cliente por mês.` +
     (r.rotativo_no_teto ? " O rotativo bateu no teto legal de 100% do valor original." : "");
@@ -379,11 +379,11 @@ function mostrarContas(r) {
   const fee = ie.fee_de_gravame_externo_para_empatar;
   const gasto = ie.gasto_para_empatar;
   const partes = [
-    `Com toda a garantia na plataforma, ela ganha ${reais(ie.margem_interna)} por cliente por ` +
-      `mês; com toda a garantia em outra instituição, ${reais(ie.margem_externa)}.`,
+    `Com toda a garantia ${ie.rotulo_interna}, a plataforma ganha ${reais(ie.margem_interna)} por ` +
+      `cliente por mês; com toda a garantia ${ie.rotulo_externa}, ${reais(ie.margem_externa)}.`,
   ];
   if (centavos(ie.custo_a_mais_da_externa) > 0n) {
-    partes.push(`A externa custa ${reais(ie.custo_a_mais_da_externa)} a mais.`);
+    partes.push(`A garantia ${ie.rotulo_externa} custa ${reais(ie.custo_a_mais_da_externa)} a mais.`);
     partes.push(
       fee === null ? ie.motivo_fee : `Empata com um fee de gravame externo de ${reais(fee)} por operação.`,
     );
@@ -401,10 +401,21 @@ function mostrarContas(r) {
     partes.push(ie.motivo_fee);
   }
   partes.push(
-    `O parceiro ganha ${reais(ie.parceiro_interna)} com a interna e ` +
-      `${reais(ie.parceiro_externa)} com a externa.`,
+    `O parceiro ganha ${reais(ie.parceiro_interna)} com a garantia ${ie.rotulo_interna} e ` +
+      `${reais(ie.parceiro_externa)} com a garantia ${ie.rotulo_externa}.`,
   );
   $("texto-interna-externa").textContent = partes.join(" ");
+  mostrarNotas(r.notas);
+}
+
+function mostrarNotas(notas) {
+  const lista = $("notas");
+  lista.replaceChildren();
+  for (const nota of notas) {
+    const item = document.createElement("li");
+    item.textContent = nota;
+    lista.append(item);
+  }
 }
 
 function celula(texto, classe) {
