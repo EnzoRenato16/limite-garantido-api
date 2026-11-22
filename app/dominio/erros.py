@@ -44,6 +44,10 @@ class GarantiaCobrindoDivida(ErroDominio):
     codigo = "garantia_cobrindo_divida"
 
 
+class EmprestimoNaoEncontrado(ErroDominio):
+    codigo = "emprestimo_nao_encontrado"
+
+
 class FaturaEmAberto(ErroDominio):
     codigo = "fatura_em_aberto"
 

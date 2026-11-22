@@ -73,6 +73,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
     ),
     # 404
     "nao_encontrado": (404, "Não encontrado", "O recurso não existe."),
+    "emprestimo_nao_encontrado": (
+        404,
+        "Empréstimo não encontrado",
+        "O empréstimo não existe ou pertence a outra conta.",
+    ),
     "conta_nao_encontrada": (
         404,
         "Conta não encontrada",
@@ -251,6 +256,17 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Plano fora da Res. Conjunta 12",
         "Só PGBL, VGBL e capitalização entram pela Res. Conjunta 12; o FAPI fica fora "
         "(art. 1º, §1º).",
+    ),
+    "prazo_alem_da_acumulacao": (
+        422,
+        "Prazo além da acumulação",
+        "A última parcela do empréstimo não pode vencer depois do fim da acumulação do plano "
+        "de previdência (Res. Conjunta 12, art. 6º, §3º).",
+    ),
+    "vencimento_nao_casado": (
+        422,
+        "Vencimento não casado",
+        "A última parcela precisa vencer até o vencimento do título dado em garantia.",
     ),
     "url_de_webhook_invalida": (
         422,

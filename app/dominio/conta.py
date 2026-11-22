@@ -16,14 +16,21 @@ chegam de fora.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 from enum import StrEnum
 
 from app.dominio.dinheiro import Dinheiro
+from app.dominio.emprestimo import (
+    Emprestimo,
+    EstadoEmprestimo,
+    cronograma_price,
+    valor_maximo_do_emprestimo,
+)
 from app.dominio.erros import (
+    CombinacaoNaoPermitida,
+    EmprestimoNaoEncontrado,
     FaturaEmAberto,
     GarantiaCobrindoDivida,
     GarantiaNaoEncontrada,
@@ -51,13 +58,15 @@ from app.dominio.ledger import (
     credito,
     debito,
 )
+from app.dominio.ltv import ltv_efetivo
 from app.dominio.politica import PoliticaRisco, TipoAtivo
 from app.dominio.regulacao import CatalogoRegulatorio, Instrumento, Produto, Trilho
 from app.dominio.tributos import ResultadoDaExecucao, retencao_na_execucao
 
-# {dia_corrido} por {ano}, para o prazo até o vencimento. 365 (e não 365,25) dá um prazo
-# um pouco maior, que cai na faixa de LTV menor ou igual: o lado seguro.
-_DIAS_POR_ANO = Decimal(365)
+# Res. Conjunta 12, art. 6º, §2º, IV: aviso aos 45 dias de atraso e 10 dias antes da
+# liquidação. {dia_corrido}
+_AVISO_INICIAL = 45
+_AVISO_FINAL = 10
 
 TIPOS_DO_TESOURO = frozenset(
     {TipoAtivo.TESOURO_SELIC, TipoAtivo.TESOURO_PREFIXADO, TipoAtivo.TESOURO_IPCA}
@@ -71,29 +80,6 @@ _EVENTO_DE_ENTRADA_CONCLUIDA = {
     Trilho.PORTABILIDADE_CVM_210: TipoEvento.PORTABILIDADE_CONCLUIDA,
     Trilho.TRANSFERENCIA_DE_CUSTODIA: TipoEvento.TRANSFERENCIA_CONCLUIDA,
 }
-
-
-def anos_ate_o_vencimento(vencimento: date | None, hoje: date) -> Decimal | None:
-    """{ano} até o vencimento, nunca negativo; None quando o título não vence."""
-    if vencimento is None:
-        return None
-    dias = max((vencimento - hoje).days, 0)  # {dia_corrido}
-    return Decimal(dias) / _DIAS_POR_ANO  # {dia_corrido} / {dia_corrido/ano} -> {ano}
-
-
-def ltv_efetivo(
-    garantia: Garantia, politica: PoliticaRisco, catalogo: CatalogoRegulatorio, hoje: date
-) -> Decimal:
-    """LTV {1} da garantia hoje: min(política, teto do catálogo para o prazo).
-
-    Zero quando o parceiro deixou de aceitar o ativo ou o catálogo não o recomenda: a
-    garantia continua onerada e pode ser executada ou liberada, mas não gera limite.
-    """
-    tipo = garantia.tipo_ativo
-    if not politica.aceita(tipo) or not catalogo.regra(tipo).recomendado:
-        return Decimal(0)
-    teto = catalogo.ltv_maximo(tipo, anos_ate_o_vencimento(garantia.vencimento, hoje))
-    return min(politica.ltv(tipo), teto)
 
 
 class EstadoConta(StrEnum):
@@ -250,6 +236,7 @@ class Conta:
         garantias: Iterable[Garantia] = (),
         faturas: Iterable[Fatura] = (),
         chamadas: Iterable[ChamadaDeMargem] = (),
+        emprestimos: Iterable[Emprestimo] = (),
         saldos: Saldos | None = None,
         versao: int = 0,
     ) -> None:
@@ -262,6 +249,7 @@ class Conta:
         self.garantias: list[Garantia] = list(garantias)
         self.faturas: list[Fatura] = list(faturas)
         self.chamadas: list[ChamadaDeMargem] = list(chamadas)
+        self.emprestimos: list[Emprestimo] = list(emprestimos)
         self.saldos = saldos or Saldos()
         self.versao = versao
         self.pendencias = Pendencias()
@@ -308,6 +296,20 @@ class Conta:
             if garantia.id == garantia_id:
                 return garantia
         raise GarantiaNaoEncontrada("Garantia não encontrada", garantia_id=garantia_id)
+
+    def emprestimo(self, emprestimo_id: str) -> Emprestimo:
+        for emprestimo in self.emprestimos:
+            if emprestimo.id == emprestimo_id:
+                return emprestimo
+        raise EmprestimoNaoEncontrado("Empréstimo não encontrado", emprestimo_id=emprestimo_id)
+
+    def valor_maximo_do_emprestimo(
+        self, politica: PoliticaRisco, catalogo: CatalogoRegulatorio, hoje: date
+    ) -> Dinheiro:
+        """Quanto as garantias disponíveis sustentam de novo empréstimo {BRL}."""
+        return valor_maximo_do_emprestimo(
+            self.garantias, politica, catalogo, hoje, valor_de=lambda g: self.valor_de_mercado(g.id)
+        )
 
     def valor_do_titulo(self, garantia_id: str) -> Dinheiro:
         """Valor de mercado do ativo em si {BRL}."""
@@ -1102,6 +1104,398 @@ class Conta:
         self._emitir_limite_se_mudou(antes, politica, catalogo, hoje, "pagamento", agora)
         return pagamento
 
+    # ============================================================ empréstimo
+    def contratar_emprestimo(
+        self,
+        *,
+        valor: Dinheiro,
+        parcelas: int,
+        garantia_ids: Iterable[str],
+        politica: PoliticaRisco,
+        catalogo: CatalogoRegulatorio,
+        primeiro_vencimento: date,
+        agora: datetime,
+        hoje: date,
+        protocolos_da_previdencia: Mapping[str, str],
+    ) -> Emprestimo:
+        """Contrata um empréstimo parcelado coberto por garantias de produto empréstimo.
+
+        Valida tudo antes de mexer em qualquer coisa. Garantia de previdência ainda
+        `solicitado`, com as informações da operadora, é formalizada no mesmo passo: o
+        gravame é registrado com o protocolo de `protocolos_da_previdencia` (Res.
+        Conjunta 12, art. 8º). A última parcela não pode passar do fim da acumulação nem
+        do vencimento do título.
+        """
+        ids = tuple(garantia_ids)
+        if not valor.positivo:
+            raise ValorInvalido("O valor do empréstimo precisa ser positivo")
+        if primeiro_vencimento <= hoje:
+            raise VencimentoInvalido("O primeiro vencimento precisa ficar no futuro")
+        if not ids or len(set(ids)) != len(ids):
+            raise ValorInvalido("Informe uma ou mais garantias, sem repetir")
+        cronograma = cronograma_price(
+            valor, politica.taxa_do_emprestimo_ao_mes, parcelas, primeiro_vencimento
+        )
+        ultimo_vencimento = cronograma[-1].vencimento
+
+        garantias = [self.garantia(garantia_id) for garantia_id in ids]
+        maximo = Dinheiro.zero()
+        a_formalizar: list[tuple[Garantia, str]] = []
+        for garantia in garantias:
+            self._exigir_que_serve_ao_emprestimo(garantia, ultimo_vencimento)
+            if garantia.gravame.vigente:
+                valor_da = self.valor_de_mercado(garantia.id)
+            else:
+                protocolo = protocolos_da_previdencia.get(garantia.id, "")
+                if not protocolo.strip():
+                    raise ValorInvalido(
+                        "A formalização da previdência exige o protocolo do gravame",
+                        garantia_id=garantia.id,
+                    )
+                assert garantia.informacoes is not None  # noqa: S101 - conferido acima
+                valor_da = garantia.informacoes.valor_liquido
+                a_formalizar.append((garantia, protocolo))
+            maximo += valor_da.aplicar_razao(ltv_efetivo(garantia, politica, catalogo, hoje))
+        if valor > maximo:
+            raise ValorInvalido(
+                "O valor pedido passa do máximo que as garantias sustentam",
+                valor=valor.texto(),
+                valor_maximo=maximo.texto(),
+            )
+
+        for garantia, protocolo in a_formalizar:
+            self._registrar(garantia, protocolo, politica, catalogo, agora, hoje)
+
+        emprestimo = Emprestimo(
+            id=novo_id("emp"),
+            conta_id=self.id,
+            principal=valor,
+            taxa_ao_mes=politica.taxa_do_emprestimo_ao_mes,
+            parcelas=cronograma,
+            garantia_ids=ids,
+            contratado_em=agora,
+            dias_minimos_execucao=self._primeiro_dia_de_execucao(garantias, politica, catalogo),
+        )
+        self.emprestimos.append(emprestimo)
+        for garantia in garantias:
+            garantia.emprestimo_id = emprestimo.id
+        self._lancar(
+            TipoLancamento.DESEMBOLSO,
+            emprestimo.id,
+            "Desembolso do empréstimo",
+            agora,
+            debito(ContaContabil.EMPRESTIMOS_A_RECEBER, valor),
+            credito(ContaContabil.DESEMBOLSOS_A_LIQUIDAR, valor),
+        )
+        self._emitir(
+            TipoEvento.EMPRESTIMO_CONTRATADO,
+            agora,
+            emprestimo_id=emprestimo.id,
+            principal=valor.texto(),
+            taxa_ao_mes=str(emprestimo.taxa_ao_mes),
+            parcelas=parcelas,
+            primeiro_vencimento=cronograma[0].vencimento.isoformat(),
+            ultimo_vencimento=ultimo_vencimento.isoformat(),
+            valor_da_parcela=cronograma[0].valor.texto(),
+            garantia_ids=list(ids),
+            dias_minimos_execucao=emprestimo.dias_minimos_execucao,
+        )
+        return emprestimo
+
+    def _exigir_que_serve_ao_emprestimo(self, garantia: Garantia, ultimo_vencimento: date) -> None:
+        if garantia.produto is not Produto.EMPRESTIMO:
+            raise ValorInvalido(
+                "Garantia do cartão não entra no empréstimo",
+                garantia_id=garantia.id,
+                produto=str(garantia.produto),
+            )
+        if garantia.emprestimo_id is not None:
+            raise ValorInvalido(
+                "A garantia já cobre outro empréstimo",
+                garantia_id=garantia.id,
+                emprestimo_id=garantia.emprestimo_id,
+            )
+        previdencia = garantia.tipo_ativo is TipoAtivo.PREVIDENCIA
+        if not garantia.gravame.vigente:
+            formalizavel = (
+                previdencia
+                and garantia.estado is EstadoGravame.SOLICITADO
+                and garantia.trilho is Trilho.RES_CONJUNTA_12
+            )
+            if not formalizavel:
+                raise ValorInvalido(
+                    f"Garantia {garantia.estado} não entra no empréstimo: só gravame registrado",
+                    garantia_id=garantia.id,
+                    estado_atual=str(garantia.estado),
+                )
+            if garantia.informacoes is None:
+                raise TransicaoInvalida(
+                    "Previdência só formaliza depois das informações da operadora",
+                    garantia_id=garantia.id,
+                )
+        if previdencia:
+            if garantia.fim_da_acumulacao is None:
+                raise ValorInvalido(
+                    "Previdência sem fim da acumulação informado", garantia_id=garantia.id
+                )
+            if ultimo_vencimento > garantia.fim_da_acumulacao:
+                raise CombinacaoNaoPermitida(
+                    "prazo_alem_da_acumulacao",
+                    "O prazo do crédito não pode passar do fim da acumulação "
+                    "(Res. Conjunta 12, art. 6º, §3º)",
+                    sugestao="Reduza o número de parcelas até o fim da acumulação do plano.",
+                    garantia_id=garantia.id,
+                    ultimo_vencimento=ultimo_vencimento.isoformat(),
+                    fim_da_acumulacao=garantia.fim_da_acumulacao.isoformat(),
+                )
+        if garantia.vencimento is not None and ultimo_vencimento > garantia.vencimento:
+            raise CombinacaoNaoPermitida(
+                "vencimento_nao_casado",
+                "A última parcela precisa vencer até o vencimento do título",
+                sugestao="Reduza o número de parcelas ou use um título com vencimento maior.",
+                garantia_id=garantia.id,
+                ultimo_vencimento=ultimo_vencimento.isoformat(),
+                vencimento_do_titulo=garantia.vencimento.isoformat(),
+            )
+
+    @staticmethod
+    def _primeiro_dia_de_execucao(
+        garantias: Iterable[Garantia], politica: PoliticaRisco, catalogo: CatalogoRegulatorio
+    ) -> int:
+        """Primeiro dia de atraso {dia_corrido} em que o empréstimo pode ser executado.
+
+        Previdência: só depois do piso do catálogo (mais de 90 dias, art. 12), então o
+        dia seguinte. Os demais: o piso do catálogo, se houver, ou o prazo contratual da
+        política. Com várias garantias vale a mais restritiva.
+        """
+        dias = 0
+        for garantia in garantias:
+            piso = catalogo.regra(garantia.tipo_ativo).dias_minimos_execucao
+            if garantia.tipo_ativo is TipoAtivo.PREVIDENCIA and piso is not None:
+                primeiro = piso + 1
+            else:
+                primeiro = piso if piso is not None else politica.dias_para_execucao_emprestimo
+            dias = max(dias, primeiro)
+        return dias
+
+    def _tem_previdencia(self, emprestimo: Emprestimo) -> bool:
+        return any(
+            self.garantia(garantia_id).tipo_ativo is TipoAtivo.PREVIDENCIA
+            for garantia_id in emprestimo.garantia_ids
+        )
+
+    def pagar_parcela(
+        self,
+        emprestimo_id: str,
+        valor: Dinheiro,
+        agora: datetime,
+        hoje: date,
+        prazo_da_baixa: date,
+    ) -> Emprestimo:
+        """Recebe um pagamento do empréstimo: abate as parcelas em ordem, juros primeiro.
+
+        Parcela vincenda é paga só pela amortização (sem juros futuros). Quitado o
+        empréstimo, pede a baixa de todas as garantias (`prazo_da_baixa`).
+        """
+        emprestimo = self.emprestimo(emprestimo_id)
+        if emprestimo.encerrado:
+            raise TransicaoInvalida(
+                f"O empréstimo {emprestimo.id} está {emprestimo.estado}",
+                emprestimo_id=emprestimo.id,
+                estado_atual=str(emprestimo.estado),
+            )
+        if not valor.positivo:
+            raise ValorInvalido("O valor do pagamento precisa ser positivo")
+        saldo = emprestimo.saldo_devedor(hoje)
+        if valor > saldo:
+            raise PagamentoExcedeDivida(
+                "O pagamento é maior que o saldo devedor do empréstimo",
+                saldo_devedor=saldo.texto(),
+            )
+        abertas_antes = {p.numero for p in emprestimo.parcelas_em_aberto}
+        amortizacao, juros = emprestimo.aplicar_pagamento(valor, hoje, agora)
+        partidas = [debito(ContaContabil.CAIXA_RECEBIMENTOS, valor)]
+        if amortizacao.positivo:
+            partidas.append(credito(ContaContabil.EMPRESTIMOS_A_RECEBER, amortizacao))
+        if juros.positivo:
+            partidas.append(credito(ContaContabil.RECEITA_DE_JUROS, juros))
+        self._lancar(
+            TipoLancamento.PAGAMENTO_DE_PARCELA, emprestimo.id, "Pagamento do empréstimo", agora,
+            *partidas,
+        )  # fmt: skip
+        quitadas = sorted(abertas_antes - {p.numero for p in emprestimo.parcelas_em_aberto})
+        saldo_depois = emprestimo.saldo_devedor(hoje)
+        self._emitir(
+            TipoEvento.EMPRESTIMO_PARCELA_PAGA,
+            agora,
+            emprestimo_id=emprestimo.id,
+            valor=valor.texto(),
+            amortizacao=amortizacao.texto(),
+            juros=juros.texto(),
+            parcelas_quitadas=quitadas,
+            saldo_devedor=saldo_depois.texto(),
+        )
+        if saldo_depois.nulo:
+            emprestimo.estado = EstadoEmprestimo.QUITADO
+            self._liberar_garantias_do_emprestimo(emprestimo, agora, prazo_da_baixa)
+            self._emitir(
+                TipoEvento.EMPRESTIMO_QUITADO,
+                agora,
+                emprestimo_id=emprestimo.id,
+                forma="pagamento",
+            )
+        elif emprestimo.dias_em_atraso(hoje) == 0:
+            self._sair_do_atraso(emprestimo)
+        return emprestimo
+
+    def _sair_do_atraso(self, emprestimo: Emprestimo) -> None:
+        emprestimo.estado = EstadoEmprestimo.ATIVO
+        emprestimo.aviso_45_em = None
+        emprestimo.aviso_10_em = None
+
+    def _liberar_garantias_do_emprestimo(
+        self, emprestimo: Emprestimo, agora: datetime, prazo_da_baixa: date
+    ) -> None:
+        """Quitado o empréstimo, as garantias que sobram saem e a baixa é pedida."""
+        for garantia_id in emprestimo.garantia_ids:
+            garantia = self.garantia(garantia_id)
+            if garantia.gravame.vigente:
+                self._lancar_liberacao(garantia, agora)
+                self._pedir_baixa(garantia, agora, prazo_da_baixa)
+
+    def _tratar_emprestimos(
+        self,
+        politica: PoliticaRisco,
+        catalogo: CatalogoRegulatorio,
+        agora: datetime,
+        hoje: date,
+        prazo_da_baixa: date,
+    ) -> None:
+        for emprestimo in self.emprestimos:
+            if not emprestimo.encerrado:
+                self._tratar_emprestimo(emprestimo, politica, catalogo, agora, hoje, prazo_da_baixa)
+
+    def _tratar_emprestimo(
+        self,
+        emprestimo: Emprestimo,
+        politica: PoliticaRisco,
+        catalogo: CatalogoRegulatorio,
+        agora: datetime,
+        hoje: date,
+        prazo_da_baixa: date,
+    ) -> None:
+        dias = emprestimo.dias_em_atraso(hoje)
+        if dias == 0:
+            if emprestimo.estado is EstadoEmprestimo.EM_ATRASO:
+                self._sair_do_atraso(emprestimo)
+            return
+        if emprestimo.estado is EstadoEmprestimo.ATIVO:
+            emprestimo.estado = EstadoEmprestimo.EM_ATRASO
+            self._emitir(
+                TipoEvento.EMPRESTIMO_EM_ATRASO,
+                agora,
+                emprestimo_id=emprestimo.id,
+                dias_em_atraso=dias,
+                saldo_devedor=emprestimo.saldo_devedor(hoje).texto(),
+                execucao_a_partir_do_dia=emprestimo.dias_minimos_execucao,
+            )
+        previdencia = self._tem_previdencia(emprestimo)
+        if previdencia:
+            self._avisar_previdencia(emprestimo, dias, agora, hoje)
+        pode_executar = dias >= emprestimo.dias_minimos_execucao
+        if previdencia:
+            aviso = emprestimo.aviso_10_em
+            pode_executar = (
+                pode_executar and aviso is not None and hoje >= aviso + timedelta(days=_AVISO_FINAL)
+            )
+        if pode_executar:
+            self._executar_emprestimo(emprestimo, politica, catalogo, agora, hoje, prazo_da_baixa)
+
+    def _avisar_previdencia(
+        self, emprestimo: Emprestimo, dias: int, agora: datetime, hoje: date
+    ) -> None:
+        """Avisos da Res. Conjunta 12 (art. 6º, §2º, IV): 45 dias de atraso e 10 dias antes."""
+        dia_do_aviso_final = max(emprestimo.dias_minimos_execucao - _AVISO_FINAL, 1)
+        if dias < _AVISO_INICIAL:
+            emprestimo.aviso_45_em = None
+        elif emprestimo.aviso_45_em is None:
+            emprestimo.aviso_45_em = hoje
+            self._emitir(
+                TipoEvento.PREVIDENCIA_AVISO_45_DIAS,
+                agora,
+                emprestimo_id=emprestimo.id,
+                dias_em_atraso=dias,
+                saldo_devedor=emprestimo.saldo_devedor(hoje).texto(),
+            )
+        if dias < dia_do_aviso_final:
+            emprestimo.aviso_10_em = None
+        elif emprestimo.aviso_10_em is None:
+            emprestimo.aviso_10_em = hoje
+            self._emitir(
+                TipoEvento.PREVIDENCIA_AVISO_10_DIAS,
+                agora,
+                emprestimo_id=emprestimo.id,
+                dias_em_atraso=dias,
+                liquidacao_a_partir_de=(hoje + timedelta(days=_AVISO_FINAL)).isoformat(),
+                saldo_devedor=emprestimo.saldo_devedor(hoje).texto(),
+            )
+
+    def _executar_emprestimo(
+        self,
+        emprestimo: Emprestimo,
+        politica: PoliticaRisco,
+        catalogo: CatalogoRegulatorio,
+        agora: datetime,
+        hoje: date,
+        prazo_da_baixa: date,
+    ) -> None:
+        """Vende ou resgata as garantias inteiras até cobrir o saldo devedor.
+
+        O líquido abate o saldo (juros vencidos e amortização) e o excedente volta ao
+        cliente. Liquidado o saldo, as garantias que não foram executadas são liberadas.
+        """
+
+        def abater(valor: Dinheiro) -> list[Partida]:
+            amortizacao, juros = emprestimo.aplicar_pagamento(valor, hoje, agora)
+            partidas: list[Partida] = []
+            if amortizacao.positivo:
+                partidas.append(credito(ContaContabil.EMPRESTIMOS_A_RECEBER, amortizacao))
+            if juros.positivo:
+                partidas.append(credito(ContaContabil.RECEITA_DE_JUROS, juros))
+            return partidas
+
+        fila = sorted(
+            (g for g in map(self.garantia, emprestimo.garantia_ids) if g.gravame.vigente),
+            key=lambda g: (politica.prioridade_de_execucao(g.tipo_ativo), g.criada_em, g.id),
+        )
+        devido = emprestimo.saldo_devedor(hoje)
+        for garantia in fila:
+            if devido.nulo:
+                break
+            resultado = self._executar_por_inteiro(
+                garantia,
+                devido,
+                abater,
+                catalogo,
+                agora,
+                hoje,
+                prazo_da_baixa,
+                f"Execução da garantia do empréstimo {emprestimo.id}",
+                emprestimo_id=emprestimo.id,
+                dias_em_atraso=emprestimo.dias_em_atraso(hoje),
+                saldo_devedor_antes=devido.texto(),
+            )
+            devido -= resultado.divida_abatida
+        if devido.nulo:
+            emprestimo.estado = EstadoEmprestimo.LIQUIDADO_POR_EXECUCAO
+            self._liberar_garantias_do_emprestimo(emprestimo, agora, prazo_da_baixa)
+            self._emitir(
+                TipoEvento.EMPRESTIMO_QUITADO,
+                agora,
+                emprestimo_id=emprestimo.id,
+                forma="execucao",
+            )
+
     # ========================================================= virada do dia
     def virar_o_dia(
         self,
@@ -1118,6 +1512,7 @@ class Conta:
         """
         antes = self.posicao(politica, catalogo, hoje)
         self._tratar_atraso(politica, catalogo, agora, hoje, prazo_da_baixa)
+        self._tratar_emprestimos(politica, catalogo, agora, hoje, prazo_da_baixa)
         self._tratar_prazo_da_chamada(politica, catalogo, agora, hoje)
         self._reavaliar(politica, catalogo, agora, hoje)
         self._emitir_limite_se_mudou(antes, politica, catalogo, hoje, "virada_do_dia", agora)
