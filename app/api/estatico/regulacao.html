@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regulação por ativo · Limite Garantido</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/demo/estatico/demo.css">
+  <link rel="stylesheet" href="/demo/estatico/regulacao.css">
+  <script type="module" src="/demo/estatico/regulacao.js"></script>
+</head>
+<body>
+  <nav class="paginas" aria-label="Páginas">
+    <span class="paginas-produto">Limite Garantido</span>
+    <a href="/demo">Demonstração</a>
+    <a href="/regulacao" aria-current="page">Regulação</a>
+    <a href="/risco">Risco</a>
+    <a href="/negocio">Negócio</a>
+  </nav>
+  <div class="palco-regulacao">
+    <main class="app painel-regulacao" aria-label="Matriz regulatória">
+      <header class="cabecalho">
+        <div>
+          <p class="marca">O que cada ativo aceita</p>
+          <p class="nota">Por qual trilho o ativo vira garantia, onde o gravame é registrado,
+            para qual produto serve e com que prazo. Tudo sai do catálogo regulatório da API
+            (<code>GET /v1/regulacao/matriz</code>). O projeto simula o registro: não integra
+            com a B3, com o Selic nem com a plataforma da Res. Conjunta 12.</p>
+        </div>
+      </header>
+
+      <p class="aviso-juridico" id="aviso-juridico">
+        <strong>O autor não é advogado; a modelagem jurídica precisa ser validada.</strong>
+        <span>Os LTVs são hipóteses de calibração, não padrão de mercado.</span>
+      </p>
+
+      <section aria-labelledby="titulo-selos">
+        <h2 id="titulo-selos" class="secao">Como ler os selos</h2>
+        <ul class="legenda-selos" id="legenda-selos"></ul>
+      </section>
+
+      <p class="erro-carga" id="erro" role="alert" hidden></p>
+
+      <section aria-labelledby="titulo-matriz">
+        <h2 id="titulo-matriz" class="secao">Matriz por ativo</h2>
+        <div class="rolagem" tabindex="0" role="region" aria-label="Matriz por ativo, role para o lado">
+          <table class="matriz" id="matriz">
+            <thead id="cabecalho-matriz"></thead>
+            <tbody id="corpo-matriz"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-trilhos">
+        <h2 id="titulo-trilhos" class="secao">Trilhos de entrada</h2>
+        <div class="rolagem" tabindex="0" role="region" aria-label="Trilhos, role para o lado">
+          <table class="matriz trilhos" id="trilhos">
+            <thead>
+              <tr><th scope="col">Trilho</th><th scope="col">Rota</th><th scope="col">Prazo</th><th scope="col">Afirmações</th></tr>
+            </thead>
+            <tbody id="corpo-trilhos"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-gerais">
+        <h2 id="titulo-gerais" class="secao">Regras gerais</h2>
+        <ul class="afirmacoes" id="gerais"></ul>
+        <p class="nota-geral" id="numeros-gerais"></p>
+      </section>
+
+      <footer class="rodape-regulacao">
+        <span>O mesmo conteúdo, com as fontes e o vocabulário, está em <code>docs/regulacao.md</code>.</span>
+        <a href="/docs#/Regulação">Documentação da API</a>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
