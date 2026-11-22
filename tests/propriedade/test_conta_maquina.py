@@ -21,7 +21,7 @@ from app.dominio.eventos import TipoEvento
 from app.dominio.garantia import EstadoGarantia
 from app.dominio.ledger import ContaContabil, Lancamento, ledger_fecha
 from app.dominio.politica import TipoAtivo
-from tests.apoio import AGORA, HOJE, nova_conta, politica
+from tests.apoio import AGORA, ATIVOS_ACEITOS, HOJE, nova_conta, politica
 
 ZERO = Dinheiro.zero()
 
@@ -42,7 +42,7 @@ class MaquinaDaConta(RuleBasedStateMachine):
         self.conta.pendencias.limpar()
 
     # ------------------------------------------------------------- operações
-    @rule(tipo=st.sampled_from(TipoAtivo), centavos=st.integers(1, 5_000_000))
+    @rule(tipo=st.sampled_from(ATIVOS_ACEITOS), centavos=st.integers(1, 5_000_000))
     def bloquear_garantia(self, tipo: TipoAtivo, centavos: int) -> None:
         garantia = self.conta.registrar_garantia(
             tipo, Dinheiro(centavos), self.pol, AGORA, self.hoje

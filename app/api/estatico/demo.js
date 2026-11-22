@@ -2,13 +2,18 @@
 // Sem framework. Todo texto vindo da API entra por textContent, nunca por innerHTML.
 
 const NOMES = {
-  deposito: "Conta remunerada",
+  cdb: "CDB",
+  lci: "LCI",
+  lca: "LCA",
+  coe: "COE",
   fundo_di: "Fundo DI",
   tesouro_selic: "Tesouro Selic",
-  cdb: "CDB",
   tesouro_prefixado: "Tesouro Prefixado",
   tesouro_ipca: "Tesouro IPCA+",
   acoes: "Ações",
+  fii: "FII",
+  etf: "ETF",
+  previdencia: "Previdência",
 };
 
 const ESTADOS = {

@@ -113,13 +113,12 @@ def test_marcacao_ignora_garantia_liberada(
     assert _rodar(cliente, "marcacao-a-mercado", parceiro)["contas_processadas"] == 0
 
 
-def test_provedor_fake_e_deterministico_e_o_deposito_nao_oscila() -> None:
+def test_provedor_fake_e_deterministico() -> None:
     a, b = ProvedorDePrecosFake(), ProvedorDePrecosFake()
     dia = date(2026, 11, 11)
     for tipo in TipoAtivo:
         assert a.preco(tipo, dia) == b.preco(tipo, dia)
         assert a.preco(tipo, dia) > 0
-    assert a.preco(TipoAtivo.DEPOSITO, dia) == a.preco(TipoAtivo.DEPOSITO, date(2020, 1, 1))
     assert a.preco(TipoAtivo.ACOES, dia) != a.preco(TipoAtivo.ACOES, date(2026, 11, 12))
     assert ProvedorDePrecosFake("outra-semente").preco(TipoAtivo.ACOES, dia) != a.preco(
         TipoAtivo.ACOES, dia
@@ -161,7 +160,8 @@ def test_chamada_de_margem_nao_atendida_no_prazo_bloqueia_a_conta(
     assert negada.json()["codigo"] == "conta_bloqueada"
 
     # Reforçou a garantia: déficit zerado, conta destravada.
-    reforco = parceiro.bloquear(conta, "deposito", "75.00")
+    # 88,24 x 0,85 = 75,004: limite de 75,00, exatamente o déficit.
+    reforco = parceiro.bloquear(conta, "cdb", "88.24")
     assert reforco["limite"]["deficit"] == "0.00"
     assert parceiro.conta(conta)["estado"] == "ativa"
     assert parceiro.comprar(conta, "0.01").status_code == 402  # sem folga, mas não bloqueada
@@ -259,8 +259,8 @@ def test_teto_do_parceiro_vale_para_a_soma_das_contas(cliente: TestClient) -> No
         cliente, politica=politica_de_teste(teto_limite_do_parceiro="1000.00")
     )
     conta_a, conta_b = parceiro.abrir_conta(), parceiro.abrir_conta()
-    parceiro.bloquear(conta_a, "deposito", "800.00")
-    parceiro.bloquear(conta_b, "deposito", "800.00")
+    parceiro.bloquear(conta_a, "cdb", "1000.00")  # limite de 850,00 em cada conta
+    parceiro.bloquear(conta_b, "cdb", "1000.00")
     assert parceiro.comprar(conta_a, "700.00").status_code == 201
     estourou = parceiro.comprar(conta_b, "400.00")  # 700 + 400 > 1.000
     assert estourou.status_code == 402

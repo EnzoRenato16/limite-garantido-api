@@ -4,16 +4,21 @@
 // os números de largura das barras são proporções para desenhar, não contas de dinheiro.
 
 const NOMES = {
-  deposito: "Conta remunerada",
+  cdb: "CDB",
+  lci: "LCI",
+  lca: "LCA",
+  coe: "COE",
   fundo_di: "Fundo DI",
   tesouro_selic: "Tesouro Selic",
-  cdb: "CDB",
   tesouro_prefixado: "Tesouro Prefixado",
   tesouro_ipca: "Tesouro IPCA+",
   acoes: "Ações",
+  fii: "FII",
+  etf: "ETF",
+  previdencia: "Previdência",
   interna: "Dentro de casa",
 };
-const ATIVOS_DO_PAINEL = ["deposito", "tesouro_selic", "cdb", "tesouro_prefixado", "tesouro_ipca", "acoes"];
+const ATIVOS_DO_PAINEL = ["cdb", "tesouro_selic", "tesouro_prefixado", "tesouro_ipca", "acoes"];
 const SVG = "http://www.w3.org/2000/svg";
 
 const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });

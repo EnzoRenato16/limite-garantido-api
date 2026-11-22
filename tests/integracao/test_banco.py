@@ -34,7 +34,7 @@ def test_no_postgres_a_migracao_tambem_bate_com_os_modelos(engine: Engine) -> No
 
 def _conta_com_movimento(parceiro: Parceiro) -> str:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     parceiro.comprar(conta, "10.00")
     return conta
 

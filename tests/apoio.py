@@ -13,18 +13,23 @@ from app.dominio.politica import PoliticaRisco, TipoAtivo
 AGORA = datetime(2026, 3, 2, 15, 0, tzinfo=UTC)
 HOJE = date(2026, 3, 2)
 
+# CDB com liquidez diária (o antigo depósito) é o primeiro a ser vendido.
 ORDEM_PADRAO = (
-    TipoAtivo.DEPOSITO,
+    TipoAtivo.CDB,
     TipoAtivo.FUNDO_DI,
     TipoAtivo.TESOURO_SELIC,
-    TipoAtivo.CDB,
     TipoAtivo.TESOURO_PREFIXADO,
     TipoAtivo.TESOURO_IPCA,
     TipoAtivo.ACOES,
+    TipoAtivo.ETF,
+    TipoAtivo.FII,
+    TipoAtivo.LCI,
+    TipoAtivo.LCA,
+    TipoAtivo.PREVIDENCIA,
+    TipoAtivo.COE,
 )
 
 LTV_PADRAO = {
-    TipoAtivo.DEPOSITO: Decimal("1.00"),
     TipoAtivo.FUNDO_DI: Decimal("0.95"),
     TipoAtivo.TESOURO_SELIC: Decimal("0.95"),
     TipoAtivo.CDB: Decimal("0.85"),
@@ -32,6 +37,10 @@ LTV_PADRAO = {
     TipoAtivo.TESOURO_IPCA: Decimal("0.80"),
     TipoAtivo.ACOES: Decimal("0.60"),
 }
+
+
+# Os tipos que a política de teste aceita, em ordem fixa (para as estratégias do Hypothesis).
+ATIVOS_ACEITOS = tuple(sorted(LTV_PADRAO))
 
 
 def reais(valor: str | int) -> Dinheiro:

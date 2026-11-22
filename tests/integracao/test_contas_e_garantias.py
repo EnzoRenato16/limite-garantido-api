@@ -79,11 +79,12 @@ def test_valores_invalidos_sao_recusados_na_borda(parceiro: Parceiro) -> None:
 def test_valor_pode_vir_como_numero_json_sem_perder_centavos(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
     resposta = parceiro.post(
-        f"/v1/contas/{conta}/garantias", {"tipo_ativo": "deposito", "valor": 1234.56}
+        f"/v1/contas/{conta}/garantias", {"tipo_ativo": "cdb", "valor": 1234.56}
     )
     assert resposta.status_code == 201
     assert resposta.json()["garantia"]["valor_de_mercado"] == "1234.56"
-    assert resposta.json()["limite"]["limite_total"] == "1234.56"
+    # 1.234,56 x 0,85 = 1.049,376: o limite arredonda para baixo.
+    assert resposta.json()["limite"]["limite_total"] == "1049.37"
 
 
 def test_garantia_devolve_ltv_e_limite_gerado(parceiro: Parceiro) -> None:
@@ -215,10 +216,10 @@ def test_fatura_em_atraso_suspende_novas_compras(parceiro: Parceiro) -> None:
 
 def test_compras_aprovadas_e_negadas_ficam_registradas(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")  # limite de 85,00
     aprovada = parceiro.comprar(conta, "60.00", "Padaria").json()
     assert aprovada["compra"]["id"].startswith("cmp_")
-    assert aprovada["limite"]["limite_disponivel"] == "40.00"
+    assert aprovada["limite"]["limite_disponivel"] == "25.00"
     negada = parceiro.comprar(conta, "50.00", "Posto").json()
     compras = parceiro.get(f"/v1/contas/{conta}/compras").json()["dados"]
     assert [(c["descricao"], c["estado"], c["motivo_negacao"]) for c in compras] == [
@@ -226,4 +227,4 @@ def test_compras_aprovadas_e_negadas_ficam_registradas(parceiro: Parceiro) -> No
         ("Padaria", "aprovada", None),
     ]
     assert negada["compra_id"] == compras[0]["id"]
-    assert negada["limite_disponivel"] == "40.00"
+    assert negada["limite_disponivel"] == "25.00"

@@ -14,7 +14,6 @@ from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.analises import simular_negocio
 from app.dominio.economia.calculo import calcular_mes
 from app.dominio.economia.premissas import NomeDaPremissa, PremissasInvalidas
-from app.dominio.politica import TipoAtivo
 from app.dominio.stress import ContaNaCarteira
 from app.dominio.taxas import Fracao
 from app.infra import economia
@@ -137,11 +136,11 @@ def test_interna_e_externa_saem_da_mesma_carteira() -> None:
         sem_custodiante = [(g.tipo_ativo, g.valor_de_mercado) for g in antes.garantias]
         assert [(g.tipo_ativo, g.valor_de_mercado) for g in i.garantias] == sem_custodiante
         assert [(g.tipo_ativo, g.valor_de_mercado) for g in e.garantias] == sem_custodiante
-        # Interna: ninguém de fora. Externa: tudo que não é depósito está fora, e quem já
-        # estava fora fica com o mesmo custodiante.
+        # Interna: ninguém de fora. Externa: tudo está fora, e quem já estava fora fica
+        # com o mesmo custodiante.
         assert all(g.custodiante_id is None for g in i.garantias)
         for g_antes, g in zip(antes.garantias, e.garantias, strict=True):
-            assert (g.custodiante_id is None) == (g.tipo_ativo is TipoAtivo.DEPOSITO)
+            assert g.custodiante_id is not None
             if g_antes.custodiante_id is not None:
                 assert g.custodiante_id == g_antes.custodiante_id
     assert economia.carteiras_da_perda() == (interna, externa)  # determinística

@@ -39,7 +39,7 @@ unidade = "fração"
 minimo = "0.60"
 maximo = "1.00"
 razoavel = ["0.70", "0.95"]
-origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,60 (ações) a 1,00 (depósito)."
+origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,50 (ações, FIIs e ETFs) a 0,90 (Tesouro Selic), no início das faixas do catálogo regulatório."
 
 [premissas.fracao_interna]
 nome = "Fração interna"

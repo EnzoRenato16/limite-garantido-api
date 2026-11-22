@@ -68,3 +68,28 @@ class SolicitacaoDivergente(ErroDominio):
 
 class SolicitacaoNoPrazo(ErroDominio):
     codigo = "solicitacao_no_prazo"
+
+
+class CombinacaoNaoPermitida(ErroDominio):
+    """Ativo, trilho e produto que o catálogo regulatório não aceita juntos.
+
+    O código varia com o motivo (`previdencia_so_no_emprestimo`, `coe_nao_recomendado`...)
+    e é estável. A `sugestao` cita a rota certa e também vai nos detalhes, para a API
+    devolvê-la no problem+json.
+    """
+
+    def __init__(
+        self,
+        codigo: str,
+        mensagem: str | None = None,
+        *,
+        sugestao: str = "",
+        **detalhes: object,
+    ) -> None:
+        super().__init__(mensagem or sugestao or codigo, sugestao=sugestao, **detalhes)
+        self._codigo = codigo
+        self.sugestao = sugestao
+
+    @property
+    def codigo(self) -> str:  # type: ignore[override]
+        return self._codigo

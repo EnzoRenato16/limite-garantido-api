@@ -171,7 +171,7 @@ def test_entrega_segue_a_ordem_em_que_os_eventos_aconteceram(
 ) -> None:
     _configurar(parceiro)
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     for _ in range(5):
         parceiro.comprar(conta, "10.00")
     parceiro.comprar(conta, "999.00")

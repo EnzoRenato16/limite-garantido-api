@@ -6,10 +6,10 @@
 # partir de uma semente; mesma semente, mesma carteira.
 
 # Peso de cada tipo de ativo no sorteio de uma garantia.
+# O antigo depósito virou CDB com liquidez diária: o peso dele foi somado ao do CDB.
 [pesos_por_ativo]
-deposito = 20
 tesouro_selic = 25
-cdb = 20
+cdb = 40
 tesouro_prefixado = 10
 tesouro_ipca = 10
 acoes = 15
@@ -35,7 +35,7 @@ ate = 100000
 peso = 20
 
 [garantia_externa]
-# Fração das garantias (fora depósito, que é sempre interno) em outro custodiante.
+# Fração das garantias em outro custodiante.
 fracao = "0.30"
 # Como as externas se dividem entre os custodiantes simulados.
 pesos_por_custodiante = { custodiante_agil = 60, custodiante_lento = 40 }
@@ -50,7 +50,6 @@ fracao_em_chamada = "0.01"
 
 # Desconto por dia de espera na venda de garantia externa, sobre o valor estressado.
 [desconto_diario_por_ativo]
-deposito = "0"
 fundo_di = "0.0002"
 tesouro_selic = "0.0002"
 cdb = "0.0005"

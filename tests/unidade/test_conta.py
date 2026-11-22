@@ -236,7 +236,8 @@ def test_chamada_e_atendida_com_reforco_de_garantia() -> None:
     assert chamada is not None
     conta.pendencias.limpar()
 
-    bloquear(conta, TipoAtivo.DEPOSITO, "175.00")
+    # 205,89 x 0,85 = 175,0065: limite de 175,00, exatamente o déficit.
+    bloquear(conta, TipoAtivo.CDB, "205.89")
 
     assert chamada.estado is EstadoChamada.ATENDIDA
     assert conta.chamada_aberta is None
@@ -310,12 +311,12 @@ def test_liberacao_e_recusada_enquanto_a_garantia_cobre_divida() -> None:
 def test_libera_uma_garantia_se_a_outra_ainda_cobre_a_divida() -> None:
     conta = nova_conta()
     cdb = bloquear(conta, TipoAtivo.CDB, "5000.00")
-    deposito = bloquear(conta, TipoAtivo.DEPOSITO, "1000.00")
-    comprar(conta, "1000.00")
+    menor = bloquear(conta, TipoAtivo.CDB, "1000.00")  # limite de 850,00
+    comprar(conta, "850.00")
     conta.liberar(cdb.id, POL, AGORA, HOJE)
     assert conta.posicao(POL).limite_disponivel == reais("0.00")
     with pytest.raises(GarantiaCobrindoDivida):
-        conta.liberar(deposito.id, POL, AGORA, HOJE)
+        conta.liberar(menor.id, POL, AGORA, HOJE)
 
 
 def test_garantia_liberada_nao_volta_a_ser_liberada_nem_remarcada() -> None:
@@ -473,7 +474,7 @@ def test_execucao_comeca_pelo_ativo_mais_liquido() -> None:
 
 def test_execucao_so_cobre_a_fatura_vencida_nao_as_compras_a_faturar() -> None:
     conta = nova_conta()
-    garantia = bloquear(conta, TipoAtivo.DEPOSITO, "1000.00")
+    garantia = bloquear(conta, TipoAtivo.CDB, "1000.00")
     comprar(conta, "400.00")
     conta.fechar_fatura(HOJE, AGORA, HOJE)
     comprar(conta, "100.00")  # depois do fechamento: ainda não venceu
@@ -564,7 +565,7 @@ def test_fatura_em_atraso_e_avisada_uma_vez_so() -> None:
     """O evento sai na transição para em_atraso, não a cada dia de atraso."""
     pol = politica(dias_para_execucao=30)
     conta = nova_conta()
-    bloquear(conta, TipoAtivo.DEPOSITO, "1000.00", pol)
+    bloquear(conta, TipoAtivo.CDB, "1000.00", pol)
     conta.autorizar_compra(reais("500.00"), "loja", pol, AGORA, HOJE)
     conta.fechar_fatura(HOJE, AGORA, HOJE)
     conta.pendencias.limpar()

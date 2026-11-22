@@ -29,11 +29,10 @@ def test_carteira_tem_a_mistura_pedida() -> None:
     garantias = [g for conta in carteira for g in conta.garantias]
     tipos = {g.tipo_ativo.value for g in garantias}
     assert tipos == {
-        "deposito",
+        "cdb",
         "tesouro_selic",
         "tesouro_prefixado",
         "tesouro_ipca",
-        "cdb",
         "acoes",
     }
     custodiantes = {g.custodiante_id for g in garantias}
@@ -41,8 +40,6 @@ def test_carteira_tem_a_mistura_pedida() -> None:
     externas = sum(g.custodiante_id is not None for g in garantias)
     assert 0.15 < externas / len(garantias) < 0.45
     assert all(g.valor_de_mercado.positivo for g in garantias)
-    # Depósito fica sempre dentro de casa.
-    assert all(g.custodiante_id is None for g in garantias if g.tipo_ativo.value == "deposito")
 
 
 def test_mil_clientes_em_menos_de_um_segundo() -> None:

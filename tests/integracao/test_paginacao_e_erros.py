@@ -17,7 +17,7 @@ CAMPOS_DO_PROBLEMA = {"type", "title", "status", "detail", "instance", "codigo",
 
 def test_paginacao_por_cursor_percorre_tudo_sem_repetir(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "1000.00")
+    parceiro.bloquear(conta, "cdb", "1000.00")
     for numero in range(1, 6):
         parceiro.comprar(conta, f"{numero}.00", f"compra {numero}")
 
@@ -40,7 +40,7 @@ def test_paginacao_por_cursor_percorre_tudo_sem_repetir(parceiro: Parceiro) -> N
 
 def test_item_novo_nao_baguncca_a_pagina_seguinte(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "1000.00")
+    parceiro.bloquear(conta, "cdb", "1000.00")
     for numero in range(1, 4):
         parceiro.comprar(conta, "1.00", f"compra {numero}")
     primeira = parceiro.get(f"/v1/contas/{conta}/compras", params={"limite": 2}).json()
@@ -54,7 +54,7 @@ def test_item_novo_nao_baguncca_a_pagina_seguinte(parceiro: Parceiro) -> None:
 
 def test_eventos_paginam_pela_sequencia_e_aceitam_filtros(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     parceiro.comprar(conta, "10.00")
     parceiro.comprar(conta, "500.00")
     pagina = parceiro.get("/v1/eventos", params={"limite": 3}).json()

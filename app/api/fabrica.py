@@ -37,6 +37,7 @@ from app.infra.economia import carregar_parametros_da_economia
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
+from app.infra.regulacao import carregar_catalogo
 from app.infra.relogio import RelogioDoSistema
 from app.infra.webhooks.entregador import contar_fila
 
@@ -133,6 +134,8 @@ def criar_app(
     configurar_logs(config.log_nivel)
     # O TOML do modelo econômico é lido e validado aqui: quebrado, a aplicação não sobe.
     carregar_parametros_da_economia()
+    # O catálogo regulatório também: sem ele não há regra de ativo, trilho e produto.
+    carregar_catalogo()
 
     engine_proprio = engine is None
     engine = engine or criar_engine(

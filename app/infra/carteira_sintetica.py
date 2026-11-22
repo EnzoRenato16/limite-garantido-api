@@ -141,9 +141,7 @@ def gerar_carteira(
             tipo = sorteio.choices(ativos, pesos_ativos)[0]
             faixa = sorteio.choices(faixas, [f.peso for f in faixas])[0]
             valor = Dinheiro(sorteio.randint(faixa.de_centavos, faixa.ate_centavos))
-            externa = tipo is not TipoAtivo.DEPOSITO and _sorteia(
-                sorteio, parametros.fracao_externa
-            )
+            externa = _sorteia(sorteio, parametros.fracao_externa)
             custodiante = sorteio.choices(custodiantes, pesos_custodiantes)[0] if externa else None
             garantias.append(GarantiaNaCarteira(tipo, valor, custodiante))
             limite_garantido += politica.limite_da_garantia(tipo, valor)

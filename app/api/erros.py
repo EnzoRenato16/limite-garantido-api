@@ -195,6 +195,63 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Custodiante não configurado",
         "O custodiante informado não existe. Veja a lista em GET /v1/custodiantes.",
     ),
+    # Combinações que o catálogo regulatório não aceita (app/regulacao.toml). O corpo traz
+    # `sugestao`, com a rota certa.
+    "previdencia_so_no_emprestimo": (
+        422,
+        "Previdência só no empréstimo",
+        "A Res. Conjunta 12 exclui os limites rotativos de conta e de cartão (art. 1º, §2º, "
+        "VII): previdência garante só empréstimo ou financiamento.",
+    ),
+    "ativo_so_no_emprestimo": (
+        422,
+        "Ativo só no empréstimo",
+        "Este ativo não garante o cartão; use-o num empréstimo com garantia.",
+    ),
+    "cartao_exige_liquidez_diaria": (
+        422,
+        "Cartão exige liquidez diária",
+        "No cartão, o CDB precisa ter liquidez diária; os demais vão para o empréstimo.",
+    ),
+    "fundo_no_cartao_so_ate_d1": (
+        422,
+        "Fundo no cartão só até D+1",
+        "No cartão, só fundo DI com resgate em D+0 ou D+1; os demais vão para o empréstimo.",
+    ),
+    "tesouro_no_cartao_exige_agente_do_td": (
+        422,
+        "Tesouro no cartão exige agente do TD",
+        "Tesouro só garante o cartão se a CTVM do grupo for agente de custódia do Tesouro "
+        "Direto; sem isso, use-o num empréstimo.",
+    ),
+    "trilho_nao_atende_o_ativo": (
+        422,
+        "Trilho não atende o ativo",
+        "O trilho pedido não serve para este ativo. Por exemplo, a portabilidade da Res. CVM "
+        "210 não cobre CDB, LCI, LCA nem Tesouro.",
+    ),
+    "ativo_ja_em_garantia": (
+        422,
+        "Ativo já em garantia",
+        "Ativo dado em garantia é impedimento à portabilidade (Res. CVM 210, art. 19, §1º, "
+        'IV, "b"). Peça a baixa do gravame antes.',
+    ),
+    "coe_nao_recomendado": (
+        422,
+        "COE não recomendado",
+        "COE não é aceito como garantia: baixa liquidez e recompra a critério do emissor.",
+    ),
+    "ativo_nao_recomendado": (
+        422,
+        "Ativo não recomendado",
+        "O catálogo regulatório não recomenda este ativo como garantia.",
+    ),
+    "plano_fora_da_res_conjunta_12": (
+        422,
+        "Plano fora da Res. Conjunta 12",
+        "Só PGBL, VGBL e capitalização entram pela Res. Conjunta 12; o FAPI fica fora "
+        "(art. 1º, §1º).",
+    ),
     "url_de_webhook_invalida": (
         422,
         "URL de webhook inválida",

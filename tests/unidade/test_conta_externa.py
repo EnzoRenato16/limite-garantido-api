@@ -376,14 +376,14 @@ def test_execucao_que_falha_volta_ao_bloqueio_e_e_pedida_de_novo(como: str) -> N
 
 def test_interna_e_externa_juntas_nunca_passam_da_fatura() -> None:
     conta = nova_conta()
-    deposito = bloquear(conta, TipoAtivo.DEPOSITO, "1000.00")
+    cdb_da_casa = bloquear(conta, TipoAtivo.CDB, "1000.00")
     externa = bloquear_externa(conta, TipoAtivo.TESOURO_SELIC, "10000.00")
     conta.autorizar_compra(reais("5000.00"), "loja", POL, AGORA, HOJE)
     conta.fechar_fatura(HOJE, AGORA, HOJE)
     _virar(conta, 7)
 
     # O depósito (interno, mais líquido) é vendido na hora; o resto vai ao custodiante.
-    assert deposito.estado is E.EXECUTADA
+    assert cdb_da_casa.estado is E.EXECUTADA
     assert conta.divida_faturada == reais("4000.00")
     assert externa.valor_em_execucao == reais("4000.00")
     _virar(conta, 8)

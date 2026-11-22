@@ -69,7 +69,7 @@ def test_fase_2_com_confirmacao_e_resgate(pagina: Any) -> None:
     _fotografar(pagina, "fase2-1-gravame-pendente.png")
 
     garantia.get_by_role("button", name="Custodiante confirma").click()
-    esperar(pagina.locator("#disponivel")).to_have_text("R$ 9.500,00")
+    esperar(pagina.locator("#disponivel")).to_have_text("R$ 9.000,00")
     esperar(garantia).to_contain_text("bloqueado como garantia")
     esperar(garantia.locator(".linha-do-tempo .feito")).to_have_count(3)
     esperar(_webhook(pagina, "gravame.confirmado")).to_have_count(1)
@@ -91,7 +91,7 @@ def test_fase_2_o_custodiante_agil_confirma_sozinho(pagina: Any) -> None:
     garantia = _guardar_externa(pagina, "custodiante_agil", "2.000,00")
     # Ninguém clica: o worker consulta o custodiante (polling) e aplica a confirmação.
     esperar(pagina.locator("#disponivel")).to_have_text(
-        "R$ 1.900,00", timeout=ESPERA_DO_WORKER_EM_MS
+        "R$ 1.800,00", timeout=ESPERA_DO_WORKER_EM_MS
     )
     esperar(garantia).to_contain_text("bloqueado como garantia")
 
@@ -128,7 +128,7 @@ def test_fase_2_execucao_externa(pagina: Any) -> None:
     # Primeiro a mensagem: se a API recusar, o motivo aparece na falha do teste.
     esperar(pagina.locator("#resultado-garantia")).to_contain_text("foi confirmado")
     esperar(pagina.locator("#disponivel")).to_have_text(
-        "R$ 9.500,00", timeout=ESPERA_DO_WORKER_EM_MS
+        "R$ 9.000,00", timeout=ESPERA_DO_WORKER_EM_MS
     )
 
     pagina.locator("#valor-da-compra").fill("5.000,00")

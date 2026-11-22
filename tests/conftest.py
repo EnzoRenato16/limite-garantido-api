@@ -239,7 +239,6 @@ def politica_de_teste(**mudancas: Any) -> dict[str, Any]:
     """A política de referência, sem tetos, com as mudanças pedidas."""
     politica: dict[str, Any] = {
         "ltv_por_ativo": {
-            "deposito": "1.00",
             "fundo_di": "0.95",
             "tesouro_selic": "0.95",
             "cdb": "0.85",
@@ -248,10 +247,9 @@ def politica_de_teste(**mudancas: Any) -> dict[str, Any]:
             "acoes": "0.60",
         },
         "ordem_de_execucao": [
-            "deposito",
+            "cdb",
             "fundo_di",
             "tesouro_selic",
-            "cdb",
             "tesouro_prefixado",
             "tesouro_ipca",
             "acoes",

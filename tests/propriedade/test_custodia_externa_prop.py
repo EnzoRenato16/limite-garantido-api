@@ -29,7 +29,7 @@ from app.dominio.erros import ErroDominio
 from app.dominio.garantia import EstadoGarantia, Garantia, OrigemGarantia
 from app.dominio.ledger import ContaContabil, Lancamento
 from app.dominio.politica import TipoAtivo
-from tests.apoio import AGORA, CUSTODIANTE, HOJE, nova_conta, politica
+from tests.apoio import AGORA, ATIVOS_ACEITOS, CUSTODIANTE, HOJE, nova_conta, politica
 
 ZERO = Dinheiro.zero()
 RESPOSTAS = ("aceitar", "confirmar_gravame", "recusar", "confirmar_liberacao", "confirmar_execucao")
@@ -67,7 +67,7 @@ class MaquinaDoCustodiante(RuleBasedStateMachine):
         self.conta.pendencias.limpar()
 
     # ------------------------------------------------------------- operações
-    @initialize(tipo=st.sampled_from(TipoAtivo), centavos=st.integers(100_000, 5_000_000))
+    @initialize(tipo=st.sampled_from(ATIVOS_ACEITOS), centavos=st.integers(100_000, 5_000_000))
     def comecar_com_uma_garantia_confirmada(self, tipo: TipoAtivo, centavos: int) -> None:
         garantia = self.conta.registrar_garantia(
             tipo,
@@ -86,7 +86,7 @@ class MaquinaDoCustodiante(RuleBasedStateMachine):
         self.confirmadas.add(garantia.id)
         self._guardar()
 
-    @rule(tipo=st.sampled_from(TipoAtivo), centavos=st.integers(1, 2_000_000))
+    @rule(tipo=st.sampled_from(ATIVOS_ACEITOS), centavos=st.integers(1, 2_000_000))
     def pedir_gravame(self, tipo: TipoAtivo, centavos: int) -> None:
         self.conta.registrar_garantia(
             tipo,
