@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -69,15 +70,14 @@ class ContaModelo(Base):
 
 
 class GarantiaModelo(Base):
+    """A relação de crédito sobre um ativo. O estado dela é o do gravame (`gravames`)."""
+
     __tablename__ = "garantias"
     __table_args__ = (
-        Index("ix_garantias_conta_estado", "conta_id", "estado"),
-        CheckConstraint("origem IN ('interna', 'externa')", name="ck_garantias_origem"),
-        # Garantia externa tem custodiante; interna, não.
+        Index("ix_garantias_conta_id", "conta_id"),
+        CheckConstraint("produto IN ('cartao', 'emprestimo')", name="ck_garantias_produto"),
         CheckConstraint(
-            "(origem = 'externa' AND custodiante_id IS NOT NULL)"
-            " OR (origem = 'interna' AND custodiante_id IS NULL)",
-            name="ck_garantias_custodiante",
+            "liquidez_dias IS NULL OR liquidez_dias >= 0", name="ck_garantias_liquidez"
         ),
     )
 
@@ -86,17 +86,151 @@ class GarantiaModelo(Base):
     parceiro_id: Mapped[str] = mapped_column(ForeignKey("parceiros.id"), index=True)
     tipo_ativo: Mapped[str] = mapped_column(String(30))
     valor_aplicado: Mapped[Dinheiro] = mapped_column(Centavos)
-    estado: Mapped[str] = mapped_column(String(30))
     marcada_em: Mapped[date] = mapped_column(Date)
     criada_em: Mapped[datetime] = mapped_column(DataHoraUTC)
-    # Fase 2 (migração 0002). Linhas antigas leem como interna.
-    origem: Mapped[str] = mapped_column(String(10), server_default="interna")
-    custodiante_id: Mapped[str | None] = mapped_column(String(40))
-    # Pedido em aberto no custodiante (os dados dele estão em solicitacoes_de_custodia).
+    # Migração 0003. Linhas antigas leem como garantia do cartão.
+    produto: Mapped[str] = mapped_column(String(12), server_default="cartao")
+    emissor: Mapped[str | None] = mapped_column(String(120))
+    vencimento: Mapped[date | None] = mapped_column(Date)
+    # Prazo de resgate em dias úteis (0 = D+0).
+    liquidez_dias: Mapped[int | None] = mapped_column(Integer)
+    # Contraparte de fora (nula na custódia da casa).
+    contraparte_id: Mapped[str | None] = mapped_column(String(40))
+    plano: Mapped[str | None] = mapped_column(String(20))
+    fim_da_acumulacao: Mapped[date | None] = mapped_column(Date)
+    aplicado_em: Mapped[date | None] = mapped_column(Date)
+    emprestimo_id: Mapped[str | None] = mapped_column(ForeignKey("emprestimos.id"), index=True)
+    informacoes_valor_disponivel: Mapped[Dinheiro | None] = mapped_column(Centavos)
+    informacoes_tributos: Mapped[Dinheiro | None] = mapped_column(Centavos)
+    informacoes_recebidas_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
+    # Pedido de entrada em aberto (os dados dele estão em solicitacoes_de_custodia).
     solicitacao_id: Mapped[str | None] = mapped_column(String(40), index=True)
     solicitacao_enviada_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
-    valor_em_execucao: Mapped[Dinheiro | None] = mapped_column(Centavos)
+
+
+ESTADOS_DO_GRAVAME = (
+    "solicitado",
+    "registrado",
+    "liberado_para_excussao",
+    "executado",
+    "baixado",
+    "recusado",
+    "cancelado",
+)
+_TRILHOS = (
+    "casa",
+    "portabilidade_cvm_210",
+    "transferencia_de_custodia",
+    "td_garantia",
+    "res_conjunta_12",
+)
+_ESTADOS_DO_EMPRESTIMO = ("ativo", "em_atraso", "quitado", "liquidado_por_execucao")
+
+
+def _em_lista(valores: tuple[str, ...]) -> str:
+    return ", ".join(f"'{valor}'" for valor in valores)
+
+
+# Índices parciais (SQLite e Postgres): só as linhas que o worker procura.
+WHERE_AGUARDANDO_CONTRAPARTE = text("estado = 'solicitado'")
+WHERE_BAIXA_PENDENTE = text("baixa_pedida_em IS NOT NULL AND estado IN ('registrado', 'executado')")
+WHERE_EMPRESTIMO_ABERTO = text("estado IN ('ativo', 'em_atraso')")
+WHERE_PARCELA_EM_ABERTO = text("paga_em IS NULL")
+
+
+class GravameModelo(Base):
+    """O registro da garantia na infraestrutura (simulada), com a máquina de estados."""
+
+    __tablename__ = "gravames"
+    __table_args__ = (
+        UniqueConstraint("garantia_id", name="uq_gravames_garantia"),
+        CheckConstraint(f"estado IN ({_em_lista(ESTADOS_DO_GRAVAME)})", name="ck_gravames_estado"),
+        CheckConstraint(f"trilho IN ({_em_lista(_TRILHOS)})", name="ck_gravames_trilho"),
+        Index("ix_gravames_conta_id", "conta_id"),
+        Index(
+            "ix_gravames_aguardando_contraparte",
+            "solicitado_em",
+            sqlite_where=WHERE_AGUARDANDO_CONTRAPARTE,
+            postgresql_where=WHERE_AGUARDANDO_CONTRAPARTE,
+        ),
+        Index(
+            "ix_gravames_baixa_pendente",
+            "parceiro_id",
+            "conta_id",
+            sqlite_where=WHERE_BAIXA_PENDENTE,
+            postgresql_where=WHERE_BAIXA_PENDENTE,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    garantia_id: Mapped[str] = mapped_column(ForeignKey("garantias.id"))
+    conta_id: Mapped[str] = mapped_column(ForeignKey("contas.id"))
+    parceiro_id: Mapped[str] = mapped_column(ForeignKey("parceiros.id"))
+    infraestrutura: Mapped[str] = mapped_column(String(40))
+    instrumento: Mapped[str] = mapped_column(String(30))
+    trilho: Mapped[str] = mapped_column(String(30))
+    estado: Mapped[str] = mapped_column(String(30))
+    solicitado_em: Mapped[datetime] = mapped_column(DataHoraUTC)
+    registrado_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
+    protocolo: Mapped[str | None] = mapped_column(String(80))
+    baixa_pedida_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
+    baixa_prazo: Mapped[date | None] = mapped_column(Date)
+    encerrado_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
     motivo: Mapped[str | None] = mapped_column(String(200))
+
+
+class EmprestimoModelo(Base):
+    __tablename__ = "emprestimos"
+    __table_args__ = (
+        CheckConstraint(
+            f"estado IN ({_em_lista(_ESTADOS_DO_EMPRESTIMO)})", name="ck_emprestimos_estado"
+        ),
+        Index("ix_emprestimos_conta_id", "conta_id"),
+        Index(
+            "ix_emprestimos_abertos",
+            "parceiro_id",
+            "conta_id",
+            sqlite_where=WHERE_EMPRESTIMO_ABERTO,
+            postgresql_where=WHERE_EMPRESTIMO_ABERTO,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    conta_id: Mapped[str] = mapped_column(ForeignKey("contas.id"))
+    parceiro_id: Mapped[str] = mapped_column(ForeignKey("parceiros.id"))
+    principal: Mapped[Dinheiro] = mapped_column(Centavos)
+    # Texto, para o Decimal ir e voltar exato nos dois bancos.
+    taxa_ao_mes: Mapped[str] = mapped_column(String(20))
+    estado: Mapped[str] = mapped_column(String(30))
+    contratado_em: Mapped[datetime] = mapped_column(DataHoraUTC)
+    dias_minimos_execucao: Mapped[int] = mapped_column(Integer)
+    aviso_45_em: Mapped[date | None] = mapped_column(Date)
+    aviso_10_em: Mapped[date | None] = mapped_column(Date)
+
+
+class ParcelaModelo(Base):
+    __tablename__ = "parcelas"
+    __table_args__ = (
+        CheckConstraint("numero >= 1", name="ck_parcelas_numero"),
+        Index(
+            "ix_parcelas_em_aberto",
+            "vencimento",
+            sqlite_where=WHERE_PARCELA_EM_ABERTO,
+            postgresql_where=WHERE_PARCELA_EM_ABERTO,
+        ),
+    )
+
+    emprestimo_id: Mapped[str] = mapped_column(ForeignKey("emprestimos.id"), primary_key=True)
+    numero: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    vencimento: Mapped[date] = mapped_column(Date)
+    # Início do período (vencimento anterior ou contratação), para os juros pro rata.
+    inicio: Mapped[date] = mapped_column(Date)
+    valor: Mapped[Dinheiro] = mapped_column(Centavos)
+    juros: Mapped[Dinheiro] = mapped_column(Centavos)
+    amortizacao: Mapped[Dinheiro] = mapped_column(Centavos)
+    juros_pago: Mapped[Dinheiro] = mapped_column(Centavos)
+    amortizacao_paga: Mapped[Dinheiro] = mapped_column(Centavos)
+    paga_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
 
 
 class SolicitacaoDeCustodiaModelo(Base):
