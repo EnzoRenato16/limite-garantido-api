@@ -20,7 +20,7 @@ from app.dominio.politica import PoliticaRisco, TipoAtivo
 class GarantiaNaCarteira:
     tipo_ativo: TipoAtivo
     valor_de_mercado: Dinheiro
-    # None: dentro de casa. Senão, o custodiante externo que guarda o ativo.
+    # None: custodiado na casa. Senão, o custodiante de fora em que o ativo está.
     custodiante_id: str | None = None
 
 

@@ -27,7 +27,6 @@ from fastapi.testclient import TestClient
 from httpx2 import Response
 from sqlalchemy import Engine, text
 
-from app.api.fabrica import criar_app
 from app.config import Ambiente, Configuracao
 from app.infra.banco.modelos import Base
 from app.infra.banco.sessao import criar_engine
@@ -113,6 +112,10 @@ def config(url_do_banco: str) -> Configuracao:
 
 @pytest.fixture
 def app(config: Configuracao, engine: Engine, relogio: RelogioFixo) -> FastAPI:
+    # Import tardio: entre as Tarefas 3 e 8 a camada de aplicação fica quebrada, e os
+    # testes de unidade e de propriedade não podem depender dela para serem coletados.
+    from app.api.fabrica import criar_app
+
     return criar_app(config, engine=engine, relogio=relogio)
 
 
