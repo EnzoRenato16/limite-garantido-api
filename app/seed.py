@@ -15,7 +15,8 @@ from app.aplicacao.chaves import descrever_api_key
 from app.config import Configuracao, obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import UnidadeDeTrabalhoSql, criar_fabrica_de_unidades
-from app.infra.custodia import CustodiaInterna
+from app.infra.contrapartes import SemContrapartes
+from app.infra.infraestrutura_simulada import InfraestruturaSimulada
 from app.infra.logs import configurar_logs
 from app.infra.politica_referencia import carregar_politica_de_referencia
 from app.infra.relogio import RelogioDoSistema
@@ -62,7 +63,8 @@ def main() -> None:
     abrir_unidade = criar_fabrica_de_unidades(
         criar_fabrica_de_sessoes(engine),
         RelogioDoSistema(config.fuso_de_negocio),
-        CustodiaInterna(),
+        SemContrapartes(),
+        InfraestruturaSimulada(),
     )
     with abrir_unidade() as uow:
         parceiro_id = semear(uow, config)

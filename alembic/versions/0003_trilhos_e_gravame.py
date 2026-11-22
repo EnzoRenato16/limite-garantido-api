@@ -22,12 +22,18 @@ Mapeamento dos estados antigos (garantia -> gravame):
 | interna pendente                         | solicitado                               |
 | interna bloqueada, parcialmente_executada| registrado                               |
 | liberada, executada                      | baixado                                  |
-| liberacao_pendente                       | registrado, com baixa pedida             |
-| execucao_solicitada                      | liberado_para_excussao                   |
+| liberacao_pendente                       | registrado, com baixa pedida (*)         |
+| execucao_solicitada                      | liberado_para_excussao (**)              |
 | externa solicitada, gravame_pendente     | cancelado, motivo `trilho_substituido`   |
 | externa gravame_recusado                 | recusado (Tesouro) ou cancelado          |
 | gravame_expirado                         | cancelado                                |
 | externa bloqueada                        | registrado, no trilho de fora do ativo   |
+
+(*) O valor da garantia ainda constava no ledger (a saída só era lançada na confirmação):
+a migração lança a compensação (D garantias_a_devolver, C garantias_custodiadas), como a
+liberação do modelo novo.
+(**) A rotina diária (`Conta.virar_o_dia`) termina a venda desses gravames: executa, lança o
+líquido, devolve o excedente e pede a baixa.
 
 O tipo `deposito` vira `cdb` com `liquidez_dias = 0`. O downgrade devolve o esquema e
 reconstrói o estado antigo de forma aproximada (a informação nova se perde).
@@ -167,6 +173,58 @@ WHERE estado IN ('baixado', 'recusado', 'cancelado')
 """
 
 
+def _compensar_liberacoes_pendentes() -> None:
+    """Garantia em `liberacao_pendente` já saiu do limite, mas o valor só saía do ledger na
+    confirmação (modelo antigo). No modelo novo a saída é lançada ao pedir a baixa, então
+    o lançamento de compensação entra aqui: o valor deixa de constar como custodiado."""
+    ligacao = op.get_bind()
+    linhas = ligacao.execute(
+        sa.text(
+            "SELECT g.id, g.conta_id, g.parceiro_id, g.criada_em, "
+            "SUM(CASE WHEN p.sentido = 'D' THEN p.valor ELSE -p.valor END) AS saldo "
+            "FROM garantias g JOIN partidas p ON p.garantia_id = g.id "
+            "WHERE g.estado = 'liberacao_pendente' "
+            "AND p.conta_contabil = 'garantias_custodiadas' "
+            "GROUP BY g.id, g.conta_id, g.parceiro_id, g.criada_em"
+        )
+    ).all()
+    for garantia_id, conta_id, parceiro_id, criada_em, saldo in linhas:
+        if saldo <= 0:
+            continue
+        lancamento_id = f"lan_mig0003_{garantia_id}"[:40]
+        ligacao.execute(
+            sa.text(
+                "INSERT INTO lancamentos (id, conta_id, parceiro_id, tipo, referencia_id, "
+                "descricao, criado_em) VALUES (:id, :conta, :parceiro, 'liberacao_garantia', "
+                ":garantia, 'Compensação da migração 0003: liberação já pedida', :criada_em)"
+            ),
+            {
+                "id": lancamento_id,
+                "conta": conta_id,
+                "parceiro": parceiro_id,
+                "garantia": garantia_id,
+                "criada_em": criada_em,
+            },
+        )
+        sequencia = ligacao.execute(
+            sa.text("SELECT sequencia FROM lancamentos WHERE id = :id"), {"id": lancamento_id}
+        ).scalar_one()
+        for conta_contabil, sentido in (
+            ("garantias_a_devolver", "D"),
+            ("garantias_custodiadas", "C"),
+        ):
+            ligacao.execute(
+                sa.text(
+                    "INSERT INTO partidas (lancamento_sequencia, conta_id, parceiro_id, "
+                    "conta_contabil, sentido, valor, garantia_id) VALUES "
+                    "(:seq, :conta, :parceiro, :cc, :sentido, :valor, :garantia)"
+                ),
+                {"seq": sequencia, "conta": conta_id, "parceiro": parceiro_id,
+                 "cc": conta_contabil, "sentido": sentido, "valor": saldo,
+                 "garantia": garantia_id},
+            )
+
+
 def _json_da_politica() -> Any:
     return sa.JSON().with_variant(JSONB(), "postgresql")
 
@@ -265,6 +323,9 @@ def upgrade() -> None:
         tabela.add_column(
             sa.Column("informacoes_recebidas_em", sa.DateTime(timezone=True), nullable=True)
         )
+        tabela.add_column(
+            sa.Column("solicitacao_prazo_vencido_em", sa.DateTime(timezone=True), nullable=True)
+        )
         tabela.create_foreign_key(
             "fk_garantias_emprestimo_id_emprestimos", "emprestimos", ["emprestimo_id"], ["id"]
         )
@@ -318,6 +379,7 @@ def upgrade() -> None:
     op.execute(_COMPLETAR_GRAVAMES)
     op.execute(_BAIXAS)
     op.execute(_ENCERRAR)
+    _compensar_liberacoes_pendentes()
     # Pedido que a migração cancelou não fica em aberto na garantia.
     op.execute(
         "UPDATE garantias SET solicitacao_id = NULL, solicitacao_enviada_em = NULL "
@@ -391,6 +453,7 @@ def downgrade() -> None:
         tabela.drop_index("ix_garantias_emprestimo_id")
         tabela.drop_constraint("fk_garantias_emprestimo_id_emprestimos", type_="foreignkey")
         for coluna in (
+            "solicitacao_prazo_vencido_em",
             "informacoes_recebidas_em",
             "informacoes_tributos",
             "informacoes_valor_disponivel",

@@ -10,7 +10,12 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.limite_de_requisicoes import LimitadorDeRequisicoes
-from app.aplicacao.portas import Custodiante, ProvedorDePrecos, Relogio
+from app.aplicacao.portas import (
+    Contraparte,
+    InfraestruturaDeRegistro,
+    ProvedorDePrecos,
+    Relogio,
+)
 from app.config import Configuracao
 from app.infra.banco.unidade import UnidadeDeTrabalhoSql
 from app.infra.metricas import Metricas
@@ -22,7 +27,8 @@ class Recursos:
     engine: Engine
     fabrica_de_sessoes: sessionmaker[Session]
     relogio: Relogio
-    custodiante: Custodiante
+    contraparte: Contraparte
+    infraestrutura: InfraestruturaDeRegistro
     provedor_de_precos: ProvedorDePrecos
     metricas: Metricas
     abrir_unidade: Callable[[], AbstractContextManager[UnidadeDeTrabalhoSql]]

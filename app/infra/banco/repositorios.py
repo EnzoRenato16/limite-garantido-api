@@ -409,7 +409,9 @@ class RepositorioDeContasSql:
         total = self._sessao.execute(
             select(_DEBITOS_MENOS_CREDITOS).where(
                 PartidaModelo.parceiro_id == parceiro_id,
-                PartidaModelo.conta_contabil.in_(_RECEBIVEIS),
+                PartidaModelo.conta_contabil.in_(
+                    [*_RECEBIVEIS, ContaContabil.EMPRESTIMOS_A_RECEBER.value]
+                ),
             )
         ).scalar_one()
         return Dinheiro(int(total))
@@ -488,6 +490,27 @@ class RepositorioDeContasSql:
             consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
         return [(linha[0], linha[1]) for linha in self._sessao.execute(consulta)]
 
+    def contas_a_conciliar(self, parceiro_id: str | None = None) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com gravame ainda vivo ou dívida em aberto."""
+        com_gravame = select(GravameModelo.parceiro_id, GravameModelo.conta_id).where(
+            GravameModelo.estado.in_(_GRAVAMES_VIVOS)
+        )
+        com_divida = (
+            select(PartidaModelo.parceiro_id, PartidaModelo.conta_id)
+            .where(
+                PartidaModelo.conta_contabil.in_(
+                    [*_RECEBIVEIS, ContaContabil.EMPRESTIMOS_A_RECEBER.value]
+                )
+            )
+            .group_by(PartidaModelo.parceiro_id, PartidaModelo.conta_id)
+            .having(_DEBITOS_MENOS_CREDITOS != 0)
+        )
+        if parceiro_id is not None:
+            com_gravame = com_gravame.where(GravameModelo.parceiro_id == parceiro_id)
+            com_divida = com_divida.where(PartidaModelo.parceiro_id == parceiro_id)
+        linhas = self._sessao.execute(union(com_gravame, com_divida)).all()
+        return sorted((linha[0], linha[1]) for linha in linhas)
+
     def contas_com_baixa_pendente(self) -> list[tuple[str, str]]:
         """Pares (parceiro_id, conta_id) com baixa de gravame pedida e ainda não feita."""
         consulta = (
@@ -533,7 +556,7 @@ class RepositorioDeContasSql:
             parceiro_id=modelo.parceiro_id,
             conta_id=modelo.conta_id,
             garantia_id=modelo.garantia_id,
-            custodiante_id=modelo.custodiante_id,
+            contraparte_id=modelo.custodiante_id,
             tipo=TipoSolicitacao(modelo.tipo),
         )
 
@@ -559,15 +582,15 @@ class RepositorioDeContasSql:
             .values(prazo_ate=prazo_ate)
         )
 
-    def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool:
+    def resposta_ja_registrada(self, contraparte_id: str, evento_id: str) -> bool:
         return (
-            self._sessao.get(RespostaDeCustodianteModelo, (custodiante_id, evento_id)) is not None
+            self._sessao.get(RespostaDeCustodianteModelo, (contraparte_id, evento_id)) is not None
         )
 
     def registrar_resposta(
         self,
         *,
-        custodiante_id: str,
+        contraparte_id: str,
         evento_id: str,
         solicitacao_id: str,
         garantia_id: str,
@@ -587,7 +610,7 @@ class RepositorioDeContasSql:
             with self._sessao.begin_nested():
                 self._sessao.add(
                     RespostaDeCustodianteModelo(
-                        custodiante_id=custodiante_id,
+                        custodiante_id=contraparte_id,
                         evento_id=evento_id,
                         solicitacao_id=solicitacao_id,
                         garantia_id=garantia_id,
@@ -603,9 +626,9 @@ class RepositorioDeContasSql:
         except IntegrityError:
             # Só a chave (custodiante, evento) repetida é duplicata. Qualquer outra
             # violação (pedido inexistente, campo inválido) é erro e sobe como erro.
-            if self.resposta_ja_registrada(custodiante_id, evento_id):
+            if self.resposta_ja_registrada(contraparte_id, evento_id):
                 raise RespostaDuplicada(
-                    "Esta resposta do custodiante já foi recebida", evento_id=evento_id
+                    "Esta resposta da contraparte já foi recebida", evento_id=evento_id
                 ) from None
             raise
 
@@ -619,10 +642,15 @@ class RepositorioDeContasSql:
             ChamadaDeMargemModelo.estado == EstadoChamada.ABERTA.value,
             ChamadaDeMargemModelo.prazo_ate < hoje,
         )
+        # Gravame migrado em `liberado_para_excussao`: a rotina diária termina a venda.
+        excussoes = select(GravameModelo.parceiro_id, GravameModelo.conta_id).where(
+            GravameModelo.estado == EstadoGravame.LIBERADO_PARA_EXCUSSAO.value
+        )
         if parceiro_id is not None:
             faturas = faturas.where(FaturaModelo.parceiro_id == parceiro_id)
             chamadas = chamadas.where(ChamadaDeMargemModelo.parceiro_id == parceiro_id)
-        linhas = self._sessao.execute(union(faturas, chamadas)).all()
+            excussoes = excussoes.where(GravameModelo.parceiro_id == parceiro_id)
+        linhas = self._sessao.execute(union(faturas, chamadas, excussoes)).all()
         return sorted((linha[0], linha[1]) for linha in linhas)
 
 
@@ -785,6 +813,7 @@ def _garantia_do_modelo(
             criada_em=pedido.criada_em,
             prazo_ate=pedido.prazo_ate,
             enviada_em=modelo.solicitacao_enviada_em,
+            prazo_regulatorio_vencido_em=modelo.solicitacao_prazo_vencido_em,
         ),
         emprestimo_id=modelo.emprestimo_id,
         plano=modelo.plano,
@@ -818,6 +847,9 @@ def _modelo_da_garantia(garantia: Garantia, parceiro_id: str) -> GarantiaModelo:
         informacoes_recebidas_em=informacoes.recebidas_em if informacoes else None,
         solicitacao_id=garantia.solicitacao.id if garantia.solicitacao else None,
         solicitacao_enviada_em=garantia.solicitacao.enviada_em if garantia.solicitacao else None,
+        solicitacao_prazo_vencido_em=(
+            garantia.solicitacao.prazo_regulatorio_vencido_em if garantia.solicitacao else None
+        ),
     )
 
 

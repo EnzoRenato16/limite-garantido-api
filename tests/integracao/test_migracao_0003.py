@@ -172,6 +172,30 @@ def _popular_revisao_0002(engine: Engine) -> None:
                 ),
                 {"seq": sequencia, "cc": conta_contabil, "s": sentido},
             )
+        # gar_m05 (liberacao_pendente) ainda tem o valor no ledger, como no modelo antigo.
+        c.execute(
+            text(
+                "INSERT INTO lancamentos (id, conta_id, parceiro_id, tipo, referencia_id, "
+                "descricao, criado_em) VALUES ('lan_m5', 'cta_m', 'par_m', 'bloqueio_garantia', "
+                "'gar_m05', 'bloqueio', :agora)"
+            ),
+            {"agora": AGORA},
+        )
+        sequencia = c.execute(
+            text("SELECT sequencia FROM lancamentos WHERE id = 'lan_m5'")
+        ).scalar()
+        for conta_contabil, sentido in (
+            ("garantias_custodiadas", "D"),
+            ("garantias_a_devolver", "C"),
+        ):
+            c.execute(
+                text(
+                    "INSERT INTO partidas (lancamento_sequencia, conta_id, parceiro_id, "
+                    "conta_contabil, sentido, valor, garantia_id) VALUES "
+                    "(:seq, 'cta_m', 'par_m', :cc, :s, 100000, 'gar_m05')"
+                ),
+                {"seq": sequencia, "cc": conta_contabil, "s": sentido},
+            )
 
 
 def test_migracao_0003_mapeia_estados_tipos_politicas_e_desce(url_vazia: str) -> None:
@@ -209,6 +233,19 @@ def test_migracao_0003_mapeia_estados_tipos_politicas_e_desce(url_vazia: str) ->
                 ).scalar()
                 == "entrada"
             )
+            # Liberação pendente: o valor sai do ledger (compensação da migração).
+            saldos = dict(
+                c.execute(
+                    text(
+                        "SELECT garantia_id, "
+                        "SUM(CASE WHEN sentido = 'D' THEN valor ELSE -valor END) "
+                        "FROM partidas WHERE conta_contabil = 'garantias_custodiadas' "
+                        "GROUP BY garantia_id"
+                    )
+                ).all()
+            )
+            assert saldos["gar_m05"] == 0
+            assert saldos["gar_m01"] == 100000  # a garantia vigente continua no ledger
             # O ledger continua fechando.
             soma = c.execute(
                 text(

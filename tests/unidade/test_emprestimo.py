@@ -16,6 +16,7 @@ from app.dominio.emprestimo import (
 )
 from app.dominio.erros import (
     CombinacaoNaoPermitida,
+    EmprestimoNegado,
     ErroDominio,
     PagamentoExcedeDivida,
     TransicaoInvalida,
@@ -578,8 +579,9 @@ def test_teto_do_parceiro_vale_para_o_emprestimo_e_falha_fechado() -> None:
         ltv={t: Decimal("0.50") for t in TipoAtivo if t is not TipoAtivo.COE},
         teto_parceiro="5000.00",
     )
-    with pytest.raises(ValueError, match="teto do parceiro"):  # sem carteira: recusa
+    with pytest.raises(EmprestimoNegado) as erro:  # sem carteira: recusa, com erro de domínio
         _contratar_com(conta, cdb, pol=pol)
+    assert erro.value.codigo == "emprestimo_carteira_nao_informada"
     assert conta.emprestimos == []
     _recusado(
         conta, cdb, "emprestimo_teto_do_parceiro_excedido", pol=pol, carteira=reais("4000.01")

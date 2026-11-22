@@ -67,8 +67,8 @@ def test_acoes_retem_0005_por_cento_da_venda_para_cima() -> None:
     assert _retencao(TipoAtivo.ETF, "1.00", "10000.00") == reais("0.50")
 
 
-def test_previdencia_usa_o_percentual_ilustrativo() -> None:
-    assert _retencao(TipoAtivo.PREVIDENCIA, "1.00", "10000.00") == reais("1000.00")
+def test_previdencia_ja_entra_liquida_e_nao_retem_de_novo() -> None:
+    assert _retencao(TipoAtivo.PREVIDENCIA, "1.00", "10000.00") == reais("0.00")
 
 
 def test_ativo_sem_regra_de_retencao_e_recusado() -> None:

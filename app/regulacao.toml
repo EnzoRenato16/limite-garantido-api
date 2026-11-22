@@ -1212,12 +1212,11 @@ faixas_de_ltv = [{ minimo = "0.60", maximo = "0.80" }]
 direito_de_resgate = "c3"
 
 [ativos.previdencia.retencao]
-regra = "percentual_ilustrativo"
-percentual = "0.10"  # 10% {1}: IR e carregamento somados, ilustrativo
+regra = "ja_liquido"  # o valor garantido já é líquido dos tributos informados: retenção zero
 
 [[ativos.previdencia.retencao.afirmacoes]]
 tema = "retencao"
-texto = "A entidade operadora resgata o valor bloqueado em nome do cliente e paga à instituição financeira líquido de tributos e carregamento; os 10% retidos são ilustrativos, somando IR e carregamento."
+texto = "A entidade operadora resgata o valor bloqueado em nome do cliente e paga à instituição financeira líquido de tributos e carregamento; como o valor da garantia já entra líquido dos tributos informados (art. 7º), a execução não retém nada de novo."
 categoria = "interpretacao"
 norma = "Res. Conjunta 12/2024"
 artigo = "art. 13"

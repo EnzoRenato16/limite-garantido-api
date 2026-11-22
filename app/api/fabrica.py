@@ -28,12 +28,18 @@ from app.api.rotas.eventos import rotas_de_eventos
 from app.api.rotas.negocio import rotas_de_negocio
 from app.api.rotas.operacao import rotas_de_operacao
 from app.api.rotas.risco import rotas_de_risco, rotas_de_sandbox
-from app.aplicacao.portas import Custodiante, ProvedorDePrecos, Relogio
+from app.aplicacao.portas import (
+    Contraparte,
+    InfraestruturaDeRegistro,
+    ProvedorDePrecos,
+    Relogio,
+)
 from app.config import Configuracao, obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
-from app.infra.custodia import montar_custodiante
+from app.infra.contrapartes import montar_contraparte
 from app.infra.economia import carregar_parametros_da_economia
+from app.infra.infraestrutura_simulada import InfraestruturaSimulada
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
@@ -127,7 +133,8 @@ def criar_app(
     *,
     engine: Engine | None = None,
     relogio: Relogio | None = None,
-    custodiante: Custodiante | None = None,
+    contraparte: Contraparte | None = None,
+    infraestrutura: InfraestruturaDeRegistro | None = None,
     provedor_de_precos: ProvedorDePrecos | None = None,
 ) -> FastAPI:
     config = config or obter_configuracao()
@@ -143,13 +150,12 @@ def criar_app(
     )
     fabrica_de_sessoes = criar_fabrica_de_sessoes(engine)
     relogio = relogio or RelogioDoSistema(config.fuso_de_negocio)
-    if custodiante is None:
-        custodiante = montar_custodiante(
-            config.custodia_modo,
-            config.custodia_externa_efetiva,
-            relogio,
-            config.custodia_perfis_arquivo,
+    if contraparte is None:
+        contraparte = montar_contraparte(
+            config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         )
+    if infraestrutura is None:
+        infraestrutura = InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna")
 
     metricas = Metricas()
     metricas.observar_fila_de_webhooks(lambda: contar_fila(fabrica_de_sessoes))
@@ -163,11 +169,12 @@ def criar_app(
         engine=engine,
         fabrica_de_sessoes=fabrica_de_sessoes,
         relogio=relogio,
-        custodiante=custodiante,
+        contraparte=contraparte,
+        infraestrutura=infraestrutura,
         provedor_de_precos=provedor_de_precos or ProvedorDePrecosFake(),
         metricas=metricas,
         abrir_unidade=criar_fabrica_de_unidades(
-            fabrica_de_sessoes, relogio, custodiante, contar_eventos
+            fabrica_de_sessoes, relogio, contraparte, infraestrutura, contar_eventos
         ),
     )
 

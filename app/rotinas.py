@@ -2,11 +2,12 @@
 
     python -m app.rotinas marcacao-a-mercado
     python -m app.rotinas virada-do-dia
-    python -m app.rotinas custodia
+    python -m app.rotinas contrapartes
+    python -m app.rotinas baixas
     python -m app.rotinas tudo
 
-A ordem de `tudo` importa: primeiro o preço do dia, depois os prazos, por último a
-custódia (que envia os pedidos de execução que a virada do dia acabou de criar).
+A ordem de `tudo` importa: primeiro o preço do dia, depois os prazos (que pedem as baixas
+de gravame), depois as contrapartes e, por último, as baixas.
 Rodar duas vezes no mesmo dia não repete efeito.
 """
 
@@ -16,11 +17,12 @@ import argparse
 import logging
 from datetime import timedelta
 
-from app.aplicacao import custodia, risco
+from app.aplicacao import contrapartes, risco
 from app.config import obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
-from app.infra.custodia import montar_custodiante
+from app.infra.contrapartes import montar_contraparte
+from app.infra.infraestrutura_simulada import InfraestruturaSimulada
 from app.infra.logs import configurar_logs
 from app.infra.precos import ProvedorDePrecosFake
 from app.infra.relogio import RelogioDoSistema
@@ -31,7 +33,8 @@ log = logging.getLogger("app.rotinas")
 def main() -> int:
     analisador = argparse.ArgumentParser(description="Rotinas de risco do Limite Garantido")
     analisador.add_argument(
-        "rotina", choices=["marcacao-a-mercado", "virada-do-dia", "custodia", "tudo"]
+        "rotina",
+        choices=["marcacao-a-mercado", "virada-do-dia", "contrapartes", "baixas", "tudo"],
     )
     argumentos = analisador.parse_args()
 
@@ -44,12 +47,10 @@ def main() -> int:
     abrir_unidade = criar_fabrica_de_unidades(
         criar_fabrica_de_sessoes(engine),
         relogio,
-        montar_custodiante(
-            config.custodia_modo,
-            config.custodia_externa_efetiva,
-            relogio,
-            config.custodia_perfis_arquivo,
+        montar_contraparte(
+            config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         ),
+        InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna"),
     )
 
     erros = 0
@@ -61,15 +62,26 @@ def main() -> int:
         resumo = risco.virar_o_dia(abrir_unidade)
         log.info("Virada do dia concluída", extra=_campos(resumo))
         erros += resumo.contas_com_erro
-    if argumentos.rotina in ("custodia", "tudo"):
-        processadas, com_erro, eventos = custodia.processar_custodia(
+    if argumentos.rotina in ("contrapartes", "tudo"):
+        processadas, com_erro, eventos = contrapartes.processar_contrapartes(
             abrir_unidade, timedelta(minutes=config.custodia_prazo_legado_minutos)
         )
         log.info(
-            "Rotina de custódia concluída",
+            "Rotina das contrapartes concluída",
             extra={
                 "garantias_processadas": processadas,
                 "garantias_com_erro": com_erro,
+                "eventos_gerados": eventos,
+            },
+        )
+        erros += com_erro
+    if argumentos.rotina in ("baixas", "tudo"):
+        contas, com_erro, eventos = contrapartes.processar_baixas(abrir_unidade)
+        log.info(
+            "Rotina de baixas concluída",
+            extra={
+                "contas_processadas": contas,
+                "contas_com_erro": com_erro,
                 "eventos_gerados": eventos,
             },
         )

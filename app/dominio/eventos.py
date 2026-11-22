@@ -30,6 +30,8 @@ class TipoEvento(StrEnum):
     # Trilhos de entrada de fora.
     PORTABILIDADE_SOLICITADA = "portabilidade.solicitada"
     PORTABILIDADE_CONCLUIDA = "portabilidade.concluida"
+    # O prazo regulatório do pedido venceu sem resposta: o pedido continua, marcado.
+    PRAZO_REGULATORIO_VENCIDO = "garantia.prazo_regulatorio_vencido"
     TRANSFERENCIA_SOLICITADA = "transferencia.solicitada"
     TRANSFERENCIA_CONCLUIDA = "transferencia.concluida"
     PREVIDENCIA_INFORMACOES_RECEBIDAS = "previdencia.informacoes_recebidas"

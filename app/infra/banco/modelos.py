@@ -106,6 +106,8 @@ class GarantiaModelo(Base):
     # Pedido de entrada em aberto (os dados dele estão em solicitacoes_de_custodia).
     solicitacao_id: Mapped[str | None] = mapped_column(String(40), index=True)
     solicitacao_enviada_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
+    # Quando se constatou que o prazo regulatório do pedido venceu sem resposta.
+    solicitacao_prazo_vencido_em: Mapped[datetime | None] = mapped_column(DataHoraUTC)
 
 
 ESTADOS_DO_GRAVAME = (

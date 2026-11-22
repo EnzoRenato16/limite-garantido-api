@@ -41,9 +41,16 @@ class Solicitacao:
     prazo_ate: datetime
     # Quando a contraparte aceitou o pedido. Nulo enquanto não conseguimos enviar.
     enviada_em: datetime | None = None
+    # Trilho de prazo regulatório (portabilidade, Res. Conj. 12): o pedido não é cancelado
+    # quando o prazo passa, só marcado. Quando se constatou o vencimento.
+    prazo_regulatorio_vencido_em: datetime | None = None
 
     def vencida(self, agora: datetime) -> bool:
         return agora > self.prazo_ate
+
+    @property
+    def prazo_regulatorio_vencido(self) -> bool:
+        return self.prazo_regulatorio_vencido_em is not None
 
 
 @dataclass(frozen=True, slots=True)

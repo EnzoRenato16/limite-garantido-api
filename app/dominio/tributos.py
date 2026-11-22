@@ -29,6 +29,8 @@ def retencao_na_execucao(
     - tabela regressiva: alíquota pelos {dia_corrido} desde a aplicação, sobre o
       rendimento (`valor - valor_aplicado`, nunca negativo);
     - isento: zero;
+    - já líquido (previdência): zero, porque o valor entrou líquido dos tributos
+      informados pela operadora (Res. Conj. 12, art. 7º);
     - sobre a venda e percentual ilustrativo: percentual sobre `valor`.
 
     A data da aplicação é `aplicado_em` da garantia; sem ela, a da constituição
@@ -43,7 +45,7 @@ def retencao_na_execucao(
             f"{garantia.tipo_ativo} não tem regra de retenção no catálogo",
             tipo_ativo=str(garantia.tipo_ativo),
         )
-    if retencao.regra is RegraDeRetencao.ISENTO:
+    if retencao.regra in (RegraDeRetencao.ISENTO, RegraDeRetencao.JA_LIQUIDO):
         return Dinheiro.zero()
     if retencao.regra is RegraDeRetencao.TABELA_REGRESSIVA_RENDA_FIXA:
         dias = max((hoje - garantia.data_da_aplicacao).days, 0)  # {dia_corrido}

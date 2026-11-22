@@ -1,15 +1,17 @@
-"""Worker: entrega os webhooks da outbox e acompanha os custodiantes externos.
+"""Worker: entrega os webhooks da outbox, acompanha as contrapartes dos trilhos e baixa gravames.
 
     python -m app.worker
 
 Webhooks: pode rodar em várias instâncias ao mesmo tempo, porque cada lote é reservado
 com `FOR UPDATE SKIP LOCKED` e dois workers nunca enviam a mesma entrega.
 
-Custódia (fase 2, simulada): a cada `CUSTODIA_INTERVALO_SEGUNDOS`, envia os pedidos que
+Contrapartes (simuladas): a cada `CONTRAPARTES_INTERVALO_SEGUNDOS`, envia os pedidos que
 ainda não saíram, consulta os que esperam resposta (reserva para quando o callback não
-chega) e expira os que passaram do prazo. Com várias instâncias, duas podem consultar a
-mesma garantia; a trava de linha da conta e a chave única das respostas fazem a segunda
-não ter efeito.
+chega) e encerra pelo prazo do trilho: transferência e TD Garantia sem resposta viram
+`cancelado` e `recusado`; portabilidade e Res. Conjunta 12 continuam, marcadas com o prazo
+regulatório vencido. Depois baixa na infraestrutura (simulada) os gravames com baixa pedida.
+Com várias instâncias, duas podem consultar a mesma garantia; a trava de linha da conta e a
+chave única das respostas fazem a segunda não ter efeito.
 """
 
 from __future__ import annotations
@@ -21,12 +23,13 @@ import time
 from datetime import timedelta
 from types import FrameType
 
-from app.aplicacao.custodia import processar_custodia
+from app.aplicacao.contrapartes import processar_baixas, processar_contrapartes
 from app.config import obter_configuracao
 from app.infra.banco.repositorios import RepositorioDeIdempotencia
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
-from app.infra.custodia import montar_custodiante
+from app.infra.contrapartes import montar_contraparte
+from app.infra.infraestrutura_simulada import InfraestruturaSimulada
 from app.infra.logs import configurar_logs
 from app.infra.relogio import RelogioDoSistema
 from app.infra.webhooks.entregador import Entregador
@@ -49,12 +52,10 @@ def main() -> None:
     abrir_unidade = criar_fabrica_de_unidades(
         fabrica_de_sessoes,
         relogio,
-        montar_custodiante(
-            config.custodia_modo,
-            config.custodia_externa_efetiva,
-            relogio,
-            config.custodia_perfis_arquivo,
+        montar_contraparte(
+            config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         ),
+        InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna"),
     )
     prazo_legado = timedelta(minutes=config.custodia_prazo_legado_minutos)
 
@@ -69,25 +70,39 @@ def main() -> None:
 
     log.info("Worker de webhooks no ar")
     proxima_limpeza = time.monotonic()
-    proxima_custodia = time.monotonic()
+    proxima_rodada_das_contrapartes = time.monotonic()
     while not parar.is_set():
         try:
-            if time.monotonic() >= proxima_custodia:
-                # Etapa separada: uma falha na custódia não pode parar os webhooks.
-                proxima_custodia = time.monotonic() + config.custodia_intervalo_segundos
+            if time.monotonic() >= proxima_rodada_das_contrapartes:
+                # Etapa separada: uma falha nas contrapartes não pode parar os webhooks.
+                proxima_rodada_das_contrapartes = (
+                    time.monotonic() + config.contrapartes_intervalo_segundos
+                )
                 try:
-                    processadas, com_erro, eventos = processar_custodia(abrir_unidade, prazo_legado)
+                    processadas, com_erro, eventos = processar_contrapartes(
+                        abrir_unidade, prazo_legado
+                    )
                     if eventos or com_erro:
                         log.info(
-                            "Custódia acompanhada",
+                            "Contrapartes acompanhadas",
                             extra={
                                 "garantias_processadas": processadas,
                                 "garantias_com_erro": com_erro,
                                 "eventos_gerados": eventos,
                             },
                         )
+                    baixas, baixas_com_erro, baixados = processar_baixas(abrir_unidade)
+                    if baixas or baixas_com_erro:
+                        log.info(
+                            "Baixas de gravame processadas",
+                            extra={
+                                "contas_processadas": baixas,
+                                "contas_com_erro": baixas_com_erro,
+                                "eventos_gerados": baixados,
+                            },
+                        )
                 except Exception:
-                    log.exception("Falha na rotina de custódia do worker")
+                    log.exception("Falha na rotina das contrapartes do worker")
             resultado = entregador.processar_lote()
             if resultado.total:
                 log.info(

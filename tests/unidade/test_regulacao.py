@@ -270,7 +270,27 @@ def test_prazos_dos_trilhos(catalogo: CatalogoRegulatorio) -> None:
         True,
         False,
     )
-    assert catalogo.trilhos[Trilho.CASA].prazo_para(T.CDB) is None
+    casa = catalogo.trilhos[Trilho.CASA]
+    assert casa.prazo_para(T.CDB) is None  # None só quando o trilho não tem prazo
+    assert not casa.tem_prazo
+    assert portabilidade.tem_prazo
+    assert catalogo.prazo_do_trilho(Trilho.PORTABILIDADE_CVM_210, T.FUNDO_DI) == 9
+    assert catalogo.prazo_do_trilho(Trilho.CASA, T.CDB) is None
+
+
+def test_prazo_de_trilho_que_nao_atende_o_ativo_recusa_com_sugestao(
+    catalogo: CatalogoRegulatorio,
+) -> None:
+    # Prazo por ativo: o CDB não está na portabilidade.
+    with pytest.raises(CombinacaoNaoPermitida) as erro:
+        catalogo.trilhos[Trilho.PORTABILIDADE_CVM_210].prazo_para(T.CDB)
+    assert erro.value.codigo == "trilho_nao_atende_o_ativo"
+    assert erro.value.sugestao
+    # Prazo único (transferência de custódia): quem confere o ativo é o catálogo.
+    with pytest.raises(CombinacaoNaoPermitida) as erro:
+        catalogo.prazo_do_trilho(Trilho.TRANSFERENCIA_DE_CUSTODIA, T.PREVIDENCIA)
+    assert erro.value.codigo == "trilho_nao_atende_o_ativo"
+    assert "garantias/previdencia" in erro.value.sugestao
 
 
 def test_regras_de_produto_e_execucao(catalogo: CatalogoRegulatorio) -> None:
@@ -302,8 +322,10 @@ def test_retencao_na_execucao_e_dado_do_catalogo(catalogo: CatalogoRegulatorio) 
         assert retencao.percentual == Decimal("0.00005")
     previdencia = catalogo.regra(T.PREVIDENCIA).retencao
     assert previdencia is not None
-    assert previdencia.regra is RegraDeRetencao.PERCENTUAL_ILUSTRATIVO
-    assert previdencia.percentual == Decimal("0.10")
+    assert previdencia.regra is RegraDeRetencao.JA_LIQUIDO
+    assert previdencia.percentual is None
+    primeira = previdencia.afirmacoes[0]
+    assert (primeira.categoria, primeira.artigo) == (Categoria.INTERPRETACAO, "art. 13")
     assert [
         (faixa.ate_dias_corridos, faixa.aliquota) for faixa in catalogo.tabela_regressiva_renda_fixa
     ] == [
@@ -334,3 +356,14 @@ def test_cada_ativo_tem_as_afirmacoes_da_matriz(catalogo: CatalogoRegulatorio) -
             if afirmacao.categoria is Categoria.NORMA:
                 assert afirmacao.norma
                 assert afirmacao.artigo
+
+
+def test_politica_de_parceiro_valida_contra_o_catalogo(catalogo: CatalogoRegulatorio) -> None:
+    catalogo.validar_ltv_da_politica({T.CDB: Decimal("0.95"), T.ACOES: Decimal("0.70")})
+    with pytest.raises(CombinacaoNaoPermitida) as erro:
+        catalogo.validar_ltv_da_politica({T.COE: Decimal("0.10")})
+    assert erro.value.codigo == "politica_ativo_nao_recomendado"
+    with pytest.raises(CombinacaoNaoPermitida) as erro:
+        catalogo.validar_ltv_da_politica({T.ACOES: Decimal("0.71")})
+    assert erro.value.codigo == "politica_ltv_acima_da_faixa"
+    assert erro.value.detalhes["ltv_maximo"] == "0.70"

@@ -123,6 +123,9 @@ class RegraDeRetencao(StrEnum):
     ISENTO = "isento"
     SOBRE_A_VENDA = "sobre_a_venda"  # percentual sobre o valor da venda
     PERCENTUAL_ILUSTRATIVO = "percentual_ilustrativo"  # sobre o valor resgatado
+    # O valor já vem líquido dos tributos informados (previdência, Res. Conj. 12, art. 7º):
+    # a retenção na execução é zero, para não tributar duas vezes.
+    JA_LIQUIDO = "ja_liquido"
 
 
 def _razao_entre_0_e_1(valor: Decimal, nome: str, *, aceita_zero: bool = False) -> None:
@@ -246,15 +249,30 @@ class RegraDoTrilho:
         if self.prazo_e_regulatorio and self.prazo_dias_uteis is None and not self.prazos_por_ativo:
             raise ValorInvalido(f"Trilho {self.trilho}: prazo regulatório sem prazo")
 
+    @property
+    def tem_prazo(self) -> bool:
+        """O trilho tem prazo (único ou por ativo)? A custódia na casa não tem."""
+        return self.prazo_dias_uteis is not None or bool(self.prazos_por_ativo)
+
     def prazo_para(self, tipo: TipoAtivo) -> int | None:
-        """Prazo do trilho para o ativo, em {dia_util}; None quando o trilho não tem prazo."""
+        """Prazo do trilho para o ativo, em {dia_util}.
+
+        `None` só quando o trilho não tem prazo (`tem_prazo` é falso: a custódia na casa).
+        Trilho com prazo por ativo que não serve o ativo recusa, com a sugestão da rota
+        certa; não devolve `None` para "depende do ativo".
+        """
         if self.prazos_por_ativo:
             try:
                 return self.prazos_por_ativo[tipo]
             except KeyError:
+                atendidos = ", ".join(sorted(str(a) for a in self.prazos_por_ativo))
                 raise CombinacaoNaoPermitida(
                     "trilho_nao_atende_o_ativo",
-                    f"O trilho {self.trilho} não tem prazo para {tipo}",
+                    f"O trilho {self.trilho} não atende {tipo}",
+                    sugestao=(
+                        f"{self.nome} atende só {atendidos}. Veja a rota de cada ativo em "
+                        "GET /v1/regulacao/matriz."
+                    ),
                 ) from None
         return self.prazo_dias_uteis
 
@@ -412,6 +430,54 @@ class CatalogoRegulatorio:
     # ------------------------------------------------------------------ consultas
     def regra(self, tipo: TipoAtivo) -> RegraDoAtivo:
         return self.ativos[tipo]
+
+    def prazo_do_trilho(self, trilho: Trilho, tipo: TipoAtivo) -> int | None:
+        """Prazo do trilho para o ativo em {dia_util}; recusa o ativo que o trilho não serve.
+
+        `None` só para o trilho sem prazo (custódia na casa).
+        """
+        regra = self.regra(tipo)
+        if trilho not in regra.trilhos:
+            raise CombinacaoNaoPermitida(
+                "trilho_nao_atende_o_ativo",
+                f"O trilho {trilho} não atende {regra.nome}",
+                sugestao=f"Para {regra.nome}, use {self._rotas_de_entrada(regra)}.",
+            )
+        return self.trilhos[trilho].prazo_para(tipo)
+
+    def teto_de_ltv(self, tipo: TipoAtivo) -> Decimal:
+        """O maior LTV {1} que o catálogo admite para o ativo: o topo da faixa mais alta."""
+        regra = self.regra(tipo)
+        if not regra.recomendado:
+            raise self._nao_recomendado(regra)
+        return max(faixa.maximo for faixa in regra.faixas_de_ltv)
+
+    def validar_ltv_da_politica(self, ltv_por_ativo: Mapping[TipoAtivo, Decimal]) -> None:
+        """Recusa política de parceiro que o catálogo não sustenta.
+
+        Rejeita ativo não recomendado (COE) e LTV acima do topo da faixa do ativo. O código
+        é estável: `politica_ativo_nao_recomendado` ou `politica_ltv_acima_da_faixa`.
+        """
+        for tipo in sorted(ltv_por_ativo):
+            regra = self.regra(tipo)
+            if not regra.recomendado:
+                raise CombinacaoNaoPermitida(
+                    "politica_ativo_nao_recomendado",
+                    f"A política não pode aceitar {regra.nome}: o catálogo não o recomenda",
+                    sugestao=f"Tire {tipo} da política; veja o que cada ativo aceita em "
+                    f"{self.rota_da_matriz}.",
+                    tipo_ativo=str(tipo),
+                )
+            teto = self.teto_de_ltv(tipo)
+            if ltv_por_ativo[tipo] > teto:
+                raise CombinacaoNaoPermitida(
+                    "politica_ltv_acima_da_faixa",
+                    f"O LTV de {regra.nome} ({ltv_por_ativo[tipo]}) passa do topo da faixa "
+                    f"do catálogo ({teto})",
+                    sugestao=f"Use no máximo {teto} para {tipo}; veja {self.rota_da_matriz}.",
+                    tipo_ativo=str(tipo),
+                    ltv_maximo=str(teto),
+                )
 
     def com_agente_do_td(self, valor: bool) -> CatalogoRegulatorio:
         """Cópia com a chave da CTVM do grupo como agente de custódia do TD trocada."""

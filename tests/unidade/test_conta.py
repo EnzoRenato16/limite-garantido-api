@@ -801,3 +801,24 @@ def test_cupom_so_em_tesouro_e_ate_o_valor_do_titulo() -> None:
         conta.receber_evento_de_custodia(titulo.id, reais("100.01"), AGORA)
     with pytest.raises(ValorInvalido):
         conta.receber_evento_de_custodia(titulo.id, reais("0.00"), AGORA)
+
+
+def test_a_rotina_diaria_termina_a_venda_de_gravame_migrado_em_liberado_para_excussao() -> None:
+    # Migração 0003: `execucao_solicitada` vira `liberado_para_excussao`; o domínio novo só
+    # atravessa esse estado dentro de uma execução, então a virada do dia termina a venda.
+    conta = nova_conta()
+    garantia = custodiar(conta, TipoAtivo.CDB, "5000.00")
+    comprar(conta, "1000.00")
+    conta.fechar_fatura(HOJE + timedelta(days=10), AGORA, HOJE)
+    garantia.gravame.liberar_para_excussao(AGORA)
+    assert not garantia.gera_limite
+    conta.pendencias.limpar()
+
+    conta.virar_o_dia(POL, CAT, AGORA, HOJE, prazo_da_baixa(HOJE))
+
+    assert garantia.estado is E.EXECUTADO
+    assert garantia.gravame.baixa_pedida_em is not None
+    assert conta.divida_faturada == reais("0.00")
+    assert conta.valor_de_mercado(garantia.id) == reais("0.00")
+    assert TipoEvento.GARANTIA_EXECUTADA in {e.tipo for e in conta.pendencias.eventos}
+    assert ledger_fecha(conta.pendencias.lancamentos)

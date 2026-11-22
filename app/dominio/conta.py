@@ -605,6 +605,36 @@ class Conta:
         self._emitir(tipo, agora, motivo=motivo, **self._dados(garantia, solicitacao))
         return garantia
 
+    def registrar_envio_do_pedido(self, garantia_id: str, agora: datetime) -> Garantia:
+        """A contraparte aceitou o pedido de entrada (a resposta ainda vem depois)."""
+        garantia = self.garantia(garantia_id)
+        solicitacao = garantia.solicitacao
+        if solicitacao is None:
+            raise TransicaoInvalida("Não há pedido de entrada em aberto", garantia_id=garantia.id)
+        if solicitacao.enviada_em is None:
+            solicitacao.enviada_em = agora
+        return garantia
+
+    def marcar_prazo_regulatorio_vencido(self, garantia_id: str, agora: datetime) -> Garantia:
+        """O trilho tem prazo regulatório (portabilidade, Res. Conj. 12) e passou sem resposta.
+
+        Não cancela: a obrigação continua com a contraparte, e o pedido segue em aberto,
+        marcado. Marcar de novo não repete o evento.
+        """
+        garantia = self.garantia(garantia_id)
+        solicitacao = garantia.solicitacao
+        if solicitacao is None or garantia.estado is not EstadoGravame.SOLICITADO:
+            raise TransicaoInvalida(
+                "Não há pedido de entrada em aberto para marcar",
+                garantia_id=garantia.id,
+                estado_atual=str(garantia.estado),
+            )
+        if solicitacao.prazo_regulatorio_vencido:
+            return garantia
+        solicitacao.prazo_regulatorio_vencido_em = agora
+        self._emitir(TipoEvento.PRAZO_REGULATORIO_VENCIDO, agora, **self._dados(garantia))
+        return garantia
+
     def cancelar_pedido(self, garantia_id: str, motivo: str, agora: datetime) -> Garantia:
         """Desistência do cliente ou prazo vencido: o pedido de entrada é encerrado."""
         garantia = self.garantia(garantia_id)
@@ -893,8 +923,10 @@ class Conta:
         valor, partidas = self._partidas_de_saida(garantia)
         retencao = retencao_na_execucao(garantia, valor, hoje, catalogo)
         resultado = ResultadoDaExecucao.demonstrar(valor, retencao, devido)
-        garantia.gravame.liberar_para_excussao(agora)
-        self._emitir(TipoEvento.GRAVAME_LIBERADO_PARA_EXCUSSAO, agora, **self._dados(garantia))
+        if garantia.estado is not EstadoGravame.LIBERADO_PARA_EXCUSSAO:
+            # Gravame migrado já liberado para excussão (migração 0003) só termina a venda.
+            garantia.gravame.liberar_para_excussao(agora)
+            self._emitir(TipoEvento.GRAVAME_LIBERADO_PARA_EXCUSSAO, agora, **self._dados(garantia))
 
         if resultado.liquido.positivo:
             partidas.append(debito(ContaContabil.CAIXA_RECEBIMENTOS, resultado.liquido))
@@ -1238,7 +1270,11 @@ class Conta:
         if teto is not None:
             if carteira_do_parceiro is None:
                 # Falha fechada: sem saber a carteira não dá para garantir o teto.
-                raise ValueError("A política tem teto do parceiro: informe a carteira atual")
+                raise EmprestimoNegado(
+                    "emprestimo_carteira_nao_informada",
+                    "A política tem teto do parceiro e a carteira atual não foi informada",
+                    conta_id=self.id,
+                )
             if carteira_do_parceiro + valor > teto:
                 raise EmprestimoNegado(
                     "emprestimo_teto_do_parceiro_excedido",
@@ -1556,11 +1592,42 @@ class Conta:
         hoje mais o prazo da baixa do catálogo, em dias úteis, calculado por quem chama.
         """
         antes = self.posicao(politica, catalogo, hoje)
+        self._concluir_excussoes_pendentes(catalogo, agora, hoje, prazo_da_baixa)
         self._tratar_atraso(politica, catalogo, agora, hoje, prazo_da_baixa)
         self._tratar_emprestimos(politica, catalogo, agora, hoje, prazo_da_baixa)
         self._tratar_prazo_da_chamada(politica, catalogo, agora, hoje)
         self._reavaliar(politica, catalogo, agora, hoje)
         self._emitir_limite_se_mudou(antes, politica, catalogo, hoje, "virada_do_dia", agora)
+
+    def _concluir_excussoes_pendentes(
+        self, catalogo: CatalogoRegulatorio, agora: datetime, hoje: date, prazo_da_baixa: date
+    ) -> None:
+        """Termina a venda de gravame que ficou em `liberado_para_excussao`.
+
+        Só existe por causa da migração 0003 (o estado antigo `execucao_solicitada` migra
+        para ele): o domínio novo atravessa esse estado dentro de uma única execução. A
+        venda vale o valor de mercado da garantia (do cartão); o líquido abate a fatura vencida
+        e o excedente volta ao cliente.
+        """
+        for garantia in self.garantias:
+            if garantia.estado is not EstadoGravame.LIBERADO_PARA_EXCUSSAO:
+                continue
+            devido = self.divida_faturada
+
+            def abater(valor: Dinheiro) -> list[Partida]:
+                return [credito(ContaContabil.RECEBIVEIS_FATURADOS, valor)]
+
+            self._executar_por_inteiro(
+                garantia,
+                devido,
+                abater,
+                catalogo,
+                agora,
+                hoje,
+                prazo_da_baixa,
+                "Conclusão da excussão da garantia (gravame migrado)",
+                excussao_concluida_pela_rotina=True,
+            )
 
     def _tratar_atraso(
         self,
