@@ -58,7 +58,7 @@ tema = "geral"
 texto = "Pisos de provisão para inadimplidos, contados a partir do inadimplemento (atraso acima de 90 dias): no 1º mês, C2 30%, C3 45% e C5 50%; no 13º mês, C2 70,8%, C3 89,4% e C5 90,8%."
 categoria = "norma"
 norma = "Res. CMN 4.966/2021 e Res. BCB 352/2023"
-artigo = "art. 81 e Anexo I"
+artigo = "art. 76, §2º, I (inadimplido: atraso acima de 90 dias); art. 81 e Anexo I"
 
 [[afirmacoes]]
 tema = "geral"
@@ -116,7 +116,7 @@ pode_recusar = false
 
 [[trilhos.casa.afirmacoes]]
 tema = "trilho"
-texto = "Ativo custodiado na CTVM do grupo, ou cotas de fundo DI da DTVM do grupo, com gravame registrado na B3 ou no Selic a favor da SCD do grupo, no mesmo dia."
+texto = "Ativo custodiado na CTVM do grupo, ou cotas de fundo DI da DTVM do grupo, com gravame registrado na B3 a favor da SCD do grupo, no mesmo dia."
 categoria = "pratica_de_mercado"
 
 [[trilhos.casa.afirmacoes]]
@@ -192,8 +192,13 @@ categoria = "pratica_de_mercado"
 
 [[trilhos.transferencia_de_custodia.afirmacoes]]
 tema = "prazo"
-texto = "Prazo de 5 dias úteis: operacional, ilustrativo e configurável, não regulatório."
+texto = "Não encontramos prazo regulatório para a transferência de custódia; a B3 define."
 categoria = "pratica_de_mercado"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "prazo"
+texto = "O número de 5 dias úteis é ilustrativo do projeto e configurável."
+categoria = "interpretacao"
 
 [[trilhos.transferencia_de_custodia.afirmacoes]]
 tema = "trilho"
@@ -241,8 +246,13 @@ categoria = "interpretacao"
 
 [[trilhos.td_garantia.afirmacoes]]
 tema = "prazo"
-texto = "O regulamento não fixa prazo para o gravame; a B3 define. Os 3 dias úteis são operacionais, ilustrativos e configuráveis."
+texto = "Não encontramos prazo regulatório para o gravame do TD Garantia; a B3 define."
 categoria = "pratica_de_mercado"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "prazo"
+texto = "O número de 3 dias úteis é ilustrativo do projeto e configurável."
+categoria = "interpretacao"
 
 [[trilhos.td_garantia.afirmacoes]]
 tema = "trilho"
@@ -407,10 +417,15 @@ categoria = "pratica_de_mercado"
 
 [[ativos.cdb.afirmacoes]]
 tema = "risco_de_execucao"
-texto = "Se o emissor quebrar, o FGC paga ao titular registrado, não ao credor; o limite por emissor fica dentro do teto do FGC."
+texto = "Se o emissor quebrar, o FGC paga ao titular registrado, não ao credor."
 categoria = "norma"
 norma = "Regulamento do FGC (Res. CMN 4.222/2013)"
 artigo = "art. 2º, §4º, I"
+
+[[ativos.cdb.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "O limite por emissor do projeto fica dentro do teto do FGC."
+categoria = "interpretacao"
 
 [[ativos.cdb.afirmacoes]]
 tema = "provisao"
@@ -783,10 +798,8 @@ categoria = "pratica_de_mercado"
 
 [[ativos.tesouro_selic.afirmacoes]]
 tema = "risco_de_execucao"
-texto = "Baixo: execução por venda ao Tesouro, com o dinheiro indo ao agente do garantido."
-categoria = "norma"
-norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
-artigo = "itens 116 a 119"
+texto = "Baixo: a execução é por venda ao Tesouro, com o dinheiro indo ao agente do garantido (Portaria MF 1.748/2024, itens 116 a 119)."
+categoria = "pratica_de_mercado"
 
 [[ativos.tesouro_selic.afirmacoes]]
 tema = "provisao"

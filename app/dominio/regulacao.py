@@ -385,7 +385,7 @@ class CatalogoRegulatorio:
             raise ValorInvalido(f"Trilhos sem regra: {', '.join(sorted(sem_trilho))}")
         for tipo, regra in self.ativos.items():
             if regra.tipo is not tipo:
-                raise ValorInvalido(f"Regra de {regra.tipo} guardada como {tipo}")
+                raise ValorInvalido(f"Regra de {regra.tipo} registrada como {tipo}")
         for trilho, regra_do_trilho in self.trilhos.items():
             if regra_do_trilho.trilho is not trilho:
                 raise ValorInvalido(f"Regra do trilho {regra_do_trilho.trilho} como {trilho}")
@@ -613,7 +613,7 @@ class CatalogoRegulatorio:
 
     def _nao_recomendado(self, regra: RegraDoAtivo) -> CombinacaoNaoPermitida:
         return CombinacaoNaoPermitida(
-            "coe_nao_recomendado" if regra.tipo is TipoAtivo.COE else "ativo_nao_recomendado",
+            "coe_nao_recomendado",  # só o COE tem `recomendado = false` no catálogo
             f"{regra.nome} não é recomendado como garantia",
             sugestao=(f"Use outro ativo; veja o que cada um aceita em {self.rota_da_matriz}."),
         )

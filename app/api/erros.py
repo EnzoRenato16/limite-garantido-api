@@ -278,11 +278,6 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "COE não recomendado",
         "COE não é aceito como garantia: baixa liquidez e recompra a critério do emissor.",
     ),
-    "ativo_nao_recomendado": (
-        422,
-        "Ativo não recomendado",
-        "O catálogo regulatório não recomenda este ativo como garantia.",
-    ),
     "plano_fora_da_res_conjunta_12": (
         422,
         "Plano fora da Res. Conjunta 12",

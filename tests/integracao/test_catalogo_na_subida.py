@@ -24,7 +24,6 @@ CODIGOS_DO_CATALOGO = {
     "trilho_nao_atende_o_ativo",
     "ativo_ja_em_garantia",
     "coe_nao_recomendado",
-    "ativo_nao_recomendado",
     "plano_fora_da_res_conjunta_12",
 }
 
