@@ -7,20 +7,19 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from app.api import esquemas
+from app.aplicacao.conciliacao import Divergencia
 from app.dominio.conta import ChamadaDeMargem, Compra, Conta, Fatura, Pagamento
 from app.dominio.conta import PosicaoDeLimite as PosicaoDoDominio
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.economia.analises import ResultadoEconomico
 from app.dominio.economia.calculo import Visao
 from app.dominio.economia.premissas import EsquemaDaPremissa, FonteDeReceita, NomeDaPremissa
-from app.dominio.garantia import (
-    ESTADOS_AGUARDANDO_CUSTODIANTE,
-    ESTADOS_ATIVOS,
-    EstadoGarantia,
-    Garantia,
-)
+from app.dominio.emprestimo import Emprestimo
+from app.dominio.garantia import Garantia
+from app.dominio.ltv import ltv_efetivo
 from app.dominio.parceiro import Parceiro
 from app.dominio.politica import PoliticaRisco, TipoAtivo
+from app.dominio.regulacao import CatalogoRegulatorio, Instrumento
 from app.dominio.stress import (
     FatiaDeConcentracao,
     FotoDaCarteira,
@@ -33,15 +32,11 @@ from app.infra.banco.modelos import (
     EntregaDeWebhookModelo,
     EventoModelo,
     FaturaModelo,
-    GarantiaModelo,
     LancamentoModelo,
     PartidaModelo,
-    SolicitacaoDeCustodiaModelo,
 )
 from app.infra.carteira_sintetica import Cenario
 from app.infra.economia import ParametrosDaEconomia
-
-_ESTADOS_ATIVOS = {estado.value for estado in ESTADOS_ATIVOS}
 
 
 def posicao(valor: PosicaoDoDominio) -> esquemas.PosicaoDeLimite:
@@ -72,7 +67,9 @@ def chamada(valor: ChamadaDeMargem) -> esquemas.ChamadaDeMargemResposta:
     )
 
 
-def conta(valor: Conta, politica: PoliticaRisco, hoje: date) -> esquemas.ContaResposta:
+def conta(
+    valor: Conta, politica: PoliticaRisco, catalogo: CatalogoRegulatorio, hoje: date
+) -> esquemas.ContaResposta:
     em_aberto = valor.fatura_em_aberto
     aberta = valor.chamada_aberta
     return esquemas.ContaResposta(
@@ -81,121 +78,136 @@ def conta(valor: Conta, politica: PoliticaRisco, hoje: date) -> esquemas.ContaRe
         estado=valor.estado.value,
         motivo_bloqueio=valor.motivo_bloqueio.value if valor.motivo_bloqueio else None,
         criada_em=valor.criada_em,
-        limite=posicao(valor.posicao(politica)),
+        limite=posicao(valor.posicao(politica, catalogo, hoje)),
         fatura_em_aberto=fatura(em_aberto, valor.divida_faturada, hoje) if em_aberto else None,
         chamada_de_margem=chamada(aberta) if aberta else None,
     )
 
 
-def _garantia(
-    *,
+ALERTA_DO_PENHOR = (
+    "Penhor de aplicação financeira de tomador PJ ou MEI em recuperação judicial vai para "
+    "conta vinculada (Lei 11.101/2005, art. 49, §5º); a forma fiduciária fica fora da "
+    "recuperação. Repasse ao cliente."
+)
+
+
+def _alertas(instrumento: Instrumento) -> list[str]:
+    return [ALERTA_DO_PENHOR] if instrumento is Instrumento.PENHOR else []
+
+
+def _solicitacao(
     id: str,
-    conta_id: str,
-    tipo_ativo: TipoAtivo,
-    estado: str,
-    valor_aplicado: Dinheiro,
-    valor_de_mercado: Dinheiro,
-    marcada_em: date,
+    tipo: str,
     criada_em: datetime,
-    politica: PoliticaRisco,
-    origem: str = "interna",
-    custodiante_id: str | None = None,
-    solicitacao: esquemas.SolicitacaoResposta | None = None,
-    valor_em_execucao: Dinheiro | None = None,
-    motivo: str | None = None,
-) -> esquemas.GarantiaResposta:
-    ltv = politica.ltv_por_ativo.get(tipo_ativo)
-    gera_limite = ltv is not None and estado in _ESTADOS_ATIVOS
-    return esquemas.GarantiaResposta(
+    prazo_ate: datetime,
+    enviada_em: datetime | None,
+    prazo_regulatorio_vencido_em: datetime | None,
+) -> esquemas.SolicitacaoResposta:
+    return esquemas.SolicitacaoResposta(
         id=id,
-        conta_id=conta_id,
-        tipo_ativo=tipo_ativo,
-        estado=estado,
-        valor_aplicado=valor_aplicado.texto(),
-        valor_de_mercado=valor_de_mercado.texto(),
-        ltv=None if ltv is None else str(ltv),
-        limite_gerado=(
-            valor_de_mercado.aplicar_razao(ltv)
-            if gera_limite and ltv is not None
-            else Dinheiro.zero()
-        ).texto(),
-        marcada_em=marcada_em,
+        tipo=tipo,
         criada_em=criada_em,
-        origem=origem,
-        custodiante_id=custodiante_id,
-        solicitacao=solicitacao,
-        valor_em_execucao=None if valor_em_execucao is None else valor_em_execucao.texto(),
-        motivo=motivo,
+        prazo_ate=prazo_ate,
+        enviada_em=enviada_em,
+        prazo_regulatorio_vencido=prazo_regulatorio_vencido_em is not None,
     )
 
 
 def garantia(
-    valor: Garantia, da_conta: Conta, politica: PoliticaRisco
+    valor: Garantia,
+    da_conta: Conta,
+    politica: PoliticaRisco,
+    catalogo: CatalogoRegulatorio,
+    hoje: date,
 ) -> esquemas.GarantiaResposta:
-    return _garantia(
+    gravame = valor.gravame
+    solicitacao = valor.solicitacao
+    informacoes = valor.informacoes
+    valor_de_mercado = da_conta.valor_de_mercado(valor.id)
+    ltv = ltv_efetivo(valor, politica, catalogo, hoje)
+    return esquemas.GarantiaResposta(
         id=valor.id,
         conta_id=valor.conta_id,
         tipo_ativo=valor.tipo_ativo,
         estado=valor.estado.value,
-        valor_aplicado=valor.valor_aplicado,
-        valor_de_mercado=da_conta.valor_de_mercado(valor.id),
+        produto=valor.produto.value,
+        valor_aplicado=valor.valor_aplicado.texto(),
+        valor_de_mercado=valor_de_mercado.texto(),
+        ltv=str(ltv) if politica.aceita(valor.tipo_ativo) else None,
+        limite_gerado=(
+            valor_de_mercado.aplicar_razao(ltv) if valor.gera_limite else Dinheiro.zero()
+        ).texto(),
         marcada_em=valor.marcada_em,
         criada_em=valor.criada_em,
-        politica=politica,
-        origem=valor.origem.value,
-        custodiante_id=valor.custodiante_id,
-        solicitacao=None
-        if valor.solicitacao is None
-        else esquemas.SolicitacaoResposta(
-            id=valor.solicitacao.id,
-            tipo=valor.solicitacao.tipo.value,
-            criada_em=valor.solicitacao.criada_em,
-            prazo_ate=valor.solicitacao.prazo_ate,
-            enviada_em=valor.solicitacao.enviada_em,
+        gravame=esquemas.GravameResposta(
+            estado=gravame.estado.value,
+            infraestrutura=gravame.infraestrutura.value,
+            instrumento=gravame.instrumento.value,
+            trilho=gravame.trilho.value,
+            protocolo=gravame.protocolo,
+            baixa_prazo=gravame.baixa_prazo,
+            motivo=gravame.motivo,
         ),
-        valor_em_execucao=valor.valor_em_execucao,
-        motivo=valor.motivo,
+        contraparte_id=valor.contraparte_id,
+        solicitacao=None
+        if solicitacao is None
+        else _solicitacao(
+            solicitacao.id,
+            solicitacao.tipo.value,
+            solicitacao.criada_em,
+            solicitacao.prazo_ate,
+            solicitacao.enviada_em,
+            solicitacao.prazo_regulatorio_vencido_em,
+        ),
+        emprestimo_id=valor.emprestimo_id,
+        plano=valor.plano,
+        fim_da_acumulacao=valor.fim_da_acumulacao,
+        informacoes=None
+        if informacoes is None
+        else esquemas.InformacoesDaOperadoraResposta(
+            valor_disponivel=informacoes.valor_disponivel.texto(),
+            tributos_informados=informacoes.tributos_informados.texto(),
+            valor_liquido=informacoes.valor_liquido.texto(),
+            recebidas_em=informacoes.recebidas_em,
+        ),
+        alertas=_alertas(gravame.instrumento),
     )
 
 
-def garantia_do_modelo(
-    modelo: GarantiaModelo,
-    valor_de_mercado: Dinheiro,
-    politica: PoliticaRisco,
-    pedido: SolicitacaoDeCustodiaModelo | None = None,
-) -> esquemas.GarantiaResposta:
-    return _garantia(
-        id=modelo.id,
-        conta_id=modelo.conta_id,
-        tipo_ativo=TipoAtivo(modelo.tipo_ativo),
-        estado=modelo.estado,
-        valor_aplicado=modelo.valor_aplicado,
-        valor_de_mercado=valor_de_mercado,
-        marcada_em=modelo.marcada_em,
-        criada_em=modelo.criada_em,
-        politica=politica,
-        origem=modelo.origem,
-        custodiante_id=modelo.custodiante_id,
-        solicitacao=None
-        if pedido is None
-        else esquemas.SolicitacaoResposta(
-            id=pedido.id,
-            tipo=pedido.tipo,
-            criada_em=pedido.criada_em,
-            prazo_ate=pedido.prazo_ate,
-            enviada_em=modelo.solicitacao_enviada_em,
-        ),
-        valor_em_execucao=modelo.valor_em_execucao,
-        motivo=modelo.motivo,
+def emprestimo(valor: Emprestimo, hoje: date) -> esquemas.EmprestimoResposta:
+    return esquemas.EmprestimoResposta(
+        id=valor.id,
+        conta_id=valor.conta_id,
+        estado=valor.estado.value,
+        principal=valor.principal.texto(),
+        taxa_ao_mes=str(valor.taxa_ao_mes),
+        saldo_devedor=(Dinheiro.zero() if valor.encerrado else valor.saldo_devedor(hoje)).texto(),
+        contratado_em=valor.contratado_em,
+        garantia_ids=list(valor.garantia_ids),
+        dias_minimos_execucao=valor.dias_minimos_execucao,
+        dias_em_atraso=0 if valor.encerrado else valor.dias_em_atraso(hoje),
+        parcelas=[
+            esquemas.ParcelaResposta(
+                numero=p.numero,
+                vencimento=p.vencimento,
+                valor=p.valor.texto(),
+                juros=p.juros.texto(),
+                amortizacao=p.amortizacao.texto(),
+                paga_em=p.paga_em,
+            )
+            for p in valor.parcelas
+        ],
     )
 
 
-_ESPERANDO_CUSTODIA = {e.value for e in ESTADOS_AGUARDANDO_CUSTODIANTE | {EstadoGarantia.PENDENTE}}
-
-
-def garantia_pendente(estado: str) -> bool:
-    """Pedido aceito e ainda sem resposta da custódia: a API responde 202."""
-    return estado in _ESPERANDO_CUSTODIA
+def divergencia(valor: Divergencia) -> esquemas.DivergenciaResposta:
+    return esquemas.DivergenciaResposta(
+        tipo=valor.tipo.value,
+        conta_id=valor.conta_id,
+        garantia_id=valor.garantia_id,
+        emprestimo_id=valor.emprestimo_id,
+        detalhe=valor.detalhe,
+    )
 
 
 def compra(valor: Compra) -> esquemas.CompraResposta:

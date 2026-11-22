@@ -17,6 +17,8 @@ from app.aplicacao.portas import (
     Relogio,
 )
 from app.config import Configuracao
+from app.dominio.calendario import CalendarioDeDiasUteis
+from app.dominio.regulacao import CatalogoRegulatorio
 from app.infra.banco.unidade import UnidadeDeTrabalhoSql
 from app.infra.metricas import Metricas
 
@@ -29,6 +31,8 @@ class Recursos:
     relogio: Relogio
     contraparte: Contraparte
     infraestrutura: InfraestruturaDeRegistro
+    catalogo: CatalogoRegulatorio
+    calendario: CalendarioDeDiasUteis
     provedor_de_precos: ProvedorDePrecos
     metricas: Metricas
     abrir_unidade: Callable[[], AbstractContextManager[UnidadeDeTrabalhoSql]]

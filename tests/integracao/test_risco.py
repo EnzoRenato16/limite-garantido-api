@@ -89,15 +89,15 @@ def test_marcacao_acumula_a_variacao_e_arredonda_a_garantia_para_baixo(
     parceiro: Parceiro, cliente: TestClient, relogio: RelogioFixo, precos: PrecosDeTeste
 ) -> None:
     conta = parceiro.abrir_conta()
-    garantia = parceiro.bloquear(conta, "acoes", "33.33")["garantia"]
+    garantia = parceiro.bloquear(conta, "fundo_di", "33.33")["garantia"]
     relogio.avancar(days=3)  # ficou três dias sem rotina
-    precos.definir("acoes", "2026-03-05", "100.5")
+    precos.definir("fundo_di", "2026-03-05", "100.5")
     _rodar(cliente, "marcacao-a-mercado", parceiro)
     # 33,33 x 1,005 = 33,49665 -> 33,49 (na dúvida, a garantia vale menos)
     assert parceiro.get(f"/v1/garantias/{garantia['id']}").json()["valor_de_mercado"] == "33.49"
 
     relogio.avancar(days=1)
-    precos.definir("acoes", "2026-03-06", "201")  # dobrou em relação à véspera
+    precos.definir("fundo_di", "2026-03-06", "201")  # dobrou em relação à véspera
     _rodar(cliente, "marcacao-a-mercado", parceiro)
     assert parceiro.get(f"/v1/garantias/{garantia['id']}").json()["valor_de_mercado"] == "66.98"
 
@@ -208,17 +208,20 @@ def test_rotina_diaria_marca_atraso_e_executa_no_setimo_dia(
 
     relogio.avancar(days=1)  # 7º dia
     resumo = _rodar(cliente, "virada-do-dia", parceiro)
-    assert resumo == {"contas_processadas": 1, "contas_com_erro": 0, "eventos_gerados": 2}
+    # Eventos: liberado_para_excussao, executada, baixa_pedida e limite.atualizado.
+    assert resumo == {"contas_processadas": 1, "contas_com_erro": 0, "eventos_gerados": 4}
     depois = parceiro.conta(conta)
     assert depois["limite"]["divida_total"] == "0.00"
-    assert depois["limite"]["valor_das_garantias"] == "1000.00"
+    assert depois["limite"]["valor_das_garantias"] == "0.00"  # vendida por inteiro
     assert depois["fatura_em_aberto"] is None
     assert depois["estado"] == "ativa"
     (fatura,) = parceiro.get(f"/v1/contas/{conta}/faturas").json()["dados"]
     assert fatura["estado"] == "liquidada_por_execucao"
-    assert parceiro.tipos_de_evento(conta)[-3:] == [
+    assert parceiro.tipos_de_evento(conta)[-5:] == [
         "fatura.em_atraso",
+        "gravame.liberado_para_excussao",
         "garantia.executada",
+        "gravame.baixa_pedida",
         "limite.atualizado",
     ]
     # No dia seguinte não há mais nada para a rotina fazer nesta conta.
@@ -272,11 +275,21 @@ def test_teto_do_parceiro_vale_para_a_soma_das_contas(cliente: TestClient) -> No
 
 
 # ------------------------------------------------------------------- stress
-def test_simulador_de_stress_mede_chamadas_e_perda_sem_alterar_nada(parceiro: Parceiro) -> None:
+def test_simulador_de_stress_mede_chamadas_e_perda_sem_alterar_nada(
+    cliente: TestClient,
+) -> None:
+    # CDB a 0,80 (o catálogo admite até 0,95): o cartão só aceita CDB e fundo DI.
+    parceiro = criar_parceiro(
+        cliente,
+        politica=politica_de_teste(
+            ltv_por_ativo={"fundo_di": "0.60", "cdb": "0.80"},
+            ordem_de_execucao=["cdb", "fundo_di"],
+        ),
+    )
     contas = {}
     for nome, tipo, garantia, compra in (
-        ("acoes", "acoes", "10000.00", "5500.00"),  # limite 6.000
-        ("prefixado", "tesouro_prefixado", "10000.00", "7500.00"),  # limite 8.000
+        ("fundo_di", "fundo_di", "10000.00", "5500.00"),  # limite 6.000
+        ("prefixado", "cdb", "10000.00", "7500.00"),  # limite 8.000
         ("cdb", "cdb", "5000.00", "1000.00"),  # folgada
     ):
         contas[nome] = parceiro.abrir_conta()
@@ -286,7 +299,7 @@ def test_simulador_de_stress_mede_chamadas_e_perda_sem_alterar_nada(parceiro: Pa
 
     resposta = parceiro.post(
         "/v1/risco/simulacoes-de-stress",
-        {"choques": {"acoes": "-0.30", "tesouro_prefixado": "-0.10"}, "detalhar_contas": True},
+        {"choques": {"fundo_di": "-0.30", "cdb": "-0.10"}, "detalhar_contas": True},
     )
     assert resposta.status_code == 200
     resultado = resposta.json()
@@ -295,15 +308,15 @@ def test_simulador_de_stress_mede_chamadas_e_perda_sem_alterar_nada(parceiro: Pa
     assert resultado["novas_chamadas_de_margem"] == 2
     assert resultado["divida_total"] == "14000.00"
     assert resultado["valor_das_garantias_antes"] == "25000.00"
-    assert resultado["valor_das_garantias_depois"] == "21000.00"
-    assert resultado["deficit_de_margem_total"] == "1600.00"  # 1.300 (ações) + 300 (prefixado)
+    assert resultado["valor_das_garantias_depois"] == "20500.00"
+    assert resultado["deficit_de_margem_total"] == "1600.00"  # 1.300 (fundo DI) + 300 (CDB a 0,80)
     assert resultado["exposicao_descoberta_total"] == "0.00"
-    assert {c["conta_id"] for c in resultado["contas"]} == {contas["acoes"], contas["prefixado"]}
+    assert {c["conta_id"] for c in resultado["contas"]} == {contas["fundo_di"], contas["prefixado"]}
 
     # Choque extremo: nem vendendo toda a garantia cobre.
     extremo = parceiro.post(
         "/v1/risco/simulacoes-de-stress",
-        {"choques": {"acoes": "-0.60"}, "probabilidade_de_inadimplencia": "0.5"},
+        {"choques": {"fundo_di": "-0.60"}, "probabilidade_de_inadimplencia": "0.5"},
     ).json()
     assert extremo["exposicao_descoberta_total"] == "1500.00"  # 5.500 - 4.000
     assert extremo["perda_esperada"] == "750.00"
@@ -311,8 +324,8 @@ def test_simulador_de_stress_mede_chamadas_e_perda_sem_alterar_nada(parceiro: Pa
 
     # É simulação: limites, garantias e eventos continuam como estavam.
     assert len(parceiro.eventos()) == eventos_antes
-    assert parceiro.limite(contas["acoes"])["limite_total"] == "6000.00"
-    invalido = parceiro.post("/v1/risco/simulacoes-de-stress", {"choques": {"acoes": "-1.5"}})
+    assert parceiro.limite(contas["fundo_di"])["limite_total"] == "6000.00"
+    invalido = parceiro.post("/v1/risco/simulacoes-de-stress", {"choques": {"fundo_di": "-1.5"}})
     assert invalido.status_code == 422
 
 
@@ -320,7 +333,9 @@ def test_stress_so_enxerga_a_carteira_do_proprio_parceiro(
     parceiro: Parceiro, cliente: TestClient
 ) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "acoes", "1000.00")
+    parceiro.bloquear(conta, "fundo_di", "1000.00")
     outro = criar_parceiro(cliente)
-    resultado = outro.post("/v1/risco/simulacoes-de-stress", {"choques": {"acoes": "-0.9"}}).json()
+    resultado = outro.post(
+        "/v1/risco/simulacoes-de-stress", {"choques": {"fundo_di": "-0.9"}}
+    ).json()
     assert resultado["contas_analisadas"] == 0

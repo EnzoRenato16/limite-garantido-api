@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 
 from app.api import apresentacao, esquemas
 from app.api.dependencias import ParceiroAutenticado, Unidade, exigir_sandbox
-from app.api.rotas.contas import ERROS_COMUNS, IdDaConta, IdDaGarantia
+from app.api.rotas.contas import ERROS_COMUNS, IdDaConta, IdDaGarantia, resposta_da_garantia
 from app.aplicacao import risco as casos
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.erros import ValorInvalido
@@ -157,10 +157,7 @@ def remarcar_garantia(
         if corpo.valor_de_mercado is None
         else Dinheiro.de_decimal(corpo.valor_de_mercado),
     )
-    resposta = esquemas.GarantiaComLimite(
-        garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
-        limite=apresentacao.posicao(conta.posicao(parceiro.politica)),
-    )
+    resposta = resposta_da_garantia(uow, parceiro, conta, garantia)
     uow.commit()
     return resposta
 
@@ -180,6 +177,6 @@ def avancar_dias(
     chamada de margem sem esperar uma semana.
     """
     conta = casos.avancar_dias_no_sandbox(uow, parceiro, conta_id, corpo.dias)
-    resposta = apresentacao.conta(conta, parceiro.politica, uow.relogio.hoje())
+    resposta = apresentacao.conta(conta, parceiro.politica, uow.catalogo, uow.relogio.hoje())
     uow.commit()
     return resposta

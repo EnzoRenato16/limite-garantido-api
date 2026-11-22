@@ -162,7 +162,9 @@ def test_trava_otimista_recusa_gravacao_sobre_leitura_velha(
         assert conta_b is not None
         hoje, agora = uow_a.relogio.hoje(), uow_a.relogio.agora()
         for conta in (conta_a, conta_b):
-            compra = conta.autorizar_compra(Dinheiro(8000), "loja", dominio.politica, agora, hoje)
+            compra = conta.autorizar_compra(
+                Dinheiro(8000), "loja", dominio.politica, uow_a.catalogo, agora, hoje
+            )
             assert compra.aprovada  # cada uma, olhando o saldo velho, acha que cabe
         uow_a.contas.salvar(conta_a, dominio)
         uow_a.commit()

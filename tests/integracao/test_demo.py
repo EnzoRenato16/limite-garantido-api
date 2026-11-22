@@ -133,7 +133,7 @@ def test_do_evento_ao_receptor_passando_pelo_worker(
     ).json()["id"]
     cliente.post(
         f"/v1/contas/{conta}/garantias",
-        json={"tipo_ativo": "cdb", "valor": "5000.00"},
+        json={"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0},
         headers={**cabecalhos, "Idempotency-Key": f"k-{time.time_ns()}"},
     )
     recursos = app.state.recursos
@@ -149,11 +149,12 @@ def test_do_evento_ao_receptor_passando_pelo_worker(
     )
     assert relogio.agora() < RelogioDoSistema().agora()
     resultado = entregador.processar_lote()
-    assert resultado.entregues == 2
+    assert resultado.entregues == 3
 
     recebidos = cliente.get("/demo/webhooks", params={"conta_id": conta}).json()
     assert sorted(r["evento"]["tipo"] for r in recebidos) == [
-        "garantia.bloqueada",
+        "gravame.registrado",
+        "gravame.solicitado",
         "limite.atualizado",
     ]
     assert all(r["assinatura_valida"] for r in recebidos)

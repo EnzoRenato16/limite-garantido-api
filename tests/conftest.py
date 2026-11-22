@@ -34,10 +34,13 @@ from app.infra.relogio import RelogioFixo
 
 RAIZ = Path(__file__).resolve().parent.parent
 ADMIN_TOKEN = "token-administrativo-so-para-os-testes-0001"
-# Segredos de callback dos custodiantes simulados, só para os testes.
-SEGREDOS_DE_CUSTODIA = {
-    "custodiante_agil": "segredo-de-callback-do-agil-para-testes-01",
-    "custodiante_lento": "segredo-de-callback-do-lento-para-testes-1",
+# Segredos de callback das contrapartes simuladas, só para os testes.
+SEGREDOS_DE_CONTRAPARTES = {
+    "corretora_de_origem_simulada": "segredo-de-callback-da-corretora-para-testes-1",
+    "banco_de_origem_simulado": "segredo-de-callback-do-banco-para-testes-0001",
+    "agente_td_simulado": "segredo-de-callback-do-agente-td-para-testes-1",
+    "agente_td_sem_servico_simulado": "segredo-de-callback-agente-sem-servico-test1",
+    "entidade_operadora_simulada": "segredo-de-callback-da-operadora-para-testes1",
     "teste_confirma": "segredo-de-callback-teste-confirma-000001",
     "teste_recusa": "segredo-de-callback-teste-recusa-00000001",
     "teste_mudo": "segredo-de-callback-teste-mudo-0000000001",
@@ -99,7 +102,7 @@ def configuracao_de_teste(url_do_banco: str, **mudancas: Any) -> Configuracao:
         "sandbox_habilitado": True,
         "webhook_permitir_rede_interna": True,
         "log_nivel": "WARNING",
-        "custodia_segredos": SEGREDOS_DE_CUSTODIA,
+        "contrapartes_segredos": SEGREDOS_DE_CONTRAPARTES,
     }
     valores.update(mudancas)
     return Configuracao(_env_file=None, **valores)  # type: ignore[call-arg]
@@ -126,6 +129,7 @@ def cliente(app: FastAPI) -> Iterator[TestClient]:
 
 
 ADMIN = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+LIQUIDEZ_DO_CARTAO = {"cdb": 0, "fundo_di": 1}
 _contador = itertools.count(1)
 
 
@@ -165,10 +169,13 @@ class Parceiro:
         assert resposta.status_code == 201, resposta.text
         return str(resposta.json()["id"])
 
-    def bloquear(self, conta_id: str, tipo_ativo: str, valor: str) -> dict[str, Any]:
-        resposta = self.post(
-            f"/v1/contas/{conta_id}/garantias", {"tipo_ativo": tipo_ativo, "valor": valor}
-        )
+    def bloquear(self, conta_id: str, tipo_ativo: str, valor: str, **extras: Any) -> dict[str, Any]:
+        """Custódia na casa. No cartão, CDB entra com liquidez diária e fundo DI com D+1."""
+        corpo: dict[str, Any] = {"tipo_ativo": tipo_ativo, "valor": valor}
+        if tipo_ativo in LIQUIDEZ_DO_CARTAO and "produto" not in extras:
+            corpo["liquidez_dias"] = LIQUIDEZ_DO_CARTAO[tipo_ativo]
+        corpo.update(extras)
+        resposta = self.post(f"/v1/contas/{conta_id}/garantias", corpo)
         assert resposta.status_code == 201, resposta.text
         corpo: dict[str, Any] = resposta.json()
         return corpo
@@ -186,16 +193,14 @@ class Parceiro:
     def remarcar(self, garantia_id: str, **corpo: str) -> Response:
         return self.post(f"/v1/sandbox/garantias/{garantia_id}/remarcacao", corpo)
 
-    def bloquear_externa(
-        self, conta_id: str, tipo_ativo: str, valor: str, custodiante_id: str
+    def entrar(
+        self, conta_id: str, caminho: str, corpo: dict[str, Any], status: int = 202
     ) -> dict[str, Any]:
-        resposta = self.post(
-            f"/v1/contas/{conta_id}/garantias",
-            {"tipo_ativo": tipo_ativo, "valor": valor, "custodiante_id": custodiante_id},
-        )
-        assert resposta.status_code == 202, resposta.text
-        corpo: dict[str, Any] = resposta.json()
-        return corpo
+        """Pede a entrada por um trilho de fora (`portabilidades`, `garantias/tesouro`...)."""
+        resposta = self.post(f"/v1/contas/{conta_id}/{caminho}", corpo)
+        assert resposta.status_code == status, resposta.text
+        resultado: dict[str, Any] = resposta.json()
+        return resultado
 
     def garantia(self, garantia_id: str) -> dict[str, Any]:
         resposta = self.get(f"/v1/garantias/{garantia_id}")
@@ -242,12 +247,13 @@ def politica_de_teste(**mudancas: Any) -> dict[str, Any]:
     """A política de referência, sem tetos, com as mudanças pedidas."""
     politica: dict[str, Any] = {
         "ltv_por_ativo": {
-            "fundo_di": "0.95",
+            "fundo_di": "0.60",
             "tesouro_selic": "0.95",
             "cdb": "0.85",
             "tesouro_prefixado": "0.80",
             "tesouro_ipca": "0.80",
             "acoes": "0.60",
+            "previdencia": "0.60",
         },
         "ordem_de_execucao": [
             "cdb",
@@ -256,6 +262,7 @@ def politica_de_teste(**mudancas: Any) -> dict[str, Any]:
             "tesouro_prefixado",
             "tesouro_ipca",
             "acoes",
+            "previdencia",
         ],
         "dias_para_execucao": 7,
         "prazo_chamada_de_margem_dias": 5,

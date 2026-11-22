@@ -21,13 +21,17 @@ from app.api.rotas.contas import (
 )
 from app.api.rotas.custodia import (
     rotas_de_callback,
-    rotas_de_custodiantes,
-    rotas_de_sandbox_de_custodia,
+    rotas_de_contrapartes,
+    rotas_de_sandbox_de_contrapartes,
+    rotas_substituidas,
 )
+from app.api.rotas.emprestimos import rotas_de_emprestimos
 from app.api.rotas.eventos import rotas_de_eventos
 from app.api.rotas.negocio import rotas_de_negocio
 from app.api.rotas.operacao import rotas_de_operacao
+from app.api.rotas.regulacao import rotas_de_regulacao
 from app.api.rotas.risco import rotas_de_risco, rotas_de_sandbox
+from app.api.rotas.trilhos import rotas_de_trilhos
 from app.aplicacao.portas import (
     Contraparte,
     InfraestruturaDeRegistro,
@@ -35,8 +39,10 @@ from app.aplicacao.portas import (
     Relogio,
 )
 from app.config import Configuracao, obter_configuracao
+from app.dominio.regulacao import CatalogoRegulatorio
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
+from app.infra.calendario import carregar_calendario
 from app.infra.contrapartes import montar_contraparte
 from app.infra.economia import carregar_parametros_da_economia
 from app.infra.infraestrutura_simulada import InfraestruturaSimulada
@@ -51,8 +57,11 @@ DESCRICAO = """
 API de **limite de crédito garantido por investimento**, pensada para uma plataforma de
 Banking as a Service oferecer aos seus parceiros (fintechs, varejistas, carteiras).
 
-O parceiro chama a API, o dinheiro do cliente é aplicado num investimento que continua
-rendendo, o investimento é bloqueado como garantia e o limite é liberado no cartão.
+O parceiro chama a API, o investimento do cliente entra como garantia por um de cinco
+**trilhos** (custódia na casa, portabilidade, transferência de custódia, TD Garantia ou
+Res. Conjunta 12), o gravame é registrado e, só então, o limite do cartão ou o valor do
+empréstimo é liberado. O projeto **simula** o registro: não integra com B3, Selic nem
+com nenhuma instituição.
 
 > Projeto pessoal de estudo. Não é um produto real nem tem vínculo com nenhuma instituição.
 
@@ -61,7 +70,8 @@ rendendo, o investimento é bloqueado como garantia e o limite é liberado no ca
 - **Autenticação.** `Authorization: Bearer <api key>`. Cada parceiro tem a sua chave e só
   enxerga as próprias contas.
 - **Dinheiro.** Sempre texto decimal com duas casas (`"4250.00"`). Nunca ponto flutuante.
-- **Idempotência.** Bloqueio de garantia, compra e pagamento exigem `Idempotency-Key`.
+- **Idempotência.** Toda operação de dinheiro (garantia, portabilidade, empréstimo, compra,
+  pagamento) exige `Idempotency-Key`.
   Repetir a chave devolve a resposta original (cabeçalho `Idempotent-Replayed: true`);
   a mesma chave com outro payload dá `422`.
 - **Erros.** `application/problem+json` (RFC 7807). Programe pelo campo `codigo`, que é
@@ -89,11 +99,20 @@ TAGS = [
     },
     {
         "name": "Garantias",
-        "description": "O investimento bloqueado. Interna: `pendente → bloqueada → liberada | "
-        "executada | parcialmente_executada`. Externa (simulada): `solicitada → "
-        "gravame_pendente → gravame_confirmado → bloqueada`, com desvios `gravame_recusado` "
-        "e `gravame_expirado`; liberação e execução passam por `liberacao_pendente` e "
-        "`execucao_solicitada`.",
+        "description": "O ativo dado em garantia e o gravame dele: `solicitado → registrado → "
+        "liberado_para_excussao → executado → baixado`, com desvios `recusado` (TD Garantia) e "
+        "`cancelado`. O limite só aparece em `registrado`. Cada trilho tem a sua rota, o seu "
+        "prazo e a sua norma; a matriz está em `GET /v1/regulacao/matriz`.",
+    },
+    {
+        "name": "Empréstimos",
+        "description": "Empréstimo parcelado com garantia (Tabela Price), com cronograma, "
+        "pagamento de parcela e régua de execução.",
+    },
+    {
+        "name": "Regulação",
+        "description": "A matriz regulatória do catálogo: infraestrutura, instrumento, trilho, "
+        "produto, prazo e norma de cada ativo. Pública.",
     },
     {"name": "Compras", "description": "Autorização de compras contra o limite disponível."},
     {"name": "Faturas e pagamentos", "description": "Fechamento de fatura e recebimento."},
@@ -102,11 +121,15 @@ TAGS = [
         "description": "Log de eventos, configuração do webhook, entregas e reenvio manual.",
     },
     {
-        "name": "Custodiantes (simulados)",
-        "description": "Fase 2: investimento em outra instituição. **Não há integração "
-        "real**: os custodiantes são simuladores com perfis fictícios. O gravame é "
-        "assíncrono e pode ser recusado ou ficar sem resposta; a resposta chega por "
-        "callback assinado (HMAC) ou pela consulta de reserva da rotina de custódia.",
+        "name": "Contrapartes (simuladas)",
+        "description": "A outra ponta dos trilhos de fora: corretora, banco, agente do Tesouro "
+        "e entidade operadora. **Não há integração real**: são simuladores com perfis "
+        "fictícios. A resposta chega por callback assinado (HMAC) ou pela consulta de reserva "
+        "do worker.",
+    },
+    {
+        "name": "Rotas substituídas",
+        "description": "O fluxo de custodiante externo da fase 2. Respondem 410 com `rota_nova`.",
     },
     {"name": "Risco", "description": "Política de risco do parceiro e simulador de stress."},
     {
@@ -116,7 +139,8 @@ TAGS = [
     },
     {
         "name": "Sandbox",
-        "description": "Simulações para teste: queda de preço e passagem de dias. "
+        "description": "Simulações para teste: queda de preço, passagem de dias, resposta da "
+        "contraparte e evento de custódia do Tesouro. "
         "Só existem com `SANDBOX_HABILITADO=true`.",
     },
     {
@@ -134,6 +158,7 @@ def criar_app(
     engine: Engine | None = None,
     relogio: Relogio | None = None,
     contraparte: Contraparte | None = None,
+    catalogo: CatalogoRegulatorio | None = None,
     infraestrutura: InfraestruturaDeRegistro | None = None,
     provedor_de_precos: ProvedorDePrecos | None = None,
 ) -> FastAPI:
@@ -142,7 +167,8 @@ def criar_app(
     # O TOML do modelo econômico é lido e validado aqui: quebrado, a aplicação não sobe.
     carregar_parametros_da_economia()
     # O catálogo regulatório também: sem ele não há regra de ativo, trilho e produto.
-    carregar_catalogo()
+    catalogo = catalogo or carregar_catalogo()
+    calendario = carregar_calendario()
 
     engine_proprio = engine is None
     engine = engine or criar_engine(
@@ -171,10 +197,18 @@ def criar_app(
         relogio=relogio,
         contraparte=contraparte,
         infraestrutura=infraestrutura,
+        catalogo=catalogo,
+        calendario=calendario,
         provedor_de_precos=provedor_de_precos or ProvedorDePrecosFake(),
         metricas=metricas,
         abrir_unidade=criar_fabrica_de_unidades(
-            fabrica_de_sessoes, relogio, contraparte, infraestrutura, contar_eventos
+            fabrica_de_sessoes,
+            relogio,
+            contraparte,
+            infraestrutura,
+            contar_eventos,
+            catalogo=catalogo,
+            calendario=calendario,
         ),
     )
 
@@ -198,15 +232,19 @@ def criar_app(
     for rotas in (
         rotas_de_contas,
         rotas_de_garantias,
+        rotas_de_trilhos,
+        rotas_de_emprestimos,
+        rotas_de_regulacao,
         rotas_de_compras,
         rotas_de_faturas,
         rotas_de_eventos,
-        rotas_de_custodiantes,
+        rotas_de_contrapartes,
         rotas_de_callback,
         rotas_de_risco,
         rotas_de_negocio,
         rotas_de_sandbox,
-        rotas_de_sandbox_de_custodia,
+        rotas_de_sandbox_de_contrapartes,
+        rotas_substituidas,
         rotas_de_admin,
         rotas_de_operacao,
     ):

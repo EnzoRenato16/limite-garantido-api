@@ -11,16 +11,17 @@ from sqlalchemy import BigInteger, case, func, select, type_coerce
 from app.api import apresentacao, esquemas
 from app.api.dependencias import RecursosDaApi, Unidade, exigir_administrador
 from app.api.erros import Problema
-from app.aplicacao import contas as casos_de_conta
-from app.aplicacao import custodia as casos_de_custodia
+from app.api.rotas.contas import resposta_da_garantia
+from app.aplicacao import contrapartes as casos_de_contraparte
 from app.aplicacao import parceiros as casos_de_parceiro
 from app.aplicacao import risco as casos_de_risco
+from app.aplicacao import trilhos as casos_de_trilho
+from app.aplicacao.conciliacao import conciliar_parceiro
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.erros import GarantiaNaoEncontrada, SolicitacaoDivergente
-from app.dominio.garantia import OrigemGarantia
 from app.dominio.politica import PoliticaRisco
 from app.infra.banco.modelos import GarantiaModelo, LancamentoModelo, PartidaModelo
-from app.infra.custodia import SimuladorDeCustodiantes
+from app.infra.contrapartes import SimuladorDeContrapartes
 from app.infra.politica_referencia import carregar_politica_de_referencia
 
 rotas_de_admin = APIRouter(
@@ -98,54 +99,51 @@ def rotacionar_chave(parceiro_id: str, uow: Unidade) -> esquemas.ParceiroCriado:
 
 
 @rotas_de_admin.post(
-    "/garantias/{garantia_id}/confirmacao-de-bloqueio",
+    "/garantias/{garantia_id}/confirmacao-de-registro",
     response_model=esquemas.GarantiaComLimite,
-    summary="Confirmar o gravame de uma garantia pendente",
+    summary="Confirmar o registro do gravame de uma garantia solicitada",
 )
-def confirmar_bloqueio(
+def confirmar_registro(
     garantia_id: str, uow: Unidade, recursos: RecursosDaApi
 ) -> esquemas.GarantiaComLimite:
-    """Confirmação manual do gravame. Fica na API administrativa de propósito: o
+    """Confirmação manual do registro do gravame. Fica na API administrativa de propósito: o
     parceiro não pode atestar a própria garantia.
 
-    - Garantia interna `pendente` (modo legado de custódia assíncrona): bloqueia.
-    - Garantia externa com pedido de gravame em aberto: é um atalho de sandbox para o
-      custodiante simulado. Passa pelo mesmo caso de uso do callback, com o mesmo id de
-      evento que o custodiante daria; se a confirmação dele chegar depois, é reconhecida
-      como a mesma e não é aplicada de novo.
+    - Garantia da casa `solicitado` (modo legado `CUSTODIA_MODO=assincrona`): registra na
+      infraestrutura (simulada) e libera o limite.
+    - Garantia de fora com pedido em aberto: é um atalho de sandbox para a contraparte
+      simulada. Passa pelo mesmo caso de uso do callback, com o mesmo id de evento que a
+      contraparte daria; se a resposta dela chegar depois, é reconhecida como a mesma.
     """
     linha = uow.sessao.execute(
-        select(GarantiaModelo.parceiro_id, GarantiaModelo.origem).where(
+        select(GarantiaModelo.parceiro_id, GarantiaModelo.contraparte_id).where(
             GarantiaModelo.id == garantia_id
         )
     ).first()
     if linha is None:
         raise GarantiaNaoEncontrada("Garantia não encontrada", garantia_id=garantia_id)
     parceiro = casos_de_parceiro.obter_parceiro(uow, linha.parceiro_id)
-    if linha.origem == OrigemGarantia.EXTERNA.value:
-        custodiante = recursos.custodiante
+    if linha.contraparte_id is not None:
+        contraparte = recursos.contraparte
         if not (
-            recursos.config.sandbox_habilitado and isinstance(custodiante, SimuladorDeCustodiantes)
+            recursos.config.sandbox_habilitado and isinstance(contraparte, SimuladorDeContrapartes)
         ):
-            # Confirmar no lugar do custodiante é atalho de sandbox, nunca de operação.
+            # Concluir no lugar da contraparte é atalho de sandbox, nunca de operação.
             raise SolicitacaoDivergente(
-                "Garantia externa só é confirmada pelo custodiante (o atalho exige o "
+                "Garantia de fora só é concluída pela contraparte (o atalho exige o "
                 "sandbox ligado)",
                 garantia_id=garantia_id,
             )
-        _, conta, garantia = casos_de_custodia.decidir_pelo_custodiante(
+        _, conta, garantia = casos_de_contraparte.decidir_pela_contraparte(
             uow,
             garantia_id,
-            casos_de_custodia.AcaoDoSandbox.CONFIRMAR,
-            custodiante.resposta,
-            casos_de_custodia.Canal.ADMIN,
+            casos_de_contraparte.AcaoDoSandbox.CONCLUIR,
+            contraparte.resposta,
+            casos_de_contraparte.Canal.ADMIN,
         )
     else:
-        conta, garantia = casos_de_conta.confirmar_bloqueio(uow, parceiro, garantia_id)
-    resposta = esquemas.GarantiaComLimite(
-        garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
-        limite=apresentacao.posicao(conta.posicao(parceiro.politica)),
-    )
+        conta, garantia = casos_de_trilho.confirmar_registro(uow, parceiro, garantia_id)
+    resposta = resposta_da_garantia(uow, parceiro, conta, garantia)
     uow.commit()
     return resposta
 
@@ -189,24 +187,61 @@ def rodar_virada_do_dia(
 
 
 @rotas_de_admin.post(
-    "/rotinas/custodia",
+    "/rotinas/contrapartes",
     response_model=esquemas.ResumoDaRotina,
-    summary="Rodar a rotina de custódia (polling de reserva)",
+    summary="Rodar a rotina das contrapartes (polling de reserva)",
 )
-def rodar_custodia(
+def rodar_contrapartes(
     recursos: RecursosDaApi, parceiro_id: FiltroDeParceiro = None
 ) -> esquemas.ResumoDaRotina:
-    """Para cada garantia que espera um custodiante externo (simulado): envia o pedido
-    que ainda não saiu, consulta o que já saiu, aplica a resposta que estiver pronta e
-    expira o que passou do prazo (avisando o parceiro por webhook). O worker roda isto
-    a cada `CUSTODIA_INTERVALO_SEGUNDOS`; o endpoint existe para operação manual."""
-    processadas, erros, eventos = casos_de_custodia.processar_custodia(
+    """Para cada garantia com gravame `solicitado` em contraparte de fora (simulada): envia o
+    pedido que ainda não saiu, consulta o que já saiu, aplica a resposta que estiver pronta e
+    encerra pelo prazo do trilho (transferência e TD sem resposta: `cancelado` e `recusado`;
+    portabilidade e Res. Conjunta 12: continuam, marcadas com `prazo_regulatorio_vencido`).
+    O worker roda isto a cada `CONTRAPARTES_INTERVALO_SEGUNDOS`; o endpoint existe para
+    operação manual."""
+    processadas, erros, eventos = casos_de_contraparte.processar_contrapartes(
         recursos.abrir_unidade,
         timedelta(minutes=recursos.config.custodia_prazo_legado_minutos),
         parceiro_id,
     )
     return esquemas.ResumoDaRotina(
         contas_processadas=processadas, contas_com_erro=erros, eventos_gerados=eventos
+    )
+
+
+@rotas_de_admin.post(
+    "/rotinas/baixas",
+    response_model=esquemas.ResumoDaRotina,
+    summary="Rodar a baixa dos gravames com baixa pedida",
+)
+def rodar_baixas(
+    recursos: RecursosDaApi, parceiro_id: FiltroDeParceiro = None
+) -> esquemas.ResumoDaRotina:
+    """Baixa, na infraestrutura (simulada), os gravames de garantia liberada, executada ou de
+    empréstimo quitado. O prazo é de 2 dias úteis a partir do pedido; o worker faz isto a cada
+    ciclo."""
+    processadas, erros, eventos = casos_de_contraparte.processar_baixas(
+        recursos.abrir_unidade, parceiro_id
+    )
+    return esquemas.ResumoDaRotina(
+        contas_processadas=processadas, contas_com_erro=erros, eventos_gerados=eventos
+    )
+
+
+@rotas_de_admin.get(
+    "/conciliacao",
+    response_model=esquemas.ConciliacaoResposta,
+    summary="Conciliar a dívida com o gravame registrado",
+)
+def conciliacao(uow: Unidade, parceiro_id: FiltroDeParceiro = None) -> esquemas.ConciliacaoResposta:
+    """Só leitura. Aponta `gravame_sem_divida` (gravame vigente de empréstimo que já não está
+    em aberto), `divida_sem_gravame` (dívida do cartão ou de empréstimo sem gravame vigente
+    que a cubra) e `baixa_atrasada` (baixa pedida e não feita depois do prazo)."""
+    divergencias = conciliar_parceiro(uow, parceiro_id)
+    return esquemas.ConciliacaoResposta(
+        divergencias=[apresentacao.divergencia(d) for d in divergencias],
+        total=len(divergencias),
     )
 
 

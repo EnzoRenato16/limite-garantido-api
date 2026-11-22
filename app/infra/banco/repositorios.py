@@ -206,6 +206,9 @@ class RepositorioDeContasSql:
             )
             .order_by(EmprestimoModelo.id)
         ).all()
+        return self._emprestimos_dos_modelos(modelos)
+
+    def _emprestimos_dos_modelos(self, modelos: Sequence[EmprestimoModelo]) -> list[Emprestimo]:
         if not modelos:
             return []
         ids = [m.id for m in modelos]
@@ -235,6 +238,41 @@ class RepositorioDeContasSql:
             )
             for m in modelos
         ]
+
+    # Leituras sem trava, de qualquer estado (a API de consulta).
+    def obter_com_encerradas(self, parceiro_id: str, conta_id: str) -> Conta | None:
+        """A conta com todas as garantias, inclusive as de gravame já encerrado. Só leitura."""
+        conta = self.obter(parceiro_id, conta_id)
+        if conta is None:
+            return None
+        vivas = {g.id for g in conta.garantias}
+        consulta = (
+            select(GarantiaModelo, GravameModelo)
+            .join(GravameModelo, GravameModelo.garantia_id == GarantiaModelo.id)
+            .where(GarantiaModelo.conta_id == conta_id)
+            .order_by(GarantiaModelo.id)
+        )
+        for modelo, gravame in self._sessao.execute(consulta).all():
+            if modelo.id not in vivas:
+                conta.garantias.append(_garantia_do_modelo(modelo, gravame, {}))
+        conta.garantias.sort(key=lambda g: g.id)
+        return conta
+
+    def emprestimos_por_id(self, ids: Sequence[str]) -> dict[str, Emprestimo]:
+        modelos = self._sessao.scalars(
+            select(EmprestimoModelo).where(EmprestimoModelo.id.in_(ids))
+        ).all()
+        return {e.id: e for e in self._emprestimos_dos_modelos(modelos)}
+
+    def obter_emprestimo(self, parceiro_id: str, emprestimo_id: str) -> Emprestimo | None:
+        modelo = self._sessao.scalars(
+            select(EmprestimoModelo).where(
+                EmprestimoModelo.id == emprestimo_id, EmprestimoModelo.parceiro_id == parceiro_id
+            )
+        ).one_or_none()
+        if modelo is None:
+            return None
+        return self._emprestimos_dos_modelos([modelo])[0]
 
     def _saldos(self, conta_id: str) -> Saldos:
         linhas = self._sessao.execute(

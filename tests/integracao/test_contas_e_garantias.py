@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
 
-from app.api.fabrica import criar_app
-from app.config import Configuracao
-from app.infra.custodia import CustodiaAssincrona
-from app.infra.relogio import RelogioFixo
-from tests.conftest import ADMIN, Parceiro, criar_parceiro, politica_de_teste
+from tests.conftest import Parceiro, criar_parceiro, politica_de_teste
 
 
 def test_conta_nasce_ativa_e_sem_limite(parceiro: Parceiro) -> None:
@@ -49,7 +43,8 @@ def test_ativo_fora_da_politica_do_parceiro_e_recusado(cliente: TestClient) -> N
     )
     conta = so_cdb.abrir_conta()
     resposta = so_cdb.post(
-        f"/v1/contas/{conta}/garantias", {"tipo_ativo": "acoes", "valor": "1000.00"}
+        f"/v1/contas/{conta}/garantias",
+        {"tipo_ativo": "acoes", "valor": "1000.00", "produto": "emprestimo"},
     )
     assert resposta.status_code == 422
     assert resposta.json()["codigo"] == "ativo_nao_aceito"
@@ -79,7 +74,8 @@ def test_valores_invalidos_sao_recusados_na_borda(parceiro: Parceiro) -> None:
 def test_valor_pode_vir_como_numero_json_sem_perder_centavos(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
     resposta = parceiro.post(
-        f"/v1/contas/{conta}/garantias", {"tipo_ativo": "cdb", "valor": 1234.56}
+        f"/v1/contas/{conta}/garantias",
+        {"tipo_ativo": "cdb", "valor": 1234.56, "liquidez_dias": 0},
     )
     assert resposta.status_code == 201
     assert resposta.json()["garantia"]["valor_de_mercado"] == "1234.56"
@@ -96,50 +92,12 @@ def test_garantia_devolve_ltv_e_limite_gerado(parceiro: Parceiro) -> None:
     assert garantia["limite_gerado"] == "4250.00"
     consultada = parceiro.get(f"/v1/garantias/{garantia['id']}").json()
     assert consultada == garantia
-    assert parceiro.tipos_de_evento(conta) == ["garantia.bloqueada", "limite.atualizado"]
-
-
-def test_custodia_assincrona_deixa_a_garantia_pendente_ate_a_confirmacao(
-    config: Configuracao, engine: Engine, relogio: RelogioFixo
-) -> None:
-    app: FastAPI = criar_app(
-        config, engine=engine, relogio=relogio, custodiante=CustodiaAssincrona()
-    )
-    with TestClient(app) as cliente:
-        parceiro = criar_parceiro(cliente, politica=politica_de_teste())
-        conta = parceiro.abrir_conta()
-        resposta = parceiro.post(
-            f"/v1/contas/{conta}/garantias", {"tipo_ativo": "tesouro_selic", "valor": "1000.00"}
-        )
-        # 202: pedido aceito, mas o gravame ainda não foi confirmado. Sem limite ainda.
-        assert resposta.status_code == 202
-        garantia = resposta.json()["garantia"]
-        assert garantia["estado"] == "pendente"
-        assert resposta.json()["limite"]["limite_total"] == "0.00"
-        assert parceiro.comprar(conta, "10.00").status_code == 402
-        assert parceiro.tipos_de_evento(conta) == ["compra.negada"]
-
-        # Pendente não pode ser liberada nem remarcada.
-        liberar = parceiro.post(f"/v1/garantias/{garantia['id']}/liberacao")
-        assert liberar.status_code == 409
-        assert liberar.json()["codigo"] == "transicao_de_estado_invalida"
-        assert liberar.json()["estado_atual"] == "pendente"
-
-        # Quem confirma é a custódia, pela API administrativa. O parceiro não consegue.
-        caminho = f"/v1/admin/garantias/{garantia['id']}/confirmacao-de-bloqueio"
-        assert cliente.post(caminho, headers=parceiro.cabecalhos).status_code == 401
-        confirmada = cliente.post(caminho, headers=ADMIN)
-        assert confirmada.status_code == 200
-        assert confirmada.json()["garantia"]["estado"] == "bloqueada"
-        assert confirmada.json()["limite"]["limite_total"] == "950.00"
-
-        de_novo = cliente.post(caminho, headers=ADMIN)
-        assert de_novo.status_code == 409
-        assert de_novo.json()["codigo"] == "transicao_de_estado_invalida"
-        inexistente = cliente.post(
-            "/v1/admin/garantias/gar_nao_existe/confirmacao-de-bloqueio", headers=ADMIN
-        )
-        assert inexistente.status_code == 404
+    assert garantia["estado"] == "registrado"
+    assert parceiro.tipos_de_evento(conta) == [
+        "gravame.solicitado",
+        "gravame.registrado",
+        "limite.atualizado",
+    ]
 
 
 def test_transicoes_invalidas_respondem_409_com_os_estados(parceiro: Parceiro) -> None:
@@ -150,7 +108,8 @@ def test_transicoes_invalidas_respondem_409_com_os_estados(parceiro: Parceiro) -
     assert de_novo.status_code == 409
     corpo = de_novo.json()
     assert corpo["codigo"] == "transicao_de_estado_invalida"
-    assert corpo["estado_atual"] == "liberada"
+    assert corpo["estado_atual"] == "registrado"
+    assert corpo["baixa_pedida"] is True  # a baixa já foi pedida: não há o que liberar de novo
     assert corpo["type"] == "/v1/erros/transicao_de_estado_invalida"
     remarcar = parceiro.remarcar(garantia["id"], variacao_percentual="-10")
     assert remarcar.status_code == 409

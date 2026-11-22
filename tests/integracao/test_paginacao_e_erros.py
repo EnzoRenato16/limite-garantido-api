@@ -67,7 +67,8 @@ def test_eventos_paginam_pela_sequencia_e_aceitam_filtros(parceiro: Parceiro) ->
         "limite.atualizado",
         "compra.aprovada",
         "limite.atualizado",
-        "garantia.bloqueada",
+        "gravame.registrado",
+        "gravame.solicitado",
     ]
     negadas = parceiro.get("/v1/eventos", params={"tipo": "compra.negada"}).json()["dados"]
     assert [e["dados"]["motivo"] for e in negadas] == ["limite_insuficiente"]
@@ -169,7 +170,7 @@ def test_openapi_esta_em_portugues_e_documenta_os_erros(cliente: TestClient) -> 
     assert "Idempotency-Key" in parametros
     assert "ApiKeyDoParceiro" in esquema["components"]["securitySchemes"]
     exemplo = esquema["components"]["schemas"]["NovaGarantia"]["example"]
-    assert exemplo == {"tipo_ativo": "cdb", "valor": "5000.00"}
+    assert exemplo == {"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0}
     # Toda operação tem resumo e descrição.
     for caminho, metodos in esquema["paths"].items():
         for metodo, operacao in metodos.items():

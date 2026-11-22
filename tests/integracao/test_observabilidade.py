@@ -69,7 +69,7 @@ def test_metricas_usam_o_template_da_rota_e_contam_eventos_de_negocio(
     assert f'{compras},status="402"}} 1.0' in texto
     assert 'lg_eventos_total{tipo="compra.aprovada"} 2.0' in texto
     assert 'lg_eventos_total{tipo="compra.negada"} 1.0' in texto
-    assert 'lg_eventos_total{tipo="garantia.bloqueada"} 1.0' in texto
+    assert 'lg_eventos_total{tipo="gravame.registrado"} 1.0' in texto
     assert "lg_http_duracao_segundos_bucket" in texto
     assert 'lg_webhooks_na_fila{estado="pendente"}' in texto
 
@@ -82,7 +82,7 @@ def test_evento_de_operacao_desfeita_nao_entra_na_metrica(
     parceiro.bloquear(conta, "cdb", "100.00")
     assert parceiro.pagar(conta, "1.00").status_code == 422
     texto = cliente.get("/metrics").text
-    assert 'lg_eventos_total{tipo="garantia.bloqueada"} 1.0' in texto
+    assert 'lg_eventos_total{tipo="gravame.registrado"} 1.0' in texto
     assert "fatura.paga" not in texto
 
 

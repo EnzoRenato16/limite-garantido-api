@@ -107,40 +107,192 @@ class ContaResposta(BaseModel):
 
 
 # ---------------------------------------------------------------- garantias
-IdDeCustodiante = Annotated[
+IdDeContraparte = Annotated[
     str,
     Field(
         pattern=r"^[a-z0-9_]{1,40}$",
-        description="Id do custodiante externo (veja GET /v1/custodiantes)",
-        examples=["custodiante_agil"],
+        description="Id da contraparte (veja GET /v1/contrapartes). Todas são simuladas.",
+        examples=["corretora_de_origem_simulada"],
     ),
 ]
+Produto = Literal["cartao", "emprestimo"]
+Instrumento = Literal["cessao_fiduciaria", "alienacao_fiduciaria", "penhor", "direito_de_resgate"]
 
 
 class NovaGarantia(Esquema):
+    """Ativo custodiado na casa (CTVM do grupo ou cotas de fundo da DTVM do grupo)."""
+
     tipo_ativo: TipoAtivo = Field(description="Tipo do investimento que vira garantia")
     valor: ValorDeEntrada
-    custodiante_id: IdDeCustodiante | None = Field(
+    produto: Produto = Field(
+        default="cartao",
+        description="O que a garantia sustenta: o limite do cartão ou um empréstimo.",
+    )
+    instrumento: Instrumento | None = Field(
+        default=None, description="Sem ele, vale o padrão do ativo (veja a matriz)."
+    )
+    emissor: str | None = Field(
+        default=None, max_length=120, description="Emissor, para a concentração contra o FGC."
+    )
+    vencimento: date | None = Field(
+        default=None, description="Vencimento do título: limita o LTV e o prazo do empréstimo."
+    )
+    liquidez_dias: int | None = Field(
         default=None,
-        description="Só para investimento em outra instituição (fase 2, simulada). Sem ele, "
-        "o investimento fica dentro de casa e o bloqueio é imediato.",
+        ge=0,
+        le=365,
+        description="Prazo de resgate em dias úteis (0 = D+0). O cartão exige liquidez "
+        "diária no CDB e até D+1 no fundo DI.",
+    )
+    aplicado_em: date | None = Field(
+        default=None, description="Data da aplicação, para a alíquota do IR na execução."
+    )
+    custodiante_id: str | None = Field(
+        default=None,
+        description="Removido: responde 410. Para o ativo em outra instituição use "
+        "`POST /v1/contas/{conta_id}/portabilidades` ou `/transferencias-de-custodia`.",
     )
 
     model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"tipo_ativo": "cdb", "valor": "5000.00"}}
+        extra="forbid",
+        json_schema_extra={
+            "example": {"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0}
+        },
+    )
+
+
+class NovaEntradaDeFora(Esquema):
+    """Pedido de entrada de um ativo que está em outra instituição."""
+
+    tipo_ativo: TipoAtivo = Field(description="Tipo do investimento que vira garantia")
+    valor: ValorDeEntrada
+    contraparte_id: IdDeContraparte
+    produto: Produto = Field(default="cartao", description="Cartão ou empréstimo.")
+    instrumento: Instrumento | None = None
+    emissor: str | None = Field(default=None, max_length=120)
+    vencimento: date | None = None
+    liquidez_dias: int | None = Field(default=None, ge=0, le=365)
+    aplicado_em: date | None = None
+    ja_em_garantia: bool = Field(
+        default=False,
+        description="O ativo já está dado em garantia na origem: impedimento à portabilidade "
+        "(Res. CVM 210, art. 19, §1º, IV, b).",
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "tipo_ativo": "acoes",
+                "valor": "10000.00",
+                "contraparte_id": "corretora_de_origem_simulada",
+                "produto": "emprestimo",
+            }
+        },
+    )
+
+
+class NovaGarantiaDoTesouro(Esquema):
+    """Gravame sobre título do Tesouro Direto pelo TD Garantia (Selic)."""
+
+    tipo_ativo: Literal["tesouro_selic", "tesouro_prefixado", "tesouro_ipca"]
+    valor: ValorDeEntrada
+    contraparte_id: IdDeContraparte = Field(
+        description="O agente de custódia do investidor no Tesouro Direto (simulado)."
+    )
+    produto: Produto = Field(default="emprestimo")
+    vencimento: date | None = None
+    aplicado_em: date | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "tipo_ativo": "tesouro_selic",
+                "valor": "10000.00",
+                "contraparte_id": "agente_td_simulado",
+            }
+        },
+    )
+
+
+class NovaGarantiaDePrevidencia(Esquema):
+    """Direito de resgate de PGBL, VGBL ou capitalização, pela Res. Conjunta 12."""
+
+    valor: ValorDeEntrada = Field(description="Valor informado pelo cliente; vale o da operadora.")
+    contraparte_id: IdDeContraparte = Field(description="A entidade operadora (simulada).")
+    produto: Produto = Field(
+        default="emprestimo",
+        description="Só `emprestimo`: a Res. Conjunta 12 exclui o cartão (art. 1º, §2º, VII). "
+        "`cartao` responde 422 `previdencia_so_no_emprestimo`.",
+    )
+    plano: str = Field(
+        min_length=1,
+        max_length=20,
+        description="pgbl, vgbl ou capitalizacao. FAPI e outros ficam fora (art. 1º, §1º).",
+        examples=["pgbl"],
+    )
+    fim_da_acumulacao: date = Field(
+        description="Fim da acumulação do plano: o prazo do crédito não passa dele (art. 6º, §3º)."
+    )
+    aplicado_em: date | None = None
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "valor": "20000.00",
+                "contraparte_id": "entidade_operadora_simulada",
+                "plano": "pgbl",
+                "fim_da_acumulacao": "2040-01-01",
+            }
+        },
     )
 
 
 class SolicitacaoResposta(BaseModel):
-    """Pedido em aberto no custodiante externo."""
+    """Pedido de entrada em aberto na contraparte."""
 
     id: str = Field(examples=["sol_01JCD3N8X5T9Q0W2R4Y6U8I0PZ"])
-    tipo: str = Field(description="gravame, liberacao ou execucao")
+    tipo: str = Field(description="entrada")
     criada_em: datetime
-    prazo_ate: datetime = Field(description="Sem resposta até aqui, o pedido expira")
-    enviada_em: datetime | None = Field(
-        description="Quando o custodiante aceitou o pedido. Nulo enquanto não foi enviado."
+    prazo_ate: datetime = Field(
+        description="Fim do prazo do trilho, em dias úteis a partir de hoje (catálogo e "
+        "calendário de feriados)."
     )
+    enviada_em: datetime | None = Field(
+        description="Quando a contraparte aceitou o pedido. Nulo enquanto não foi enviado."
+    )
+    prazo_regulatorio_vencido: bool = Field(
+        default=False,
+        description="Portabilidade e Res. Conjunta 12: o prazo passou sem resposta. O pedido "
+        "continua em aberto; a obrigação é da contraparte.",
+    )
+
+
+class GravameResposta(BaseModel):
+    """O registro (simulado) na infraestrutura. O projeto não integra com B3 nem Selic."""
+
+    estado: str = Field(
+        examples=["registrado"],
+        description="solicitado, registrado, liberado_para_excussao, executado, baixado, "
+        "recusado ou cancelado. O limite só aparece em `registrado`.",
+    )
+    infraestrutura: str = Field(examples=["b3_balcao"])
+    instrumento: str = Field(examples=["cessao_fiduciaria"])
+    trilho: str = Field(examples=["casa"])
+    protocolo: str | None = Field(default=None, examples=["SIM-b3_balcao-gar_01JCD3N8"])
+    baixa_prazo: date | None = Field(
+        default=None, description="Até quando a baixa precisa ser feita (dias úteis)."
+    )
+    motivo: str | None = Field(default=None, description="Motivo da recusa ou do cancelamento")
+
+
+class InformacoesDaOperadoraResposta(BaseModel):
+    valor_disponivel: ValorDeSaida
+    tributos_informados: ValorDeSaida
+    valor_liquido: ValorDeSaida = Field(description="O que vale como garantia (art. 7º)")
+    recebidas_em: datetime
 
 
 class GarantiaResposta(BaseModel):
@@ -148,30 +300,30 @@ class GarantiaResposta(BaseModel):
     conta_id: str
     tipo_ativo: TipoAtivo
     estado: str = Field(
-        examples=["bloqueada"],
-        description="Interna: pendente, bloqueada, parcialmente_executada, liberada ou "
-        "executada. Externa também: solicitada, gravame_pendente, gravame_confirmado, "
-        "gravame_recusado, gravame_expirado, liberacao_pendente e execucao_solicitada.",
+        examples=["registrado"], description="O estado do gravame (o mesmo de `gravame.estado`)."
     )
+    produto: str = Field(examples=["cartao"], description="cartao ou emprestimo")
     valor_aplicado: ValorDeSaida = Field(description="Quanto o cliente aplicou")
     valor_de_mercado: ValorDeSaida = Field(description="Quanto a garantia vale hoje")
-    ltv: str | None = Field(examples=["0.85"], description="LTV do ativo na política do parceiro")
-    limite_gerado: ValorDeSaida = Field(description="Limite que esta garantia libera hoje")
+    ltv: str | None = Field(
+        examples=["0.85"], description="LTV efetivo: o menor entre a política e o teto do catálogo"
+    )
+    limite_gerado: ValorDeSaida = Field(description="Limite do cartão que esta garantia libera")
     marcada_em: date = Field(description="Data da última marcação a mercado")
     criada_em: datetime
-    origem: str = Field(
-        default="interna",
-        description="interna (fase 1) ou externa (custodiante externo, simulado)",
-    )
-    custodiante_id: str | None = Field(default=None, description="Só na garantia externa")
+    gravame: GravameResposta
+    contraparte_id: str | None = Field(default=None, description="Só nos trilhos de fora")
     solicitacao: SolicitacaoResposta | None = Field(
-        default=None, description="Pedido em aberto no custodiante externo, se houver"
+        default=None, description="Pedido de entrada em aberto na contraparte, se houver"
     )
-    valor_em_execucao: ValorDeSaida | None = Field(
-        default=None, description="Quanto foi mandado vender e ainda não teve confirmação"
-    )
-    motivo: str | None = Field(
-        default=None, description="Motivo da última recusa ou falha do custodiante"
+    emprestimo_id: str | None = Field(default=None, description="Empréstimo que ela cobre")
+    plano: str | None = None
+    fim_da_acumulacao: date | None = None
+    informacoes: InformacoesDaOperadoraResposta | None = None
+    alertas: list[str] = Field(
+        default_factory=list,
+        description="Avisos que o parceiro precisa repassar. O penhor traz o alerta da "
+        "Lei 11.101, art. 49, §5º.",
     )
 
 
@@ -417,39 +569,44 @@ class CatalogoDeErro(BaseModel):
     descricao: str
 
 
-# -------------------------------------------------------------- custódia
-class CustodianteResposta(BaseModel):
-    id: str = Field(examples=["custodiante_agil"])
-    nome: str = Field(examples=["Custodiante Ágil (simulador)"])
+# -------------------------------------------------------------- contrapartes
+class ContraparteResposta(BaseModel):
+    id: str = Field(examples=["corretora_de_origem_simulada"])
+    nome: str = Field(examples=["Corretora de origem (simulador)"])
     descricao: str
     simulado: bool = Field(
-        description="Sempre true neste projeto: não há integração com custodiante real"
+        description="Sempre true neste projeto: não há integração com instituição real"
     )
-    prazo_de_resposta_minutos: int = Field(
-        description="Sem resposta neste prazo, o pedido expira e o parceiro é avisado"
-    )
+    trilhos: list[str] = Field(description="Os trilhos de entrada que ela atende")
 
 
-class CallbackDoCustodiante(Esquema):
-    """Resposta do custodiante a um pedido. Chega assinada (HMAC-SHA256)."""
+class CallbackDaContraparte(Esquema):
+    """Resposta da contraparte a um pedido. Chega assinada (HMAC-SHA256)."""
 
     evento_id: str = Field(
         pattern=r"^[A-Za-z0-9_.:-]{1,80}$",
-        description="Id do evento do lado do custodiante. A mesma resposta enviada de novo "
+        description="Id do evento do lado da contraparte. A mesma resposta enviada de novo "
         "(ou já obtida por consulta) tem o mesmo id e não é aplicada duas vezes.",
     )
     solicitacao_id: str = Field(
         pattern=r"^[A-Za-z0-9_]{1,40}$", description="Id do pedido que está sendo respondido"
     )
-    status: Literal["confirmada", "recusada"]
-    valor_obtido: Decimal | None = Field(
+    status: Literal["concluida", "recusada", "impedimento"] = Field(
+        description="`recusada` só no TD Garantia e na transferência de custódia; "
+        "`impedimento` só na portabilidade (Res. CVM 210, art. 19). A entidade operadora "
+        "não recusa (Res. Conjunta 12, art. 18): recusa dela é 422."
+    )
+    motivo: str | None = Field(default=None, max_length=200, description="Motivo da recusa")
+    valor_disponivel: Decimal | None = Field(
         default=None,
         ge=0,
         max_digits=14,
         decimal_places=2,
-        description="Só na confirmação de execução: quanto a venda rendeu",
+        description="Só a entidade operadora, ao concluir (art. 7º).",
     )
-    motivo: str | None = Field(default=None, max_length=200, description="Motivo da recusa")
+    tributos_informados: Decimal | None = Field(
+        default=None, ge=0, max_digits=14, decimal_places=2, description="Só a operadora."
+    )
 
     model_config = ConfigDict(
         extra="forbid",
@@ -457,7 +614,7 @@ class CallbackDoCustodiante(Esquema):
             "example": {
                 "evento_id": "evc_3f9a1c7d2b8e4a6f0c1d2e3f4a",
                 "solicitacao_id": "sol_01JCD3N8X5T9Q0W2R4Y6U8I0PZ",
-                "status": "confirmada",
+                "status": "concluida",
             }
         },
     )
@@ -466,23 +623,101 @@ class CallbackDoCustodiante(Esquema):
 class ResultadoDoCallback(BaseModel):
     resultado: Literal["aplicada", "duplicada", "obsoleta"] = Field(
         description="aplicada: mudou a garantia. duplicada: já recebida antes. obsoleta: o "
-        "pedido não esperava mais esta resposta (expirou ou foi encerrado); nada mudou."
+        "pedido não esperava mais esta resposta (encerrado ou concluído); nada mudou."
     )
 
 
 class DecisaoNoSandbox(Esquema):
-    acao: Literal["confirmar", "recusar", "nao_responder"] = Field(
-        description="O que o custodiante simulado faz com o pedido em aberto. "
-        "nao_responder vence o prazo agora e expira o pedido."
+    acao: Literal["concluir", "recusar", "nao_responder"] = Field(
+        description="O que a contraparte simulada faz com o pedido em aberto. "
+        "nao_responder vence o prazo agora e aplica a regra do prazo do trilho."
     )
-    valor_obtido: Decimal | None = Field(
-        default=None,
-        ge=0,
-        max_digits=14,
-        decimal_places=2,
-        description="Só ao confirmar uma execução: quanto a venda rendeu. Sem ele, usa o "
-        "preço do perfil do custodiante.",
+
+
+class EventoDeCustodiaNoSandbox(Esquema):
+    """Cupom ou amortização que o Tesouro paga ao agente de custódia do garantido."""
+
+    valor: ValorDeEntrada
+
+
+class RespostaDeRota(BaseModel):
+    """Corpo do 410: a rota antiga foi substituída."""
+
+    rota_nova: str
+
+
+# ------------------------------------------------------------------ empréstimo
+class NovoEmprestimo(Esquema):
+    valor: ValorDeEntrada
+    parcelas: int = Field(ge=1, le=120, description="Número de parcelas mensais (Tabela Price)")
+    garantia_ids: list[Annotated[str, Field(pattern=r"^gar_[A-Za-z0-9]{1,36}$")]] = Field(
+        min_length=1,
+        max_length=20,
+        description="Garantias de produto empréstimo, com gravame registrado. A de previdência "
+        "ainda `solicitado`, com as informações da operadora, é formalizada neste passo.",
     )
+    primeiro_vencimento: date | None = Field(
+        default=None, description="Sem ele, 30 dias corridos a partir de hoje."
+    )
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "valor": "5000.00",
+                "parcelas": 6,
+                "garantia_ids": ["gar_01JCD3N8X5T9Q0W2R4Y6U8I0PB"],
+            }
+        },
+    )
+
+
+class ParcelaResposta(BaseModel):
+    numero: int
+    vencimento: date
+    valor: ValorDeSaida
+    juros: ValorDeSaida
+    amortizacao: ValorDeSaida
+    paga_em: datetime | None = None
+
+
+class EmprestimoResposta(BaseModel):
+    id: str = Field(examples=["emp_01JCD3N8X5T9Q0W2R4Y6U8I0PD"])
+    conta_id: str
+    estado: str = Field(description="ativo, em_atraso, quitado ou liquidado_por_execucao")
+    principal: ValorDeSaida
+    taxa_ao_mes: str = Field(examples=["0.0199"])
+    saldo_devedor: ValorDeSaida
+    contratado_em: datetime
+    garantia_ids: list[str]
+    dias_minimos_execucao: int = Field(
+        description="Primeiro dia de atraso em que a garantia pode ser executada"
+    )
+    dias_em_atraso: int
+    parcelas: list[ParcelaResposta]
+
+
+class NovoPagamentoDeEmprestimo(Esquema):
+    valor: ValorDeEntrada
+
+
+class EmprestimoComConta(BaseModel):
+    emprestimo: EmprestimoResposta
+    limite: PosicaoDeLimite
+
+
+# --------------------------------------------------------------- conciliação
+class DivergenciaResposta(BaseModel):
+    tipo: Literal["gravame_sem_divida", "divida_sem_gravame", "baixa_atrasada"]
+    conta_id: str
+    garantia_id: str | None
+    emprestimo_id: str | None
+    detalhe: str
+
+
+class ConciliacaoResposta(BaseModel):
+    divergencias: list[DivergenciaResposta]
+    total: int
 
 
 # ----------------------------------------------------------- painel de risco

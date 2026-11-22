@@ -125,7 +125,7 @@ def _exigir_resposta_possivel(
             f"O trilho {trilho} não admite recusa nem impedimento: a entidade operadora não "
             "pode recusar pedido que siga as normas (Res. Conjunta 12, art. 18)",
             trilho=str(trilho),
-            status=str(status),
+            status_da_resposta=str(status),
         )
     # Só a portabilidade tem impedimento (Res. CVM 210, art. 19); os demais recusam.
     esperado = (
@@ -137,7 +137,7 @@ def _exigir_resposta_possivel(
         raise RespostaInvalida(
             f"No trilho {trilho} o desfecho negativo é `{esperado}`, não `{status}`",
             trilho=str(trilho),
-            status=str(status),
+            status_da_resposta=str(status),
         )
 
 
