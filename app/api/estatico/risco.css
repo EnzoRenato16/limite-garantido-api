@@ -193,3 +193,47 @@
 @media (prefers-reduced-motion: reduce) {
   .barra-perda .parte { transition: none; }
 }
+
+/* ------------------------------------------------- aviso e tabelas regulatórias */
+.aviso-sintetico {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--deficit);
+  border-left-width: 4px;
+  border-radius: 6px;
+  color: var(--tinta);
+  background: var(--superficie);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.tabela-rolavel { overflow-x: auto; }
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  font-feature-settings: "tnum";
+}
+
+.tabela th,
+.tabela td {
+  padding: 0.4rem 0.6rem;
+  text-align: right;
+  border-bottom: 1px solid var(--linha);
+  white-space: nowrap;
+}
+
+.tabela th:first-child,
+.tabela td:first-child { text-align: left; }
+.tabela thead th { color: var(--tinta-suave); font-weight: 500; }
+.tabela td.alerta { color: var(--deficit); }

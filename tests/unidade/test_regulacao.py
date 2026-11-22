@@ -367,3 +367,14 @@ def test_politica_de_parceiro_valida_contra_o_catalogo(catalogo: CatalogoRegulat
         catalogo.validar_ltv_da_politica({T.ACOES: Decimal("0.71")})
     assert erro.value.codigo == "politica_ltv_acima_da_faixa"
     assert erro.value.detalhes["ltv_maximo"] == "0.70"
+
+
+def test_toda_carteira_de_provisao_em_uso_tem_piso(catalogo: CatalogoRegulatorio) -> None:
+    from dataclasses import replace
+
+    from app.dominio.regulacao import CarteiraDeProvisao
+
+    for carteira in (CarteiraDeProvisao.C2, CarteiraDeProvisao.C3, CarteiraDeProvisao.C5):
+        sem_piso = {c: p for c, p in catalogo.pisos_de_provisao.items() if c is not carteira}
+        with pytest.raises(ValorInvalido, match="sem piso"):
+            replace(catalogo, pisos_de_provisao=sem_piso)

@@ -170,7 +170,7 @@ def test_guardar_logo_depois_de_comecar_de_novo_vai_para_a_conta_nova(pagina: An
     pagina.get_by_role("button", name="Começar de novo").click()
     # Sem esperar nada: clica em seguida, como alguém com pressa.
     garantia = _guardar_externa(pagina, "custodiante_lento")
-    esperar(garantia).to_contain_text("Custodiante Lento")
+    esperar(garantia).to_contain_text("Agente de custódia B (simulado)")
     pagina.wait_for_timeout(2500)
     esperar(pagina.locator("#garantias > li")).to_have_count(1)
 
@@ -205,7 +205,13 @@ def test_resumo_do_topo_fica_visivel_ao_rolar_no_celular(pagina: Any) -> None:
     esperar(pagina.locator("#valor-usado")).to_be_in_viewport()
 
 
-CENARIOS = ["dia_normal", "crash_da_bolsa", "alta_de_juros", "custodiante_fora_do_ar"]
+CENARIOS = [
+    "dia_normal",
+    "crash_da_bolsa",
+    "alta_de_juros",
+    "quebra_de_emissor",
+    "agente_perde_participacao",
+]
 
 
 def test_painel_de_risco_mostra_os_numeros_da_api(pagina: Any) -> None:
@@ -240,11 +246,12 @@ def test_painel_de_risco_mostra_os_numeros_da_api(pagina: Any) -> None:
         esperar(pagina.locator("#grafico-ativos g")).to_have_count(
             len(api["concentracao_por_ativo"])
         )
-        esperar(pagina.locator("#grafico-custodiantes g")).to_have_count(
-            len(api["concentracao_por_custodiante"])
+        esperar(pagina.locator("#grafico-onde-esta g")).to_have_count(
+            len(api["concentracao_por_onde_esta"])
         )
+        esperar(pagina.locator("#aviso-sintetico")).to_contain_text("sintéticos")
         _fotografar(pagina, f"risco-{cenario}.png")
-    esperar(pagina.locator("#premissas")).to_contain_text("Custodiante Lento")
+    esperar(pagina.locator("#premissas")).to_contain_text("Agente de custódia B (simulado)")
 
 
 def test_painel_de_risco_recusa_choque_invalido(pagina: Any) -> None:

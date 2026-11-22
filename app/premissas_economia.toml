@@ -36,10 +36,10 @@ origem = "Premissa ilustrativa: saldo médio aplicado em garantia por cliente, d
 nome = "LTV médio"
 tipo = "fracao"
 unidade = "fração"
-minimo = "0.60"
-maximo = "1.00"
-razoavel = ["0.70", "0.95"]
-origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,50 (ações, FIIs e ETFs) a 0,90 (Tesouro Selic), no início das faixas do catálogo regulatório."
+minimo = "0.50"
+maximo = "0.90"
+razoavel = ["0.70", "0.90"]
+origem = "Premissa ilustrativa: média dentro dos LTVs da política de referência do projeto, que vão de 0,50 (ações, FIIs e ETFs) a 0,90 (Tesouro Selic), no início das faixas do catálogo regulatório. A faixa aceita acompanha esses extremos."
 
 [premissas.fracao_interna]
 nome = "Fração interna"
@@ -325,7 +325,7 @@ origem = "Premissa ilustrativa: clientes ativos por parceiro; sem fonte de merca
 [conjuntos.conservador]
 nome = "Conservador"
 descricao = "Gasto e saldo menores, mais gente na externa, custos e perda mais altos, receitas mais baixas."
-cenario_de_risco = "custodiante_fora_do_ar"
+cenario_de_risco = "agente_perde_participacao"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
 [conjuntos.conservador.valores]
@@ -367,7 +367,7 @@ clientes_por_parceiro = "10000"
 [conjuntos.base]
 nome = "Base"
 descricao = "Valores centrais ilustrativos, os mesmos da carteira sintética onde há referência."
-cenario_de_risco = "custodiante_fora_do_ar"
+cenario_de_risco = "agente_perde_participacao"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
 [conjuntos.base.valores]

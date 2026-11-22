@@ -22,8 +22,10 @@ from pathlib import Path
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.erros import ValorInvalido
 from app.dominio.politica import PoliticaRisco, TipoAtivo
+from app.dominio.regulacao import CatalogoRegulatorio, Produto, Trilho
 from app.dominio.stress import ContaNaCarteira, GarantiaNaCarteira, PremissasDaGarantiaExterna
 from app.infra.politica_referencia import carregar_politica_de_referencia
+from app.infra.regulacao import carregar_catalogo
 
 ARQUIVO_PADRAO = Path(__file__).resolve().parent.parent / "carteira_sintetica.toml"
 TAMANHO_PADRAO = 1000
@@ -50,11 +52,16 @@ class Cenario:
 
 @dataclass(frozen=True, slots=True)
 class ParametrosDaCarteira:
-    pesos_por_ativo: Mapping[TipoAtivo, int]
+    fracao_de_emprestimo: Decimal
+    pesos_por_ativo: Mapping[Produto, Mapping[TipoAtivo, int]]
     pesos_de_quantidade: Sequence[int]
     faixas_de_valor: Sequence[FaixaDeValor]
-    fracao_externa: Decimal
-    pesos_por_custodiante: Mapping[str, int]
+    pesos_por_agente_de_custodia: Mapping[str, int]
+    entidade_operadora: str
+    pesos_por_emissor: Mapping[str, int]
+    prazos_em_anos: Mapping[TipoAtivo, Sequence[int]]
+    # "Toda garantia de fora" da conta do negócio.
+    pesos_por_agente_de_fora: Mapping[str, int]
     uso_minimo_percentual: int
     uso_maximo_percentual: int
     fracao_em_chamada: Decimal
@@ -80,15 +87,28 @@ def carregar_parametros(arquivo: Path = ARQUIVO_PADRAO) -> ParametrosDaCarteira:
             premissas=PremissasDaGarantiaExterna(
                 custodiantes_indisponiveis=frozenset(campos["custodiantes_indisponiveis"]),
                 dias_extra_de_execucao=int(campos["dias_extra_de_execucao"]),
+                atraso_por_onde_esta={
+                    local: int(dias)
+                    for local, dias in campos.get("atraso_por_onde_esta", {}).items()
+                },
+                emissores_em_quebra=frozenset(campos.get("emissores_em_quebra", [])),
                 desconto_diario_por_ativo=desconto,
             ),
         )
         for cenario_id, campos in dados["cenarios"].items()
     }
-    externa = dados["garantia_externa"]
+    onde = dados["onde_esta"]
     uso = dados["uso_do_limite"]
     return ParametrosDaCarteira(
-        pesos_por_ativo={TipoAtivo(t): int(p) for t, p in dados["pesos_por_ativo"].items()},
+        fracao_de_emprestimo=Decimal(dados["produtos"]["fracao_de_emprestimo"]),
+        pesos_por_ativo={
+            Produto.CARTAO: {
+                TipoAtivo(t): int(p) for t, p in dados["pesos_por_ativo_no_cartao"].items()
+            },
+            Produto.EMPRESTIMO: {
+                TipoAtivo(t): int(p) for t, p in dados["pesos_por_ativo_no_emprestimo"].items()
+            },
+        },
         pesos_de_quantidade=[int(p) for p in dados["garantias_por_cliente"]["pesos"]],
         faixas_de_valor=[
             FaixaDeValor(
@@ -98,8 +118,17 @@ def carregar_parametros(arquivo: Path = ARQUIVO_PADRAO) -> ParametrosDaCarteira:
             )
             for faixa in dados["faixas_de_valor"]
         ],
-        fracao_externa=Decimal(externa["fracao"]),
-        pesos_por_custodiante={c: int(p) for c, p in externa["pesos_por_custodiante"].items()},
+        pesos_por_agente_de_custodia={
+            a: int(p) for a, p in onde["pesos_por_agente_de_custodia"].items()
+        },
+        entidade_operadora=str(onde["entidade_operadora"]),
+        pesos_por_emissor={e: int(p) for e, p in dados["emissores"]["pesos"].items()},
+        prazos_em_anos={
+            TipoAtivo(t): [int(a) for a in anos] for t, anos in dados["prazos_em_anos"].items()
+        },
+        pesos_por_agente_de_fora={
+            a: int(p) for a, p in dados["garantia_de_fora"]["pesos_por_agente"].items()
+        },
         uso_minimo_percentual=int(uso["minimo_percentual"]),
         uso_maximo_percentual=int(uso["maximo_percentual"]),
         fracao_em_chamada=Decimal(uso["fracao_em_chamada"]),
@@ -113,39 +142,86 @@ def _sorteia(sorteio: random.Random, probabilidade: Decimal) -> bool:
     return sorteio.randrange(10_000) < int(probabilidade * 10_000)
 
 
+# Como cada ativo chega à condição de garantia, para conferir a combinação no catálogo.
+_TRILHO_DO_ATIVO = {
+    TipoAtivo.TESOURO_SELIC: Trilho.TD_GARANTIA,
+    TipoAtivo.TESOURO_PREFIXADO: Trilho.TD_GARANTIA,
+    TipoAtivo.TESOURO_IPCA: Trilho.TD_GARANTIA,
+    TipoAtivo.PREVIDENCIA: Trilho.RES_CONJUNTA_12,
+}
+# Resgate em {dia_util} dos ativos que vão ao cartão (CDB com liquidez diária, fundo DI D+1).
+_LIQUIDEZ_NO_CARTAO = {TipoAtivo.CDB: 0, TipoAtivo.FUNDO_DI: 1}
+
+
 def gerar_carteira(
     parametros: ParametrosDaCarteira,
     tamanho: int,
     semente: int,
     politica: PoliticaRisco | None = None,
+    catalogo: CatalogoRegulatorio | None = None,
 ) -> list[ContaNaCarteira]:
-    """`tamanho` clientes sintéticos. Mesma semente, mesma carteira."""
+    """`tamanho` clientes sintéticos. Mesma semente, mesma carteira.
+
+    Cada garantia sai com produto, onde está, emissor e prazo. A combinação ativo, trilho
+    e produto é conferida no catálogo regulatório: se o catálogo recusar, é bug da
+    configuração da carteira e a exceção sobe.
+    """
     if not 1 <= tamanho <= TAMANHO_MAXIMO:
         raise ValorInvalido(f"A carteira sintética vai de 1 a {TAMANHO_MAXIMO} clientes")
     politica = politica or carregar_politica_de_referencia()
+    catalogo = catalogo or carregar_catalogo()
     sorteio = random.Random(semente)  # noqa: S311 - simulação, não criptografia
     # Listas em ordem fixa: a iteração de dicionário segue a ordem do arquivo, mas a
     # ordem explícita deixa o resultado imune a qualquer mudança nisso.
-    ativos = sorted(parametros.pesos_por_ativo, key=str)
-    pesos_ativos = [parametros.pesos_por_ativo[a] for a in ativos]
-    custodiantes = sorted(parametros.pesos_por_custodiante)
-    pesos_custodiantes = [parametros.pesos_por_custodiante[c] for c in custodiantes]
+    ativos = {
+        produto: sorted(pesos, key=str) for produto, pesos in parametros.pesos_por_ativo.items()
+    }
+    pesos_ativos = {
+        produto: [parametros.pesos_por_ativo[produto][a] for a in lista]
+        for produto, lista in ativos.items()
+    }
+    agentes = sorted(parametros.pesos_por_agente_de_custodia)
+    pesos_agentes = [parametros.pesos_por_agente_de_custodia[a] for a in agentes]
+    emissores = sorted(parametros.pesos_por_emissor)
+    pesos_emissores = [parametros.pesos_por_emissor[e] for e in emissores]
     faixas = list(parametros.faixas_de_valor)
     quantidades = list(range(1, len(parametros.pesos_de_quantidade) + 1))
 
     carteira = []
     for numero in range(tamanho):
+        produto = (
+            Produto.EMPRESTIMO
+            if _sorteia(sorteio, parametros.fracao_de_emprestimo)
+            else Produto.CARTAO
+        )
         garantias = []
         limite_garantido = Dinheiro.zero()
         for _ in range(sorteio.choices(quantidades, parametros.pesos_de_quantidade)[0]):
-            tipo = sorteio.choices(ativos, pesos_ativos)[0]
+            tipo = sorteio.choices(ativos[produto], pesos_ativos[produto])[0]
             faixa = sorteio.choices(faixas, [f.peso for f in faixas])[0]
             valor = Dinheiro(sorteio.randint(faixa.de_centavos, faixa.ate_centavos))
-            externa = _sorteia(sorteio, parametros.fracao_externa)
-            custodiante = sorteio.choices(custodiantes, pesos_custodiantes)[0] if externa else None
-            garantias.append(GarantiaNaCarteira(tipo, valor, custodiante))
+            catalogo.exigir_combinacao(
+                tipo,
+                _TRILHO_DO_ATIVO.get(tipo, Trilho.CASA),
+                produto,
+                liquidez_dias=_LIQUIDEZ_NO_CARTAO.get(tipo) if produto is Produto.CARTAO else None,
+            )
+            onde_esta: str | None = None
+            if tipo in _TRILHO_DO_ATIVO and tipo is TipoAtivo.PREVIDENCIA:
+                onde_esta = parametros.entidade_operadora
+            elif tipo in _TRILHO_DO_ATIVO:
+                onde_esta = sorteio.choices(agentes, pesos_agentes)[0]
+            emissor = (
+                sorteio.choices(emissores, pesos_emissores)[0]
+                if tipo in (TipoAtivo.CDB, TipoAtivo.LCI, TipoAtivo.LCA)
+                else None
+            )
+            prazos = parametros.prazos_em_anos.get(tipo)
+            vencimento = Decimal(sorteio.choice(prazos)) if prazos else None
+            garantias.append(
+                GarantiaNaCarteira(tipo, valor, onde_esta, emissor, vencimento, produto)
+            )
             limite_garantido += politica.limite_da_garantia(tipo, valor)
-
         if _sorteia(sorteio, parametros.fracao_em_chamada):
             # Já em chamada: dívida de 101% a 110% do limite garantido.
             uso = Decimal(sorteio.randint(101, 110)) / 100

@@ -405,6 +405,17 @@ class CatalogoRegulatorio:
         if not self.teto_do_fgc.positivo:
             raise ValorInvalido("O teto do FGC precisa ser positivo")
         self._validar_tabela_regressiva()
+        self._validar_pisos_de_provisao()
+
+    def _validar_pisos_de_provisao(self) -> None:
+        """Toda carteira de provisão em uso tem piso; a C5 (sem garantia) sempre é usada."""
+        usadas = {CarteiraDeProvisao.C5}
+        for regra in self.ativos.values():
+            usadas.update(regra.carteira_de_provisao.values())
+        sem_piso = usadas - set(self.pisos_de_provisao)
+        if sem_piso:
+            lista = ", ".join(sorted(sem_piso))
+            raise ValorInvalido(f"Carteira de provisão sem piso em pisos_de_provisao: {lista}")
 
     def _validar_tabela_regressiva(self) -> None:
         tabela = self.tabela_regressiva_renda_fixa

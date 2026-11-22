@@ -733,6 +733,12 @@ class CenarioDoPainel(BaseModel):
     taxa_sem_reforco: str = Field(examples=["0.30"])
     dias_extra_de_execucao: int
     custodiantes_indisponiveis: list[str]
+    atraso_por_onde_esta: dict[str, int] = Field(
+        description="Atraso, em dias corridos, só de quem está naquele agente de custódia"
+    )
+    emissores_em_quebra: list[str] = Field(
+        description="Conglomerados emissores cujo CDB, LCI e LCA valem zero para o credor"
+    )
 
 
 class SimulacaoDeCarteira(Esquema):
@@ -768,7 +774,26 @@ class SimulacaoDeCarteira(Esquema):
         default=None,
         ge=0,
         le=365,
-        description="Quanto a venda de garantia externa demora a mais que a interna",
+        description="Quanto a venda de garantia fora da casa demora a mais que a de dentro",
+    )
+    atraso_por_onde_esta: (
+        dict[
+            Annotated[str, Field(pattern=r"^[a-z0-9_]{1,40}$")], Annotated[int, Field(ge=0, le=365)]
+        ]
+        | None
+    ) = Field(
+        default=None,
+        max_length=20,
+        description="Atraso, em dias corridos, só de quem está naquele agente de custódia "
+        "(com o desconto diário de cada ativo, sem perda total)",
+        examples=[{"agente_td_b": 14}],
+    )
+    emissores_em_quebra: list[Annotated[str, Field(pattern=r"^[a-z0-9_]{1,40}$")]] | None = Field(
+        default=None,
+        max_length=20,
+        description="Conglomerados emissores cujo CDB, LCI e LCA valem zero para o credor "
+        "(premissa conservadora: o FGC paga o titular, não o credor)",
+        examples=[["conglomerado_b"]],
     )
     tamanho: int = Field(
         default=1000, ge=1, le=5000, description="Quantos clientes sintéticos (até 5.000)"
@@ -809,7 +834,7 @@ class PerdaDoPainelResposta(BaseModel):
         description="Perda que existiria mesmo vendendo tudo na hora (descoberta x taxa)"
     )
     perda_adicional_externa: ValorDeSaida = Field(
-        description="O que a garantia externa acrescenta à perda"
+        description="O que a garantia fora da casa (ou de emissor em quebra) acrescenta à perda"
     )
     perda_esperada_total: ValorDeSaida
 
@@ -834,13 +859,48 @@ class PremissasResposta(BaseModel):
     choques: dict[TipoAtivo, str]
     taxa_sem_reforco: str
     custodiantes_indisponiveis: list[str]
+    atraso_por_onde_esta: dict[str, int]
+    emissores_em_quebra: list[str]
     dias_extra_de_execucao: int
     desconto_diario_por_ativo: dict[TipoAtivo, str] = Field(
         description="Perda por dia de espera na venda externa (ilustrativa)"
     )
 
 
+class HaircutDaFaixaResposta(BaseModel):
+    tipo_ativo: TipoAtivo
+    ate_anos: int | None = Field(description="Prazo até o vencimento da faixa; nulo = faixa aberta")
+    haircut_minimo: str = Field(description="Desconto {1} no melhor caso da faixa (1 - LTV máximo)")
+    haircut_maximo: str = Field(description="Desconto {1} no pior caso da faixa (1 - LTV mínimo)")
+
+
+class ConcentracaoDeConglomeradoResposta(BaseModel):
+    conglomerado: str
+    valor: ValorDeSaida = Field(description="CDB, LCI e LCA do conglomerado, antes do choque")
+    clientes: int
+    clientes_acima_do_teto: int = Field(description="Clientes com mais que o teto do FGC nele")
+    excesso_total: ValorDeSaida = Field(description="Soma do que passa do teto, por cliente")
+
+
+class ProvisaoDaCarteiraResposta(BaseModel):
+    carteira: str = Field(examples=["c2"])
+    contas: int
+    saldo: ValorDeSaida
+    provisao_primeiro_mes: ValorDeSaida
+    provisao_decimo_terceiro_mes: ValorDeSaida
+
+
+class PainelRegulatorioResposta(BaseModel):
+    haircut_por_classe_e_prazo: list[HaircutDaFaixaResposta]
+    teto_do_fgc: ValorDeSaida = Field(description="R$ por titular e conglomerado (art. 2º, §2º)")
+    concentracao_por_conglomerado: list[ConcentracaoDeConglomeradoResposta]
+    carteiras_de_provisao: list[ProvisaoDaCarteiraResposta]
+    marcacao_a_mercado: str
+    avisos_de_risco: str
+
+
 class ResultadoDoPainel(BaseModel):
+    aviso_sintetico: str = Field(description="A carteira é sintética: não é de nenhum parceiro")
     carteira: CarteiraSinteticaResposta
     cenario: str | None
     premissas: PremissasResposta
@@ -848,7 +908,8 @@ class ResultadoDoPainel(BaseModel):
     depois: FotoDaCarteiraResposta
     perda: PerdaDoPainelResposta
     concentracao_por_ativo: list[FatiaDeConcentracaoResposta]
-    concentracao_por_custodiante: list[FatiaDeConcentracaoResposta]
+    concentracao_por_onde_esta: list[FatiaDeConcentracaoResposta]
+    regulatorio: PainelRegulatorioResposta
 
 
 # ------------------------------------------------------------------- negócio

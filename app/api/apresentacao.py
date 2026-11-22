@@ -358,6 +358,20 @@ AVISO_DA_CARTEIRA_SINTETICA = (
     "Carteira sintética, gerada em memória a partir da semente. Os parâmetros e as "
     "premissas são ilustrativos: não são dados de mercado nem de nenhum parceiro."
 )
+AVISO_SINTETICO = (
+    "Os clientes deste painel são sintéticos: foram gerados por sorteio a partir de uma "
+    "semente. Não são clientes reais de nenhum parceiro, e os números não estimam risco real."
+)
+MARCACAO_A_MERCADO = (
+    "Todo dia o limite disponível é recalculado com o desconto do ativo. Se o valor da "
+    "garantia cair abaixo do usado, as compras novas são bloqueadas e o cliente é chamado a "
+    "reforçar a garantia ou pagar antes; se a fatura vencer sem pagamento, a garantia é "
+    "executada depois do prazo do contrato (interpretação)."
+)
+AVISOS_DE_RISCO = (
+    "A garantia reduz a perda, não a elimina: continuam o risco do emissor, o de preço, o "
+    "de liquidez e o de execução."
+)
 
 
 def _percentual(parte: Dinheiro, total: Dinheiro) -> str:
@@ -407,7 +421,9 @@ def painel(
 ) -> esquemas.ResultadoDoPainel:
     perda = resultado.perda
     total = resultado.antes.valor_das_garantias
+    regulatorio = resultado.regulatorio
     return esquemas.ResultadoDoPainel(
+        aviso_sintetico=AVISO_SINTETICO,
         carteira=esquemas.CarteiraSinteticaResposta(
             sintetica=True, tamanho=tamanho, semente=semente, aviso=AVISO_DA_CARTEIRA_SINTETICA
         ),
@@ -416,6 +432,8 @@ def painel(
             choques={tipo: _decimal(valor) for tipo, valor in choques.items()},
             taxa_sem_reforco=_decimal(taxa_sem_reforco),
             custodiantes_indisponiveis=sorted(premissas.custodiantes_indisponiveis),
+            atraso_por_onde_esta=dict(sorted(premissas.atraso_por_onde_esta.items())),
+            emissores_em_quebra=sorted(premissas.emissores_em_quebra),
             dias_extra_de_execucao=premissas.dias_extra_de_execucao,
             desconto_diario_por_ativo={
                 tipo: _decimal(valor) for tipo, valor in premissas.desconto_diario_por_ativo.items()
@@ -432,7 +450,41 @@ def painel(
             perda_esperada_total=perda.perda_esperada_total.texto(),
         ),
         concentracao_por_ativo=_fatias(resultado.por_ativo, total),
-        concentracao_por_custodiante=_fatias(resultado.por_custodiante, total),
+        concentracao_por_onde_esta=_fatias(resultado.por_custodiante, total),
+        regulatorio=esquemas.PainelRegulatorioResposta(
+            haircut_por_classe_e_prazo=[
+                esquemas.HaircutDaFaixaResposta(
+                    tipo_ativo=h.tipo_ativo,
+                    ate_anos=h.ate_anos,
+                    haircut_minimo=_decimal(h.haircut_minimo),
+                    haircut_maximo=_decimal(h.haircut_maximo),
+                )
+                for h in regulatorio.haircut_por_classe_e_prazo
+            ],
+            teto_do_fgc=regulatorio.teto_do_fgc.texto(),
+            concentracao_por_conglomerado=[
+                esquemas.ConcentracaoDeConglomeradoResposta(
+                    conglomerado=c.conglomerado,
+                    valor=c.valor.texto(),
+                    clientes=c.clientes,
+                    clientes_acima_do_teto=c.clientes_acima_do_teto,
+                    excesso_total=c.excesso_total.texto(),
+                )
+                for c in regulatorio.concentracao_por_conglomerado
+            ],
+            carteiras_de_provisao=[
+                esquemas.ProvisaoDaCarteiraResposta(
+                    carteira=str(p.carteira),
+                    contas=p.contas,
+                    saldo=p.saldo.texto(),
+                    provisao_primeiro_mes=p.provisao_primeiro_mes.texto(),
+                    provisao_decimo_terceiro_mes=p.provisao_decimo_terceiro_mes.texto(),
+                )
+                for p in regulatorio.carteiras_de_provisao
+            ],
+            marcacao_a_mercado=MARCACAO_A_MERCADO,
+            avisos_de_risco=AVISOS_DE_RISCO,
+        ),
     )
 
 
@@ -452,6 +504,8 @@ def cenario(valor: Cenario) -> esquemas.CenarioDoPainel:
         taxa_sem_reforco=_decimal(valor.taxa_sem_reforco),
         dias_extra_de_execucao=valor.premissas.dias_extra_de_execucao,
         custodiantes_indisponiveis=sorted(valor.premissas.custodiantes_indisponiveis),
+        atraso_por_onde_esta=dict(sorted(valor.premissas.atraso_por_onde_esta.items())),
+        emissores_em_quebra=sorted(valor.premissas.emissores_em_quebra),
     )
 
 

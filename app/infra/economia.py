@@ -32,6 +32,7 @@ from app.dominio.stress import ContaNaCarteira, GarantiaNaCarteira, simular_pain
 from app.dominio.taxas import Fracao
 from app.infra.carteira_sintetica import Cenario, carregar_parametros, gerar_carteira
 from app.infra.politica_referencia import carregar_politica_de_referencia
+from app.infra.regulacao import carregar_catalogo
 
 ARQUIVO_PADRAO = Path(__file__).resolve().parent.parent / "premissas_economia.toml"
 TAMANHO_DA_CARTEIRA_DE_RISCO = 1000  # {cliente}
@@ -247,18 +248,18 @@ def carteiras_da_perda() -> tuple[list[ContaNaCarteira], list[ContaNaCarteira]]:
         carregar_politica_de_referencia(),
     )
     sorteio = random.Random(SEMENTE_DA_CARTEIRA_DE_RISCO)  # noqa: S311 - simulação
-    custodiantes = sorted(parametros.pesos_por_custodiante)
-    pesos = [parametros.pesos_por_custodiante[c] for c in custodiantes]
+    agentes = sorted(parametros.pesos_por_agente_de_fora)
+    pesos = [parametros.pesos_por_agente_de_fora[a] for a in agentes]
 
     def para_fora(garantia: GarantiaNaCarteira) -> GarantiaNaCarteira:
-        if garantia.custodiante_id is not None:
+        if garantia.onde_esta is not None:
             return garantia
-        return replace(garantia, custodiante_id=sorteio.choices(custodiantes, pesos)[0])
+        return replace(garantia, onde_esta=sorteio.choices(agentes, pesos)[0])
 
     interna = [
         replace(
             conta,
-            garantias=tuple(replace(g, custodiante_id=None) for g in conta.garantias),
+            garantias=tuple(replace(g, onde_esta=None) for g in conta.garantias),
         )
         for conta in carteira
     ]
@@ -276,6 +277,7 @@ def perda_condicional(carteira: Sequence[ContaNaCarteira], cenario: Cenario) -> 
         carregar_politica_de_referencia(),
         cenario.taxa_sem_reforco,
         cenario.premissas,
+        carregar_catalogo(),
     )
     exposicao = painel.perda.exposicao.centavos
     perda = painel.perda.perda_esperada_total.centavos

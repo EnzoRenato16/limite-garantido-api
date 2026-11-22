@@ -114,11 +114,18 @@ def test_conservador_acha_o_gasto_que_empata_para_baixo() -> None:
     assert margem(gasto + Dinheiro(1)) < c.margem_interna
 
 
-def test_taxas_de_perda_do_custodiante_fora_do_ar_maior_na_externa() -> None:
-    taxas = taxas_de_perda("custodiante_fora_do_ar")
-    assert taxas.cenario_id == "custodiante_fora_do_ar"
-    assert taxas.condicional_externa.valor > taxas.condicional_interna.valor
+def test_taxas_de_perda_do_agente_que_perde_participacao_maior_na_externa() -> None:
+    taxas = taxas_de_perda("agente_perde_participacao")
+    assert taxas.cenario_id == "agente_perde_participacao"
+    # Com LTV abaixo de 1, o atraso de 14 dias e o desconto diário não bastam para a venda
+    # deixar de cobrir a dívida: a perda esperada é pequena, e a externa nunca é menor.
+    assert taxas.condicional_externa.valor >= taxas.condicional_interna.valor
     assert 0 <= taxas.condicional_externa.valor <= 1
+
+
+def test_quebra_de_emissor_tem_perda_condicional_positiva() -> None:
+    taxas = taxas_de_perda("quebra_de_emissor")
+    assert 0 < taxas.condicional_interna.valor <= 1
 
 
 def test_interna_e_externa_saem_da_mesma_carteira() -> None:
@@ -136,13 +143,13 @@ def test_interna_e_externa_saem_da_mesma_carteira() -> None:
         sem_custodiante = [(g.tipo_ativo, g.valor_de_mercado) for g in antes.garantias]
         assert [(g.tipo_ativo, g.valor_de_mercado) for g in i.garantias] == sem_custodiante
         assert [(g.tipo_ativo, g.valor_de_mercado) for g in e.garantias] == sem_custodiante
-        # Interna: ninguém de fora. Externa: tudo está fora, e quem já estava fora fica
-        # com o mesmo custodiante.
-        assert all(g.custodiante_id is None for g in i.garantias)
+        # Interna: tudo na casa. Externa: tudo está fora, e quem já estava fora fica
+        # com o mesmo local.
+        assert all(g.onde_esta is None for g in i.garantias)
         for g_antes, g in zip(antes.garantias, e.garantias, strict=True):
-            assert g.custodiante_id is not None
-            if g_antes.custodiante_id is not None:
-                assert g.custodiante_id == g_antes.custodiante_id
+            assert g.onde_esta is not None
+            if g_antes.onde_esta is not None:
+                assert g.onde_esta == g_antes.onde_esta
     assert economia.carteiras_da_perda() == (interna, externa)  # determinística
 
 
@@ -181,7 +188,7 @@ def test_cenario_desconhecido() -> None:
     with pytest.raises(PremissasInvalidas) as erro:
         taxas_de_perda("inexistente")
     assert erro.value.detalhes["erros"][0]["campo"] == "cenario_de_risco"
-    assert "custodiante_fora_do_ar" in str(erro.value)
+    assert "agente_perde_participacao" in str(erro.value)
 
 
 def test_conjunto_desconhecido() -> None:
@@ -211,7 +218,7 @@ def _toml_com(tmp_path: Path, antigo: str, novo: str) -> Path:
         ("[premissas.parceiros]", "[premissas.parceiros_extra]", "parceiros"),
         ('razoavel = ["500", "4000"]', 'razoavel = ["4000", "500"]', "gasto_mensal"),
         ('razoavel = ["500", "4000"]', 'razoavel = ["500", "60000"]', "gasto_mensal"),
-        ('maximo = "1.00"', 'maximo = "1.50"', "ltv_medio"),
+        ('maximo = "0.90"', 'maximo = "1.50"', "ltv_medio"),
         ('cenario_de_risco = "crash_da_bolsa"', 'cenario_de_risco = "nao_existe"', "otimista"),
         ('gasto_mensal = "1500"', 'gasto_mensal = "99999999"', "base"),
         ('minimo = "0"', "minimo = 0", "premissas.gasto_mensal.minimo"),

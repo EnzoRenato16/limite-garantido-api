@@ -35,7 +35,7 @@ from tests.economia_base import ESQUEMA, premissas_base
 N = NomeDaPremissa
 
 PERDAS = TaxasDePerda(
-    cenario_id="custodiante_fora_do_ar",
+    cenario_id="agente_perde_participacao",
     nome="Custodiante fora do ar",
     condicional_interna=Fracao(Decimal("0.000052")),
     condicional_externa=Fracao(Decimal("0.08552")),
@@ -406,7 +406,7 @@ def test_tornado_corta_saldo_e_ltv() -> None:
 
     ltv = _barra(barras, N.ltv_medio)
     assert ltv.valor_baixo == Decimal("0.8000")
-    assert ltv.valor_alto == Decimal("0.95")
+    assert ltv.valor_alto == Decimal("0.90")
     assert ltv.cortado_pela_coerencia is True
 
     # O gasto alto também é cortado: R$ 2.500,00 × 85% = R$ 2.125,00.
