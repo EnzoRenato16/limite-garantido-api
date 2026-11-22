@@ -701,6 +701,201 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   empate com bisseção como alternativa; o `ESQUEMA` lido do TOML, e não repetido no
   código.
 
+## Alinhamento regulatório (nov/2026)
+
+Pedido: alinhar o projeto à auditoria regulatória de 20/11/2026, revisada em 22/11/2026.
+O documento ficou fora do repositório. As entidades do grupo a que ele se destina viraram
+papéis genéricos: SCD do grupo, CTVM do grupo, DTVM do grupo e plataforma autorizada da
+Res. Conjunta 12. O plano está em [plano-regulacao.md](plano-regulacao.md).
+
+### 72. Início, modo de trabalho e ponto de partida
+- **Modo.** O pedido foi trabalhar sem perguntas. As perguntas do brainstorming eu mesmo
+  respondi, e cada resposta virou uma decisão desta seção.
+- **Fonte.** Quando o pedido e o documento divergem, vale o documento (item 73).
+- **Branch.** O branch de trabalho foi reiniciado a partir do `main` atualizado, que já
+  tem o modelo econômico mergeado. Foi o mesmo procedimento das fases anteriores.
+- **Partida** (antes de qualquer mudança):
+  - ruff e mypy limpos;
+  - pytest no SQLite: 853 passaram, 14 pulados (os que pedem Postgres);
+  - pytest -m e2e: 26 passaram numa rodada completa. Numa rodada com `-x`, o teste
+    `test_fase_2_execucao_externa` falhou uma vez por conflito de concorrência. Esse
+    fluxo sai nesta entrega.
+
+### 73. Divergências entre o pedido e o documento
+- **Avisos da previdência.** O pedido fala em "avisos aos 45 e aos 10 dias antes da
+  execução". O documento diz "aos 45 dias de atraso e 10 dias antes da liquidação" (Res.
+  Conj. 12, art. 6º, §2º, IV). Seguimos o documento: o aviso sai no 45º dia de atraso e
+  10 dias antes da execução.
+- **Ações, FIIs e ETFs.** O pedido e a seção 4 dizem "desconto de 50% a 70% sobre o
+  valor". O anexo D3 põe 50% a 70% na coluna de ponto de partida do LTV. A referência
+  0,50 de LTV satisfaz as duas leituras (item 83).
+- **Seção 4 e anexo D3.** Numa versão anterior, a seção 4 aceitava ações no cartão "com
+  desconto alto" e o anexo D3 dizia "só empréstimo". A revisão de 22/11/2026 corrigiu a
+  seção 4 e registrou a correção na nota de consistência. Fica só empréstimo.
+- **Baixa em 2 dias úteis.** O pedido chama de "regra da previdência". O documento
+  recomenda adotá-la para todos os ativos, mas não cita o artigo. O prazo entra como
+  recomendação do documento, e o artigo fica como não verificado.
+- **Rotas.** O documento sugere `POST /portabilidades` e `POST /garantias/previdencia`.
+  `/garantias/tesouro` vem do pedido, não do documento. As três ficaram no padrão
+  multi-tenant do projeto, sob `/v1/contas/{conta_id}/...` (item 87).
+- **Bloqueio da previdência.** O pedido cita "arts. 8º e 10" para o bloqueio na
+  formalização. O documento põe o bloqueio no art. 8º e a plataforma no art. 10. Citamos
+  assim.
+- **Liquidação antes dos 90 dias.** O documento acrescenta "salvo pedido do cliente"
+  (art. 12). A liquidação antecipada a pedido do cliente fica em "Próximos passos".
+- **Provisão.** O pedido diz "C2 ou C3 para os demais, conforme o instrumento". O
+  documento põe o CDB na C2 por ser depósito a prazo, qualquer que seja o instrumento
+  (interpretação). A previdência tende à C3, mas isso também é interpretação e não está
+  verificado.
+- **COE.** O documento diz "possível se emitido e custodiado na casa" e "não
+  recomendado". O pedido diz "não recomendado". O protótipo recusa COE em qualquer
+  trilho, com código próprio.
+
+### 74. O ativo `deposito` sai
+- **Decisão.** O tipo `deposito` ("dinheiro em conta" ou "CDB da plataforma") deixa de
+  existir. Na casa, a garantia passa a ser CDB de banco parceiro custodiado na CTVM do
+  grupo, ou cotas de fundo DI da DTVM do grupo.
+- **Por quê.** A SCD não capta do público (Res. CMN 5.050/2022, art. 10, I). "CDB do
+  próprio emissor" só vale se a casa for banco. As garantias `deposito` existentes migram
+  para `cdb` com liquidez diária (item 87).
+
+### 75. Gravame separado da garantia
+- **Decisão.** O gravame é o registro na infraestrutura e tem máquina de estados própria:
+  `solicitado → registrado → liberado_para_excussao → executado → baixado`. Também:
+  `registrado → baixado`, `solicitado → recusado` (só no TD Garantia) e
+  `solicitado → cancelado`. A garantia é a relação de crédito: produto, valor, LTV,
+  instrumento e a dívida que cobre.
+- **Regra central.** O limite (cartão) e o valor de empréstimo só existem com gravame
+  `registrado` e sem baixa pedida. O gravame sempre fica numa infraestrutura (Lei
+  12.810/2013, art. 26), e o projeto simula esse registro.
+- Substitui as decisões 41, 42 e 49.
+
+### 76. Execução por inteiro, com retenção e devolução do excedente
+- **Decisão.** Na execução, o ativo é vendido ou resgatado por inteiro. Quem paga o
+  rendimento retém o tributo, o líquido abate a dívida e o excedente volta ao cliente com
+  demonstrativo (Lei 4.728/1965, art. 66-B, §3º). A execução parcial sai.
+- **Retenção** (arredondada para cima):
+  - renda fixa: tabela regressiva sobre o rendimento (Lei 11.033/2004, art. 1º);
+  - LCI e LCA: isentas para PF (art. 3º);
+  - ações, FIIs e ETFs: 0,005% sobre a venda (art. 2º, §1º; FIIs e ETFs não verificados).
+    O IR sobre o ganho o cliente apura;
+  - previdência: a operadora paga líquido de tributos e carregamento (Res. Conj. 12, art.
+    13), com uma retenção ilustrativa de 10%.
+- **O que fica de fora.** O IOF regressivo sobre o rendimento (Decreto 6.306, art. 32)
+  não é calculado, porque o documento não traz a tabela.
+- Substitui a decisão 43.
+
+### 77. Baixa automática e conciliação
+- **Decisão.** Depois da quitação, da liberação ou da execução, a baixa é pedida na hora,
+  com prazo de 2 dias úteis (item 73), e o worker a faz na infraestrutura simulada.
+- **Conciliação.** Uma rotina diária aponta três coisas: gravame sem dívida, dívida sem
+  gravame e baixa atrasada.
+
+### 78. Dias úteis nos prazos regulatórios
+- **Decisão.** Os prazos regulatórios e operacionais dos trilhos e a baixa contam dias
+  úteis, pelo calendário nacional em `app/feriados_nacionais.toml` (2026 e 2027, com a
+  fonte). O atraso do cartão e do empréstimo continua em dias corridos. Prazo fora da
+  cobertura do calendário dá erro, não uma data errada.
+- Substitui em parte a decisão 20: ela continua valendo para o atraso.
+
+### 79. Trilhos no lugar do "custodiante externo"
+- **Decisão.** A fase 2 deixa de simular um pedido de gravame a outro custodiante,
+  serviço que não existe no mercado para CDB, ações e fundos (Manual de Normas da B3,
+  arts. 88 e 94). Entram quatro trilhos de fora, cada um com uma contraparte simulada e
+  determinística:
+  - portabilidade (Res. CVM 210);
+  - transferência de custódia (prática de mercado);
+  - TD Garantia (Portaria MF 1.748/2024);
+  - previdência (Res. Conj. 12).
+- **Recusa.** Só onde a regra permite: no TD Garantia e na transferência. A portabilidade
+  termina por impedimento (art. 19, §1º, com exemplos). A operadora da previdência não
+  pode recusar (art. 18).
+- **O que fica.** O callback assinado, a janela contra replay e a idempotência da fase 2
+  continuam. Os perfis Ágil e Lento saem.
+- Substitui as decisões 39, 44, 45 e 47; a 46 e a 48 continuam, agora para as
+  contrapartes.
+
+### 80. Régua da previdência
+- **Decisão.** O atraso conta em dias corridos: a norma fala em dias, não em dias úteis,
+  e isto é interpretação. O aviso sai no 45º dia de atraso. O segundo aviso sai no 81º dia,
+  10 dias antes da primeira data possível de execução. A execução só acontece com mais de
+  90 dias de atraso e pelo menos 10 dias depois do segundo aviso.
+- **Por quê.** Um salto de 91 dias (sandbox ou rotina parada) não executa sem aviso: os
+  avisos saem no mesmo dia e a execução espera 10 dias. Executar antes dos 90 dias ou sem
+  os avisos é irregular (Res. Conj. 12, arts. 6º e 12).
+
+### 81. Empréstimo com garantia, o mínimo
+- **Decisão.** Empréstimo parcelado pela tabela Price, com taxa ao mês ilustrativa na
+  política. A parcela é arredondada para cima ao centavo, os juros do mês para baixo, e a
+  última parcela fecha o saldo em zero. O saldo devedor na execução não inclui juros
+  futuros.
+- **Prazo do crédito.**
+  - previdência: até o fim da acumulação (art. 6º, §3º);
+  - LCI e LCA: vencimento casado (última parcela até o vencimento do título).
+- **Execução nos demais ativos.** Prazo contratual da política: 30 dias, ilustrativo.
+- **Fora.** Rotativo, refinanciamento e portabilidade de crédito.
+
+### 82. Tesouro no cartão só com chave explícita
+- **Decisão.** O cartão só aceita Tesouro se `ctvm_do_grupo_e_agente_do_td` for
+  verdadeira no catálogo, e o valor padrão é `false`.
+- **Por quê.** O documento não achou confirmação pública de que a CTVM do grupo seja
+  agente de custódia do TD. No empréstimo, o Tesouro entra pelo TD Garantia.
+
+### 83. LTV de partida
+- **Decisão.** Os LTVs da política de referência ficam no início de cada faixa do anexo
+  D3, que é interpretação e hipótese de calibração, não padrão de mercado:
+  - Tesouro Selic: 0,90;
+  - prefixado e IPCA+: 0,85;
+  - CDB: 0,85;
+  - LCI e LCA: 0,80;
+  - fundo DI: 0,85;
+  - ações, FII e ETF: 0,50;
+  - previdência: 0,60.
+- **Prefixado e IPCA+.** Caem com o prazo: 0,85 até 2 anos, 0,80 de 2 a 5 anos e 0,70
+  acima de 5 anos.
+- **Teto.** O catálogo limita o LTV da política ao teto da faixa.
+
+### 84. Cupom do Tesouro fica vinculado
+- **Decisão.** Cupons e amortizações de título gravado vão ao agente do garantido
+  (Regulamento do TD, item 127). No ledger, viram `cupons_vinculados`, que continuam como
+  garantia e são vendidos junto na execução. A reaplicação automática fica para depois.
+
+### 85. Cenários do painel de risco
+- **O que sai.** "Custodiante fora do ar" dependia dos custodiantes Ágil e Lento.
+- **O que entra.**
+  - "Quebra de emissor": o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º,
+    §4º, I), então a garantia daquele emissor vale zero para o credor. É premissa
+    conservadora.
+  - "Agente de custódia perde a condição de participante": no Selic, as contas vão para
+    outro participante em 10 dias úteis (Res. BCB 409/2024), e a execução atrasa nesse
+    intervalo.
+- **Economia.** Os conjuntos Conservador e Base da conta do negócio passam a usar o
+  segundo cenário.
+- Substitui a decisão 52.
+
+### 86. Rotas novas e rotas antigas em 410
+- **Decisão.** Os trilhos ganham rotas próprias sob a conta (item 73). As rotas de
+  custodiante externo respondem `410 Gone` com problem+json que aponta a rota nova.
+  Combinação inválida responde `422`, com código estável e sugestão.
+
+### 87. Migração 0003
+- **Decisão.** Uma revisão nova do Alembic, sem editar as anteriores. As garantias
+  existentes migram assim:
+  - `deposito` vira `cdb` com liquidez diária;
+  - interna `bloqueada` ou `parcialmente_executada` vira `registrado`;
+  - `pendente` vira `solicitado`;
+  - `liberada` e `executada` viram `baixado`;
+  - externa `solicitada` ou `gravame_pendente` vira `cancelado`, com o motivo
+    `trilho_substituido`;
+  - `gravame_recusado` vira `recusado` no Tesouro e `cancelado` nos demais;
+  - `gravame_expirado` vira `cancelado`;
+  - externa `bloqueada` vira `registrado`, no trilho de fora do catálogo;
+  - `liberacao_pendente` vira `registrado` com baixa pedida;
+  - `execucao_solicitada` vira `liberado_para_excussao`.
+- **Políticas dos parceiros.** Perdem `deposito` e recebem os tipos novos com os valores
+  de referência.
+- O detalhe final fica registrado pela Tarefa 6.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
