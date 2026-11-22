@@ -13,9 +13,16 @@ Plano de contas, por conta de cliente:
 | recebiveis_faturados    | devedora | Fatura fechada e ainda não paga                          |
 | liquidacao_a_pagar      | credora  | O que a plataforma deve à rede pelas compras aprovadas   |
 | caixa_recebimentos      | devedora | Dinheiro que entrou: pagamentos e execução de garantia   |
+| cupons_vinculados       | devedora | Cupom e amortização de Tesouro gravado, vinculados       |
+| excedente_a_devolver    | credora  | Sobra da execução que volta ao cliente                   |
+| emprestimos_a_receber   | devedora | Saldo do empréstimo com garantia (Tarefa 5)              |
+| desembolsos_a_liquidar  | credora  | Desembolso do empréstimo ainda não pago ao cliente       |
+| receita_de_juros        | credora  | Juros do empréstimo recebidos                            |
 
-As duas primeiras são contas de compensação: registram a garantia recebida sem misturar
-com o dinheiro da operação de crédito.
+As duas primeiras (e `cupons_vinculados`) são contas de compensação: registram a garantia
+recebida sem misturar com o dinheiro da operação de crédito. O valor de uma garantia é
+`garantias_custodiadas + cupons_vinculados` dela, e a contrapartida é sempre
+`garantias_a_devolver`.
 """
 
 from __future__ import annotations
@@ -36,6 +43,11 @@ class ContaContabil(StrEnum):
     RECEBIVEIS_FATURADOS = "recebiveis_faturados"
     LIQUIDACAO_A_PAGAR = "liquidacao_a_pagar"
     CAIXA_RECEBIMENTOS = "caixa_recebimentos"
+    CUPONS_VINCULADOS = "cupons_vinculados"
+    EXCEDENTE_A_DEVOLVER = "excedente_a_devolver"
+    EMPRESTIMOS_A_RECEBER = "emprestimos_a_receber"
+    DESEMBOLSOS_A_LIQUIDAR = "desembolsos_a_liquidar"
+    RECEITA_DE_JUROS = "receita_de_juros"
 
 
 CONTAS_DE_NATUREZA_DEVEDORA = frozenset(
@@ -44,6 +56,8 @@ CONTAS_DE_NATUREZA_DEVEDORA = frozenset(
         ContaContabil.RECEBIVEIS_A_FATURAR,
         ContaContabil.RECEBIVEIS_FATURADOS,
         ContaContabil.CAIXA_RECEBIMENTOS,
+        ContaContabil.CUPONS_VINCULADOS,
+        ContaContabil.EMPRESTIMOS_A_RECEBER,
     }
 )
 
@@ -61,6 +75,10 @@ class TipoLancamento(StrEnum):
     FECHAMENTO_FATURA = "fechamento_fatura"
     PAGAMENTO = "pagamento"
     EXECUCAO_GARANTIA = "execucao_garantia"
+    VINCULACAO_DE_CUPOM = "vinculacao_de_cupom"
+    DEVOLUCAO_DE_EXCEDENTE = "devolucao_de_excedente"
+    DESEMBOLSO = "desembolso"
+    PAGAMENTO_DE_PARCELA = "pagamento_de_parcela"
 
 
 @dataclass(frozen=True, slots=True)
