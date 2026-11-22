@@ -274,6 +274,12 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Erro interno",
         "Um lançamento contábil não fechou. A operação foi desfeita por segurança.",
     ),
+    "data_fora_da_cobertura": (
+        500,
+        "Calendário sem cobertura",
+        "O prazo em dias úteis sai do período coberto pelo calendário de feriados; o "
+        "calendário precisa ser estendido.",
+    ),
     "erro_interno": (500, "Erro interno", "Erro inesperado. Informe o request_id ao suporte."),
     "servico_indisponivel": (503, "Serviço indisponível", "O banco de dados não respondeu."),
 }

@@ -93,3 +93,13 @@ class CombinacaoNaoPermitida(ErroDominio):
     @property
     def codigo(self) -> str:  # type: ignore[override]
         return self._codigo
+
+
+class ForaDaCobertura(ErroDominio):
+    """A data ou o prazo em dias úteis sai do período coberto pelo calendário de feriados.
+
+    É falta de configuração (o calendário precisa ser estendido), não entrada do usuário:
+    melhor um erro claro do que um prazo errado em silêncio.
+    """
+
+    codigo = "data_fora_da_cobertura"
