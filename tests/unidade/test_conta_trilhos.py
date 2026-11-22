@@ -63,7 +63,7 @@ def test_transferencia_nasce_solicitada_sem_limite_e_conclui_com_registro() -> N
     assert garantia.estado is E.REGISTRADO
     assert garantia.solicitacao is None
     assert conta.posicao(POL, CAT, HOJE).limite_total == reais("500.00")
-    assert _tipos(conta) == [T.TRANSFERENCIA_CONCLUIDA, T.GRAVAME_REGISTRADO, T.LIMITE_ATUALIZADO]
+    assert _tipos(conta) == [T.GRAVAME_REGISTRADO, T.LIMITE_ATUALIZADO, T.TRANSFERENCIA_CONCLUIDA]
 
 
 def test_portabilidade_de_fundo_di_ate_d1() -> None:
@@ -71,7 +71,7 @@ def test_portabilidade_de_fundo_di_ate_d1() -> None:
     garantia = receber(conta, Trilho.PORTABILIDADE_CVM_210, TipoAtivo.FUNDO_DI, "1000.00", POL)
     assert _tipos(conta) == [T.PORTABILIDADE_SOLICITADA]
     _concluir(conta, garantia.id)
-    assert _tipos(conta)[0] is T.PORTABILIDADE_CONCLUIDA
+    assert T.PORTABILIDADE_CONCLUIDA in _tipos(conta)
 
 
 def test_ativo_ja_em_garantia_nao_porta() -> None:
@@ -194,8 +194,8 @@ def test_previdencia_nao_recusa_espera_informacoes_e_so_entra_no_emprestimo() ->
     _concluir(conta, prev.id)
     assert prev.gravame.vigente
     assert prev.disponivel_para_emprestimo
-    # Vale o que a operadora informou, não o que o cliente disse.
-    assert conta.valor_de_mercado(prev.id) == reais("18000.00")
+    # Vale o que a operadora informou, líquido dos tributos informados (lado seguro).
+    assert conta.valor_de_mercado(prev.id) == reais("17100.00")
     assert conta.posicao(POL, CAT, HOJE).limite_total == ZERO
 
 
@@ -236,3 +236,57 @@ def test_garantia_de_fora_em_solicitado_nunca_gera_limite_nem_cobre_divida() -> 
     assert posicao.limite_total == ZERO
     assert posicao.valor_das_garantias == ZERO
     assert not conta.autorizar_compra(reais("0.01"), "loja", POL, CAT, AGORA, HOJE).aprovada
+
+
+def test_conclusao_que_falha_nao_emite_evento_nem_altera_a_garantia() -> None:
+    conta = nova_conta()
+    cdb = receber(conta, Trilho.TRANSFERENCIA_DE_CUSTODIA, TipoAtivo.CDB, "1000.00", POL)
+    conta.pendencias.limpar()
+    with pytest.raises(ValorInvalido):
+        conta.concluir_entrada(cdb.id, "  ", POL, CAT, AGORA, HOJE)
+    assert conta.pendencias.eventos == []
+    assert cdb.estado is E.SOLICITADO
+    assert cdb.solicitacao is not None
+
+
+def test_custodia_na_casa_com_protocolo_vazio_nao_anexa_garantia() -> None:
+    conta = nova_conta()
+    with pytest.raises(ValorInvalido):
+        conta.custodiar_na_casa(
+            tipo=TipoAtivo.CDB,
+            valor=reais("1000.00"),
+            produto=Produto.CARTAO,
+            politica=POL,
+            catalogo=CAT,
+            agora=AGORA,
+            hoje=HOJE,
+            liquidez_dias=0,
+            protocolo="",
+        )
+    assert conta.garantias == []
+    assert conta.pendencias.eventos == []
+
+
+def test_eventos_de_encerramento_e_conclusao_saem_com_o_estado_novo() -> None:
+    conta = nova_conta()
+    td = receber(
+        conta,
+        Trilho.TD_GARANTIA,
+        TipoAtivo.TESOURO_SELIC,
+        "1000.00",
+        POL,
+        produto=Produto.EMPRESTIMO,
+    )
+    transf = receber(conta, Trilho.TRANSFERENCIA_DE_CUSTODIA, TipoAtivo.CDB, "1000.00", POL)
+    outra = receber(conta, Trilho.TRANSFERENCIA_DE_CUSTODIA, TipoAtivo.CDB, "1000.00", POL)
+    conta.pendencias.limpar()
+    conta.recusar_entrada(td.id, "agente_nao_opera", CAT.com_agente_do_td(True), AGORA)
+    conta.cancelar_pedido(outra.id, "desistencia", AGORA)
+    _concluir(conta, transf.id)
+    por_tipo = {e.tipo: e.dados for e in conta.pendencias.eventos}
+    assert por_tipo[T.GRAVAME_RECUSADO]["estado_do_gravame"] == "recusado"
+    assert por_tipo[T.GRAVAME_CANCELADO]["estado_do_gravame"] == "cancelado"
+    assert por_tipo[T.TRANSFERENCIA_CONCLUIDA]["estado_do_gravame"] == "registrado"
+    # A ordem: o registro vem antes da conclusão.
+    tipos = [e.tipo for e in conta.pendencias.eventos]
+    assert tipos.index(T.GRAVAME_REGISTRADO) < tipos.index(T.TRANSFERENCIA_CONCLUIDA)

@@ -86,3 +86,10 @@ def test_demonstrativo_fecha_as_contas() -> None:
     assert menor.excedente_devolvido == reais("0.00")
     with pytest.raises(ValorInvalido):
         ResultadoDaExecucao(reais("1.00"), reais("0.00"), reais("1.00"), reais("2.00"), reais("0"))
+
+
+def test_data_da_aplicacao_explicita_vale_para_a_aliquota() -> None:
+    garantia = _garantia(TipoAtivo.CDB, "5000.00")  # criada hoje
+    assert retencao_na_execucao(garantia, reais("5200.00"), HOJE, CATALOGO) == reais("45.00")
+    garantia.aplicado_em = HOJE - timedelta(days=721)
+    assert retencao_na_execucao(garantia, reais("5200.00"), HOJE, CATALOGO) == reais("30.00")

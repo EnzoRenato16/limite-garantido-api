@@ -31,9 +31,9 @@ def retencao_na_execucao(
     - isento: zero;
     - sobre a venda e percentual ilustrativo: percentual sobre `valor`.
 
-    A data da aplicação é a da constituição da garantia (`criada_em`): se o ativo foi
-    aplicado antes, o prazo real é maior e a alíquota real é menor ou igual, então a
-    retenção estimada nunca fica abaixo da verdadeira.
+    A data da aplicação é `aplicado_em` da garantia; sem ela, a da constituição
+    (`criada_em`): se o ativo foi aplicado antes, o prazo real é maior e a alíquota real é
+    menor ou igual, então a retenção estimada nunca fica abaixo da verdadeira.
     """
     if valor.negativo:
         raise ValorInvalido("Valor da venda negativo")
@@ -46,7 +46,7 @@ def retencao_na_execucao(
     if retencao.regra is RegraDeRetencao.ISENTO:
         return Dinheiro.zero()
     if retencao.regra is RegraDeRetencao.TABELA_REGRESSIVA_RENDA_FIXA:
-        dias = max((hoje - garantia.criada_em.date()).days, 0)  # {dia_corrido}
+        dias = max((hoje - garantia.data_da_aplicacao).days, 0)  # {dia_corrido}
         rendimento = (valor - garantia.valor_aplicado).nao_negativo()  # {BRL}
         # {BRL} x {1} -> {BRL}, para cima.
         return rendimento.aplicar_razao(_aliquota_regressiva(catalogo, dias), para_cima=True)

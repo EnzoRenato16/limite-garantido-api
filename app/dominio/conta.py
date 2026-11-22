@@ -381,6 +381,7 @@ class Conta:
         protocolo: str | None = None,
         plano: str | None = None,
         fim_da_acumulacao: date | None = None,
+        aplicado_em: date | None = None,
     ) -> Garantia:
         """Ativo custodiado na CTVM do grupo (ou cotas da DTVM do grupo).
 
@@ -388,6 +389,8 @@ class Conta:
         garantia gera limite na hora. Sem ele (modo assíncrono), fica `solicitado`, sem
         limite, até `concluir_entrada`.
         """
+        if protocolo is not None and not protocolo.strip():
+            raise ValorInvalido("O registro do gravame exige protocolo")
         garantia = self._nova_garantia(
             trilho=Trilho.CASA,
             tipo=tipo,
@@ -405,9 +408,15 @@ class Conta:
             fim_da_acumulacao=fim_da_acumulacao,
             contraparte_id=None,
             ja_em_garantia=False,
+            aplicado_em=aplicado_em,
         )
         if protocolo is not None:
-            self._registrar(garantia, protocolo, politica, catalogo, agora, hoje)
+            try:
+                self._registrar(garantia, protocolo, politica, catalogo, agora, hoje)
+            except Exception:
+                # Nenhuma operação que falha deixa o agregado alterado.
+                self.garantias.remove(garantia)
+                raise
         else:
             self._emitir(TipoEvento.GRAVAME_SOLICITADO, agora, **self._dados(garantia))
         return garantia
@@ -431,6 +440,7 @@ class Conta:
         liquidez_dias: int | None = None,
         plano: str | None = None,
         fim_da_acumulacao: date | None = None,
+        aplicado_em: date | None = None,
         ja_em_garantia: bool = False,
     ) -> Garantia:
         """Pede a entrada por um trilho de fora; a garantia nasce `solicitada`, sem limite.
@@ -458,6 +468,7 @@ class Conta:
             fim_da_acumulacao=fim_da_acumulacao,
             contraparte_id=contraparte_id,
             ja_em_garantia=ja_em_garantia,
+            aplicado_em=aplicado_em,
         )
         garantia.solicitacao = Solicitacao(
             id=novo_id("sol"), tipo=TipoSolicitacao.ENTRADA, criada_em=agora, prazo_ate=prazo_ate
@@ -485,9 +496,12 @@ class Conta:
         fim_da_acumulacao: date | None,
         contraparte_id: str | None,
         ja_em_garantia: bool,
+        aplicado_em: date | None,
     ) -> Garantia:
         if not valor.positivo:
             raise ValorInvalido("O valor da garantia precisa ser positivo")
+        if aplicado_em is not None and aplicado_em > hoje:
+            raise ValorInvalido("A data da aplicação não pode ficar no futuro")
         # Antes de tudo, o catálogo: previdência, LCI ou ações no cartão param aqui.
         catalogo.exigir_combinacao(
             tipo,
@@ -527,6 +541,7 @@ class Conta:
             contraparte_id=contraparte_id,
             plano=plano,
             fim_da_acumulacao=fim_da_acumulacao,
+            aplicado_em=aplicado_em,
         )
         self.garantias.append(garantia)
         return garantia
@@ -553,10 +568,12 @@ class Conta:
                 "Previdência só registra o bloqueio depois das informações da operadora",
                 garantia_id=garantia.id,
             )
+        solicitacao = garantia.solicitacao
+        self._registrar(garantia, protocolo, politica, catalogo, agora, hoje)
+        # O evento de conclusão só sai depois do registro dar certo, com o estado novo.
         evento = _EVENTO_DE_ENTRADA_CONCLUIDA.get(garantia.trilho)
         if evento is not None:
-            self._emitir(evento, agora, **self._dados(garantia))
-        self._registrar(garantia, protocolo, politica, catalogo, agora, hoje)
+            self._emitir(evento, agora, **self._dados(garantia, solicitacao))
         return garantia
 
     def recusar_entrada(
@@ -574,7 +591,7 @@ class Conta:
                 garantia_id=garantia.id,
                 trilho=str(garantia.trilho),
             )
-        dados = self._dados(garantia)
+        solicitacao = garantia.solicitacao
         if garantia.trilho is Trilho.TD_GARANTIA:
             garantia.gravame.recusar(agora, motivo)
             tipo = TipoEvento.GRAVAME_RECUSADO
@@ -582,16 +599,18 @@ class Conta:
             garantia.gravame.cancelar(agora, motivo)
             tipo = TipoEvento.GRAVAME_CANCELADO
         garantia.solicitacao = None
-        self._emitir(tipo, agora, motivo=motivo, **dados)
+        self._emitir(tipo, agora, motivo=motivo, **self._dados(garantia, solicitacao))
         return garantia
 
     def cancelar_pedido(self, garantia_id: str, motivo: str, agora: datetime) -> Garantia:
         """Desistência do cliente ou prazo vencido: o pedido de entrada é encerrado."""
         garantia = self.garantia(garantia_id)
-        dados = self._dados(garantia)
+        solicitacao = garantia.solicitacao
         garantia.gravame.cancelar(agora, motivo)
         garantia.solicitacao = None
-        self._emitir(TipoEvento.GRAVAME_CANCELADO, agora, motivo=motivo, **dados)
+        self._emitir(
+            TipoEvento.GRAVAME_CANCELADO, agora, motivo=motivo, **self._dados(garantia, solicitacao)
+        )
         return garantia
 
     def registrar_informacoes_da_operadora(
@@ -632,9 +651,10 @@ class Conta:
         garantia.gravame.registrar(agora, protocolo)
         garantia.solicitacao = None
         garantia.marcada_em = hoje
-        # Na previdência, vale o que a operadora informou; nos demais, o aplicado.
+        # Na previdência, vale o que a operadora informou, líquido dos tributos que ela
+        # informou (o lado seguro); nos demais, o aplicado.
         informacoes = garantia.informacoes
-        valor = informacoes.valor_disponivel if informacoes else garantia.valor_aplicado
+        valor = informacoes.valor_liquido if informacoes else garantia.valor_aplicado
         if valor.positivo:
             self._lancar(
                 TipoLancamento.BLOQUEIO_GARANTIA,
@@ -904,8 +924,10 @@ class Conta:
         self._pedir_baixa(garantia, agora, prazo_da_baixa)
         return resultado
 
-    def _dados(self, garantia: Garantia) -> dict[str, object]:
-        solicitacao = garantia.solicitacao
+    def _dados(
+        self, garantia: Garantia, solicitacao: Solicitacao | None = None
+    ) -> dict[str, object]:
+        solicitacao = solicitacao or garantia.solicitacao
         return {
             "garantia_id": garantia.id,
             "tipo_ativo": str(garantia.tipo_ativo),

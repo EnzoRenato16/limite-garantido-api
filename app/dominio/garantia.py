@@ -54,6 +54,11 @@ class InformacoesDaOperadora:
     tributos_informados: Dinheiro  # {BRL}
     recebidas_em: datetime
 
+    @property
+    def valor_liquido(self) -> Dinheiro:
+        """O que vale como garantia: o disponível menos os tributos informados {BRL}."""
+        return self.valor_disponivel - self.tributos_informados
+
     def __post_init__(self) -> None:
         if self.valor_disponivel.negativo or self.tributos_informados.negativo:
             raise ValorInvalido("Informações da operadora com valor negativo")
@@ -88,6 +93,12 @@ class Garantia:
     plano: str | None = None
     fim_da_acumulacao: date | None = None
     informacoes: InformacoesDaOperadora | None = None
+    # Data da aplicação, para a alíquota do IR na execução; None = data de criação.
+    aplicado_em: date | None = None
+
+    @property
+    def data_da_aplicacao(self) -> date:
+        return self.aplicado_em or self.criada_em.date()
 
     def __post_init__(self) -> None:
         de_fora = self.gravame.trilho is not Trilho.CASA
