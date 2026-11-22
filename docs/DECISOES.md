@@ -737,7 +737,7 @@ Res. Conjunta 12. O plano está em [plano-regulacao.md](plano-regulacao.md).
   recomendação do documento, e o artigo fica como não verificado.
 - **Rotas.** O documento sugere `POST /portabilidades` e `POST /garantias/previdencia`.
   `/garantias/tesouro` vem do pedido, não do documento. As três ficaram no padrão
-  multi-tenant do projeto, sob `/v1/contas/{conta_id}/...` (item 87).
+  multi-tenant do projeto, sob `/v1/contas/{conta_id}/...` (item 86).
 - **Bloqueio da previdência.** O pedido cita "arts. 8º e 10" para o bloqueio na
   formalização. O documento põe o bloqueio no art. 8º e a plataforma no art. 10. Citamos
   assim.
