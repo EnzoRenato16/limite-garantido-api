@@ -61,4 +61,4 @@ VALORES_BASE: dict[N, Decimal] = {
 
 def premissas_base() -> Premissas:
     """Premissas da coluna base, com as seis receitas ligadas."""
-    return montar_premissas(VALORES_BASE, set(FonteDeReceita), "agente_perde_participacao", ESQUEMA)
+    return montar_premissas(VALORES_BASE, set(FonteDeReceita), "quebra_de_emissor", ESQUEMA)

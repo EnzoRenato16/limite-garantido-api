@@ -162,28 +162,28 @@ Condicionais medidas, por cenário:
 depois de um choque de mercado ou de 14 dias de atraso com desconto diário: a perda
 esperada da carteira sintética (semente 42) dá zero nesses quatro cenários. Isso mostra o
 efeito das premissas, não que o risco tenha acabado: a garantia reduz a perda, e continuam
-o risco do emissor, o de preço, o de liquidez e o de execução. O cenário em que a
-garantia deixa de cobrir é a quebra de emissor, em que o CDB, a LCI e a LCA do
-conglomerado B valem zero para o credor. Essa é uma premissa conservadora: o FGC paga o
-titular, não o credor (Regulamento do FGC, art. 2º, §4º, I). O atraso do agente de
-custódia vem da transferência das contas dos clientes em 10 dias úteis, cerca de 14 dias
-corridos (Res. BCB 409/2024; Regulamento do Selic, art. 15, §1º).
+o risco do emissor, o de preço, o de liquidez e o de execução.
 
-**Conta do conjunto Base** (cenário Agente de custódia perde a participação):
+**Por que Conservador e Base usam a quebra de emissor.** É o risco que a análise regulatória
+aponta como remanescente mesmo com garantia, e o único cenário em que a garantia deixa de
+cobrir: o CDB, a LCI e a LCA do conglomerado B valem zero para o credor. É uma premissa
+conservadora: o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º, §4º, I).
+Usar um cenário de perda zero no Base esconderia esse risco. O Otimista segue com o crash
+da bolsa, de propósito: é o conjunto que mostra o quanto a garantia protege. O atraso do
+agente de custódia (10 dias úteis, cerca de 14 corridos; Res. BCB 409/2024; Regulamento do
+Selic, art. 15, §1º) continua disponível como cenário no painel.
 
-1. Condicional dentro de casa: 0,00%; condicional de fora: 0,00%.
-2. Condicional mista: 70% × 0,00% + 30% × 0,00% = 0,00%.
-3. Taxa anual: 0,50% + 0,05 evento/ano × 0,00% = 0,50% ao ano.
-4. Taxa mensal: 0,50% ÷ 12 = 0,0417% ao mês.
+**Conta do conjunto Base** (cenário Quebra de emissor):
+
+1. Condicional dentro de casa: 4,0045%; condicional de fora: 4,0045%.
+2. Condicional mista: 70% × 4,0045% + 30% × 4,0045% = 4,0045%.
+3. Taxa anual: 0,50% + 0,05 evento/ano × 4,0045% = 0,7002% ao ano.
+4. Taxa mensal: 0,7002% ÷ 12 = 0,0584% ao mês.
 5. Saldo financiado: R$ 1.500,00 × 10 ÷ (365/12) = R$ 493,1507, mais
    R$ 1.500,00 × 5% × 30% = R$ 22,50 por mês no rotativo × 2 meses = R$ 45,00;
    total de R$ 538,1507 (a tela mostra R$ 538,16).
-6. Perda esperada: R$ 538,1507 × 0,0417% = R$ 0,2242, que a linha arredonda para cima:
-   **R$ 0,23 por cliente por mês**.
-
-Sensibilidade: o mesmo Base com o cenário Quebra de emissor tem condicional de 4,0045% dos
-dois lados, taxa anual de 0,70% e margem da plataforma de R$ 4,10 por cliente por mês
-(ponto de equilíbrio de 97.561 clientes, resultado mensal de R$ 10.000,00).
+6. Perda esperada: R$ 538,1507 × 0,0584% = R$ 0,3140, que a linha arredonda para cima:
+   **R$ 0,32 por cliente por mês**.
 
 A carteira sintética usa entre 0% e 95% do limite. Se o cliente médio usar menos, a taxa
 medida tende a ser maior que a dele: erra para o lado prudente.
@@ -195,7 +195,7 @@ inteiros. Se a margem for zero ou negativa, nenhum número de clientes paga o cu
 e o resultado é "não existe", com o motivo (se o custo fixo também for zero, o motivo diz
 que nenhum cliente dá lucro).
 
-No conjunto Base: R$ 400.000,00 ÷ R$ 4,19 = 95.465,4, ou seja, **95.466 clientes**. A
+No conjunto Base: R$ 400.000,00 ÷ R$ 4,10 = 97.560,98, ou seja, **97.561 clientes**. A
 carteira Base tem 100.000. Fica pouco acima do ponto de equilíbrio, de propósito.
 
 ## Dentro de casa x de fora
@@ -219,18 +219,18 @@ valor, a resposta traz o motivo (`motivo_fee`, `motivo_gasto`): a externa não c
 mais, não há gravame, a receita de fee de gravame está desligada ou nenhum valor da faixa
 aceita empata.
 
-Conjunto Base (ilustrativo): margem dentro de casa R$ 4,71, de fora R$ 2,98, diferença
+Conjunto Base (ilustrativo): margem dentro de casa R$ 4,62, de fora R$ 2,89, diferença
 R$ 1,73: **a garantia de fora custa R$ 1,73 por cliente por mês a mais que a de dentro de
 casa**. Ela empata com um fee de gravame de fora de R$ 27,20 (a base é R$ 8,00) ou com um
-gasto mensal de R$ 2.317,50, que cabe no limite. Para os outros conjuntos:
+gasto mensal de R$ 2.346,72, que cabe no limite. Para os outros conjuntos:
 
 | | Conservador | Base | Otimista |
 |---|---:|---:|---:|
-| Margem da plataforma, toda dentro de casa | R$ -3,05 | R$ 4,71 | R$ 19,84 |
-| Margem da plataforma, toda de fora | R$ -4,36 | R$ 2,98 | R$ 16,45 |
+| Margem da plataforma, toda dentro de casa | R$ -3,39 | R$ 4,62 | R$ 19,84 |
+| Margem da plataforma, toda de fora | R$ -4,70 | R$ 2,89 | R$ 16,45 |
 | Custo a mais da garantia de fora | R$ 1,31 | R$ 1,73 | R$ 3,39 |
 | Fee de gravame de fora que empata | R$ 22,50 | R$ 27,20 | R$ 45,70 |
-| Gasto mensal que empata | R$ 509,01 | R$ 2.317,50 | R$ 3.030,72 |
+| Gasto mensal que empata | R$ 563,66 | R$ 2.346,72 | R$ 3.030,72 |
 | Gasto mensal do conjunto | R$ 1.000,00 | R$ 1.500,00 | R$ 2.500,00 |
 
 No Conservador, o gasto que empata é **menor** que o do conjunto: ali cada real a mais de
@@ -247,15 +247,15 @@ porque algumas premissas não são monótonas (meses no rotativo: o teto legal t
 juros e o funding continua crescendo). As barras são ordenadas pela amplitude.
 
 No conjunto Base, as cinco que mais mexem (margem em R$ por cliente por mês, no extremo
-baixo e no alto da faixa razoável; a base é R$ 4,19):
+baixo e no alto da faixa razoável; a base é R$ 4,10):
 
 | Premissa | Faixa | Margem no baixo | Margem no alto |
 |---|---|---:|---:|
-| Dias financiados | 0 a 30 | R$ 10,96 | R$ -9,36 |
-| Meses no rotativo | 1 a 6 | R$ 2,74 | R$ 11,46 |
-| Fração de clientes no rotativo | 0 a 0,15 | R$ 1,44 | R$ 9,69 |
-| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,06 | R$ 9,48 |
-| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,59 | R$ 7,79 |
+| Dias financiados | 0 a 30 | R$ 10,95 | R$ -9,61 |
+| Meses no rotativo | 1 a 6 | R$ 2,65 | R$ 11,36 |
+| Fração de clientes no rotativo | 0 a 0,15 | R$ 1,36 | R$ 9,59 |
+| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,03 | R$ 9,24 |
+| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,50 | R$ 7,70 |
 
 Quem financia o gasto por mais dias perde margem (funding), e quem tem mais gente no
 rotativo ganha (juros). Com o rotativo limitado por lei, parte dessa margem é frágil.
@@ -267,33 +267,32 @@ em cada conjunto (com todas as fontes de receita ligadas).
 
 | | Conservador | Base | Otimista |
 |---|---:|---:|---:|
-| Cenário de risco | Agente de custódia perde a participação | Agente de custódia perde a participação | Crash da bolsa (ações, FII e ETF -30%) |
+| Cenário de risco | Quebra de emissor (conglomerado B) | Quebra de emissor (conglomerado B) | Crash da bolsa (ações, FII e ETF -30%) |
 | Clientes (parceiros × clientes por parceiro) | 30.000 | 100.000 | 320.000 |
 | Receita da plataforma por cliente por mês | R$ 15,17 | R$ 26,57 | R$ 51,16 |
-| Custo da plataforma por cliente por mês | R$ 18,88 | R$ 22,38 | R$ 31,84 |
-| **Margem da plataforma por cliente por mês** | **R$ -3,71** | **R$ 4,19** | **R$ 19,32** |
+| Custo da plataforma por cliente por mês | R$ 19,22 | R$ 22,47 | R$ 31,84 |
+| **Margem da plataforma por cliente por mês** | **R$ -4,05** | **R$ 4,10** | **R$ 19,32** |
 | **Margem do parceiro por cliente por mês** | **R$ 1,05** | **R$ 4,79** | **R$ 12,55** |
-| Margem do arranjo por cliente por mês | R$ -2,66 | R$ 8,98 | R$ 31,87 |
+| Margem do arranjo por cliente por mês | R$ -3,00 | R$ 8,89 | R$ 31,87 |
 | Custo fixo mensal | R$ 600.000,00 | R$ 400.000,00 | R$ 300.000,00 |
-| Ponto de equilíbrio (clientes) | não existe | 95.466 | 15.528 |
-| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -711.300,00 | R$ 19.000,00 | R$ 5.882.400,00 |
-| Resultado anual da plataforma na carteira | R$ -8.535.600,00 | R$ 228.000,00 | R$ 70.588.800,00 |
+| Ponto de equilíbrio (clientes) | não existe | 97.561 | 15.528 |
+| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -721.500,00 | R$ 10.000,00 | R$ 5.882.400,00 |
+| Resultado anual da plataforma na carteira | R$ -8.658.000,00 | R$ 120.000,00 | R$ 70.588.800,00 |
 | Resultado mensal do parceiro médio | R$ 10.500,00 | R$ 95.800,00 | R$ 502.000,00 |
-| Taxa anual de perda | 1,00% | 0,50% | 0,30% |
-| Perda esperada por cliente por mês | R$ 0,43 | R$ 0,23 | R$ 0,13 |
+| Taxa anual de perda | 1,80% | 0,70% | 0,30% |
+| Perda esperada por cliente por mês | R$ 0,77 | R$ 0,32 | R$ 0,13 |
 | IOF do crédito por cliente por mês (do cliente ao governo, fora das margens) | R$ 0,08 | R$ 0,20 | R$ 0,40 |
 
 - **Conservador** dá margem negativa para a plataforma e não tem ponto de equilíbrio.
   Foi mantido assim de propósito: com premissas ruins (gasto e saldo baixos, mais gente
   com garantia de fora, custos e perda altos), o negócio não para de pé, e o modelo diz isso em vez
   de esconder.
-- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 19.000,00 por mês sobre
+- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 10.000,00 por mês sobre
   100.000 clientes. O resultado é sensível ao que o tornado mostra.
 - **Otimista** usa o crash da bolsa, cuja perda condicional na carteira sintética de semente
   42 dá zero (com outras sementes ela é pequena, mas não nula). Por isso a
-  perda anual fica só na taxa base, 0,30%, e a margem sobe. Conservador e Base usam o
-  agente de custódia que perde a participação, que também dá zero na semente 42: o
-  Conservador tem perda maior só porque a taxa base e a frequência do cenário são maiores.
+  perda anual fica só na taxa base, 0,30%, e a margem sobe. Conservador e Base usam a quebra de
+  emissor, com perda condicional de 4,0045%; por isso têm perda anual acima da taxa base.
 
 Os conjuntos são pontos de partida. A página permite editar cada premissa.
 

@@ -23,7 +23,7 @@ def _montar(**mudancas: str) -> Premissas:
     valores = dict(VALORES_BASE)
     for nome, valor in mudancas.items():
         valores[N(nome)] = Decimal(valor)
-    return montar_premissas(valores, set(FonteDeReceita), "agente_perde_participacao", ESQUEMA)
+    return montar_premissas(valores, set(FonteDeReceita), "quebra_de_emissor", ESQUEMA)
 
 
 def _erros(**mudancas: str) -> list[dict[str, str]]:
@@ -48,7 +48,7 @@ def test_base_monta_com_tipos_certos() -> None:
     assert p.meses_no_rotativo == 2
     assert isinstance(p.meses_no_rotativo, int)
     assert p.receitas_ligadas == frozenset(FonteDeReceita)
-    assert p.cenario_de_risco == "agente_perde_participacao"
+    assert p.cenario_de_risco == "quebra_de_emissor"
     assert p.valores() == VALORES_BASE
 
 

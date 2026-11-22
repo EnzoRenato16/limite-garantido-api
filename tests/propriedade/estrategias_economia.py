@@ -62,7 +62,7 @@ def premissas_validas(draw: st.DrawFn) -> Premissas:
     )
 
     receitas = draw(st.frozensets(st.sampled_from(list(FonteDeReceita))))
-    return montar_premissas(valores, receitas, "agente_perde_participacao", ESQUEMA)
+    return montar_premissas(valores, receitas, "quebra_de_emissor", ESQUEMA)
 
 
 fracoes = st.decimals(

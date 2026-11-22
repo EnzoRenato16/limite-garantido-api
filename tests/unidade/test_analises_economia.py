@@ -35,7 +35,7 @@ from tests.economia_base import ESQUEMA, premissas_base
 N = NomeDaPremissa
 
 PERDAS = TaxasDePerda(
-    cenario_id="agente_perde_participacao",
+    cenario_id="quebra_de_emissor",
     nome="Custodiante fora do ar",
     condicional_interna=Fracao(Decimal("0.000052")),
     condicional_externa=Fracao(Decimal("0.08552")),

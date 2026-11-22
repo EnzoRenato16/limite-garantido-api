@@ -343,7 +343,7 @@ origem = "Premissa ilustrativa: clientes ativos por parceiro; sem fonte de merca
 [conjuntos.conservador]
 nome = "Conservador"
 descricao = "Gasto e saldo menores, mais gente com garantia de fora, custos e perda mais altos, receitas mais baixas."
-cenario_de_risco = "agente_perde_participacao"
+cenario_de_risco = "quebra_de_emissor"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
 [conjuntos.conservador.valores]
@@ -387,7 +387,7 @@ clientes_por_parceiro = "10000"
 [conjuntos.base]
 nome = "Base"
 descricao = "Valores centrais ilustrativos, os mesmos da carteira sintética onde há referência."
-cenario_de_risco = "agente_perde_participacao"
+cenario_de_risco = "quebra_de_emissor"
 receitas_ligadas = ["intercambio", "fee_garantia_ativa", "fee_gravame", "receita_sobre_investimento", "juros_rotativo", "taxa_fidc"]
 
 [conjuntos.base.valores]

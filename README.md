@@ -99,7 +99,7 @@ limite antes e depois, a perda esperada separando o que vem da garantia externa 
 concentração por ativo e por custodiante. A carteira é gerada da mesma semente, e as
 premissas são ilustrativas, não dado de mercado.
 
-![O painel de risco no cenário de custodiante fora do ar](docs/img/risco-custodiante_fora_do_ar.png)
+![O painel de risco no cenário de quebra de emissor](docs/img/risco-quebra_de_emissor.png)
 
 ## Rodando em 3 comandos
 
