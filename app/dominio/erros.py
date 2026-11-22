@@ -107,3 +107,15 @@ class ForaDaCobertura(ErroDominio):
     """
 
     codigo = "data_fora_da_cobertura"
+
+
+class EmprestimoNegado(ErroDominio):
+    """A conta não pode contratar empréstimo agora. O código varia com o motivo."""
+
+    def __init__(self, codigo: str, mensagem: str, **detalhes: object) -> None:
+        super().__init__(mensagem, **detalhes)
+        self._codigo = codigo
+
+    @property
+    def codigo(self) -> str:  # type: ignore[override]
+        return self._codigo

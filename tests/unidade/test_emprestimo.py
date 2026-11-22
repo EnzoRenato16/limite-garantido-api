@@ -7,7 +7,7 @@ from decimal import ROUND_CEILING, Decimal
 
 import pytest
 
-from app.dominio.conta import Conta
+from app.dominio.conta import Conta, EstadoConta, Fatura
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.emprestimo import (
     EstadoEmprestimo,
@@ -16,6 +16,7 @@ from app.dominio.emprestimo import (
 )
 from app.dominio.erros import (
     CombinacaoNaoPermitida,
+    ErroDominio,
     PagamentoExcedeDivida,
     TransicaoInvalida,
     ValorInvalido,
@@ -506,3 +507,124 @@ def test_garantia_insuficiente_deixa_saldo_e_nao_devolve_excedente() -> None:
     # Sem garantia vigente, a rotina não tenta de novo nem quebra.
     _virar(conta, vencimento + timedelta(days=31))
     _fecha(conta)
+
+
+# ------------------------------------------------ portões da conta na contratação
+def _contratar_com(conta: Conta, garantia: Garantia, pol=POL, carteira=None):  # type: ignore[no-untyped-def]
+    return conta.contratar_emprestimo(
+        valor=reais("1000.00"),
+        parcelas=6,
+        garantia_ids=[garantia.id],
+        politica=pol,
+        catalogo=CAT,
+        primeiro_vencimento=PRIMEIRO,
+        agora=AGORA,
+        hoje=HOJE,
+        protocolos_da_previdencia={},
+        carteira_do_parceiro=carteira,
+    )
+
+
+def _recusado(conta: Conta, garantia: Garantia, codigo: str, **kw) -> None:  # type: ignore[no-untyped-def]
+    conta.pendencias.limpar()
+    existentes = len(conta.emprestimos)
+    with pytest.raises(ErroDominio) as erro:
+        _contratar_com(conta, garantia, **kw)
+    assert erro.value.codigo == codigo
+    assert len(conta.emprestimos) == existentes
+    assert garantia.emprestimo_id is None
+    assert conta.pendencias.eventos == []
+    assert conta.pendencias.lancamentos == []
+
+
+def test_conta_bloqueada_nao_contrata_emprestimo() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    conta.estado = EstadoConta.BLOQUEADA
+    _recusado(conta, cdb, "emprestimo_conta_bloqueada")
+
+
+def test_fatura_do_cartao_em_atraso_barra_o_emprestimo() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    conta.faturas.append(
+        Fatura(
+            id="fat_x",
+            conta_id=conta.id,
+            valor_fechado=reais("10.00"),
+            fechada_em=AGORA - timedelta(days=10),
+            vencimento=HOJE - timedelta(days=1),
+        )
+    )
+    _recusado(conta, cdb, "emprestimo_fatura_em_atraso")
+
+
+def test_emprestimo_em_atraso_barra_outro_emprestimo() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta, valor="20000.00")
+    fundo = _ativo(conta, TipoAtivo.FUNDO_DI, "20000.00")
+    primeiro = _contratar_com(conta, cdb)
+    primeiro.estado = EstadoEmprestimo.EM_ATRASO
+    _recusado(conta, fundo, "emprestimo_em_atraso_na_conta")
+    conta.pendencias.limpar()
+    primeiro.estado = EstadoEmprestimo.ATIVO
+    assert _contratar_com(conta, fundo).estado is EstadoEmprestimo.ATIVO
+
+
+def test_teto_do_parceiro_vale_para_o_emprestimo_e_falha_fechado() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    pol = politica(
+        ltv={t: Decimal("0.50") for t in TipoAtivo if t is not TipoAtivo.COE},
+        teto_parceiro="5000.00",
+    )
+    with pytest.raises(ValueError, match="teto do parceiro"):  # sem carteira: recusa
+        _contratar_com(conta, cdb, pol=pol)
+    assert conta.emprestimos == []
+    _recusado(
+        conta, cdb, "emprestimo_teto_do_parceiro_excedido", pol=pol, carteira=reais("4000.01")
+    )
+    assert _contratar_com(conta, cdb, pol=pol, carteira=reais("4000.00")).principal == reais(
+        "1000.00"
+    )
+
+
+# ------------------------------------------------- juros pro rata na antecipação
+def test_antecipar_parcela_cobra_juros_dos_dias_decorridos_para_cima() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    emprestimo = _contratar(conta, [cdb], valor="10000.00")
+    primeira = emprestimo.parcelas[0]
+    assert primeira.inicio == HOJE
+    dia = HOJE + timedelta(days=10)
+    periodo = (primeira.vencimento - HOJE).days  # 30
+    juros = -(-primeira.juros.centavos * 10 // periodo)  # para cima
+    assert emprestimo.saldo_devedor(dia) == reais("10000.00") + Dinheiro(juros)
+    conta.pendencias.limpar()
+    with pytest.raises(PagamentoExcedeDivida):
+        conta.pagar_parcela(
+            emprestimo.id,
+            reais("10000.00") + Dinheiro(juros + 1),
+            _agora(dia),
+            dia,
+            prazo_da_baixa(dia),
+        )
+    conta.pagar_parcela(
+        emprestimo.id, emprestimo.saldo_devedor(dia), _agora(dia), dia, prazo_da_baixa(dia)
+    )
+    assert emprestimo.estado is EstadoEmprestimo.QUITADO
+    assert conta.saldos.saldo_total(ContaContabil.RECEITA_DE_JUROS) == Dinheiro(juros)
+    _fecha(conta)
+
+
+def test_juros_de_antecipacao_nunca_passam_dos_juros_do_periodo() -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    emprestimo = _contratar(conta, [cdb], valor="10000.00")
+    primeira = emprestimo.parcelas[0]
+    vespera = primeira.vencimento - timedelta(days=1)
+    assert primeira.juros_devido(vespera) <= primeira.juros
+    # A partir do 2º período, conta desde o vencimento anterior.
+    segunda = emprestimo.parcelas[1]
+    assert segunda.inicio == primeira.vencimento
+    assert segunda.juros_devido(primeira.vencimento).nulo

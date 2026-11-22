@@ -257,6 +257,27 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Só PGBL, VGBL e capitalização entram pela Res. Conjunta 12; o FAPI fica fora "
         "(art. 1º, §1º).",
     ),
+    "emprestimo_conta_bloqueada": (
+        422,
+        "Conta bloqueada para empréstimo",
+        "A conta está bloqueada (chamada de margem vencida ou dívida descoberta): "
+        "regularize antes de contratar empréstimo.",
+    ),
+    "emprestimo_fatura_em_atraso": (
+        422,
+        "Fatura em atraso",
+        "Há fatura do cartão vencida e não paga; o empréstimo fica suspenso até a regularização.",
+    ),
+    "emprestimo_em_atraso_na_conta": (
+        422,
+        "Empréstimo em atraso",
+        "Há empréstimo em atraso nesta conta; regularize antes de contratar outro.",
+    ),
+    "emprestimo_teto_do_parceiro_excedido": (
+        422,
+        "Teto do parceiro excedido",
+        "O empréstimo passaria do teto da carteira definido pela política de risco do parceiro.",
+    ),
     "prazo_alem_da_acumulacao": (
         422,
         "Prazo além da acumulação",

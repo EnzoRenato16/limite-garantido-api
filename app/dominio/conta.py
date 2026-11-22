@@ -31,6 +31,7 @@ from app.dominio.emprestimo import (
 from app.dominio.erros import (
     CombinacaoNaoPermitida,
     EmprestimoNaoEncontrado,
+    EmprestimoNegado,
     FaturaEmAberto,
     GarantiaCobrindoDivida,
     GarantiaNaoEncontrada,
@@ -1117,6 +1118,7 @@ class Conta:
         agora: datetime,
         hoje: date,
         protocolos_da_previdencia: Mapping[str, str],
+        carteira_do_parceiro: Dinheiro | None = None,
     ) -> Emprestimo:
         """Contrata um empréstimo parcelado coberto por garantias de produto empréstimo.
 
@@ -1125,16 +1127,21 @@ class Conta:
         gravame é registrado com o protocolo de `protocolos_da_previdencia` (Res.
         Conjunta 12, art. 8º). A última parcela não pode passar do fim da acumulação nem
         do vencimento do título.
+
+        Como na compra, a conta precisa estar apta: nada de empréstimo com a conta
+        bloqueada, a fatura do cartão em atraso ou outro empréstimo em atraso. Com teto
+        do parceiro na política, `carteira_do_parceiro` é obrigatória (falha fechada).
         """
         ids = tuple(garantia_ids)
         if not valor.positivo:
             raise ValorInvalido("O valor do empréstimo precisa ser positivo")
+        self._exigir_conta_apta_para_emprestimo(valor, politica, hoje, carteira_do_parceiro)
         if primeiro_vencimento <= hoje:
             raise VencimentoInvalido("O primeiro vencimento precisa ficar no futuro")
         if not ids or len(set(ids)) != len(ids):
             raise ValorInvalido("Informe uma ou mais garantias, sem repetir")
         cronograma = cronograma_price(
-            valor, politica.taxa_do_emprestimo_ao_mes, parcelas, primeiro_vencimento
+            valor, politica.taxa_do_emprestimo_ao_mes, parcelas, primeiro_vencimento, hoje
         )
         ultimo_vencimento = cronograma[-1].vencimento
 
@@ -1201,6 +1208,44 @@ class Conta:
             dias_minimos_execucao=emprestimo.dias_minimos_execucao,
         )
         return emprestimo
+
+    def _exigir_conta_apta_para_emprestimo(
+        self,
+        valor: Dinheiro,
+        politica: PoliticaRisco,
+        hoje: date,
+        carteira_do_parceiro: Dinheiro | None,
+    ) -> None:
+        if self.estado is EstadoConta.BLOQUEADA:
+            raise EmprestimoNegado(
+                "emprestimo_conta_bloqueada",
+                "A conta está bloqueada: regularize antes de contratar empréstimo",
+                conta_id=self.id,
+            )
+        if self.em_atraso(hoje):
+            raise EmprestimoNegado(
+                "emprestimo_fatura_em_atraso",
+                "Há fatura do cartão vencida e não paga",
+                conta_id=self.id,
+            )
+        if any(e.estado is EstadoEmprestimo.EM_ATRASO for e in self.emprestimos):
+            raise EmprestimoNegado(
+                "emprestimo_em_atraso_na_conta",
+                "Há empréstimo em atraso nesta conta",
+                conta_id=self.id,
+            )
+        teto = politica.teto_limite_do_parceiro
+        if teto is not None:
+            if carteira_do_parceiro is None:
+                # Falha fechada: sem saber a carteira não dá para garantir o teto.
+                raise ValueError("A política tem teto do parceiro: informe a carteira atual")
+            if carteira_do_parceiro + valor > teto:
+                raise EmprestimoNegado(
+                    "emprestimo_teto_do_parceiro_excedido",
+                    "O empréstimo passaria do teto da carteira do parceiro",
+                    teto=teto.texto(),
+                    carteira=carteira_do_parceiro.texto(),
+                )
 
     def _exigir_que_serve_ao_emprestimo(self, garantia: Garantia, ultimo_vencimento: date) -> None:
         if garantia.produto is not Produto.EMPRESTIMO:

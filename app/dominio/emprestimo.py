@@ -47,6 +47,29 @@ class Parcela:
     # Quanto já entrou em cada parte (pagamento parcial, na execução).
     juros_pago: Dinheiro = field(default_factory=Dinheiro.zero)
     amortizacao_paga: Dinheiro = field(default_factory=Dinheiro.zero)
+    # Início do período da parcela: o vencimento anterior ou a data da contratação.
+    inicio: date | None = None
+
+    @property
+    def inicio_do_periodo(self) -> date:
+        return self.inicio or _somar_meses(self.vencimento, -1)
+
+    def juros_acumulados(self, hoje: date) -> Dinheiro:
+        """Juros do período {BRL} que já valem hoje.
+
+        Parcela exigível: todos. Parcela vincenda: pro rata pelos {dia_corrido} decorridos
+        desde o início do período, arredondado para cima (a favor do credor) e nunca acima
+        dos juros da parcela.
+        """
+        if self.exigivel(hoje):
+            return self.juros
+        periodo = (self.vencimento - self.inicio_do_periodo).days  # {dia_corrido}
+        decorridos = min(max((hoje - self.inicio_do_periodo).days, 0), periodo)
+        if periodo <= 0:
+            return self.juros
+        # {centavo} x {dia} / {dia} -> {centavo}, para cima (aritmética inteira exata).
+        centavos = -(-self.juros.centavos * decorridos // periodo)
+        return min(Dinheiro(centavos), self.juros)
 
     @property
     def em_aberto(self) -> bool:
@@ -64,10 +87,10 @@ class Parcela:
         return max((hoje - self.vencimento).days, 0) if self.em_aberto else 0
 
     def juros_devido(self, hoje: date) -> Dinheiro:
-        """Juros ainda devidos {BRL}: só os das parcelas exigíveis (sem juros futuros)."""
-        if not self.em_aberto or not self.exigivel(hoje):
+        """Juros ainda devidos {BRL}: os acumulados até hoje menos os já pagos."""
+        if not self.em_aberto:
             return Dinheiro.zero()
-        return self.juros - self.juros_pago
+        return (self.juros_acumulados(hoje) - self.juros_pago).nao_negativo()
 
     def amortizacao_devida(self) -> Dinheiro:
         return Dinheiro.zero() if not self.em_aberto else self.amortizacao - self.amortizacao_paga
@@ -78,8 +101,8 @@ class Parcela:
     def aplicar(self, valor: Dinheiro, hoje: date, agora: datetime) -> tuple[Dinheiro, Dinheiro]:
         """Abate até `valor` desta parcela. Devolve (amortização, juros) pagos {BRL}.
 
-        Parcela exigível paga juros primeiro. Parcela vincenda paga só amortização e,
-        quitada antes do vencimento, é reescrita sem os juros futuros.
+        Paga juros primeiro. Parcela vincenda paga os juros pro rata dos dias decorridos
+        e, quitada antes do vencimento, é reescrita sem os juros futuros.
         """
         if not self.em_aberto:
             return Dinheiro.zero(), Dinheiro.zero()
@@ -120,7 +143,8 @@ class Emprestimo:
         return [p for p in self.parcelas if p.em_aberto]
 
     def saldo_devedor(self, hoje: date) -> Dinheiro:
-        """Parcelas exigíveis em aberto mais a amortização das vincendas, sem juros futuros."""
+        """Parcelas exigíveis em aberto mais a amortização das vincendas, com os juros
+        pro rata dos dias já decorridos do período (sem juros futuros)."""
         return Dinheiro.somar(p.devido(hoje) for p in self.parcelas)
 
     def dias_em_atraso(self, hoje: date) -> int:
@@ -157,12 +181,17 @@ def _somar_meses(base: date, meses: int) -> date:
 
 
 def cronograma_price(
-    principal: Dinheiro, taxa_ao_mes: Decimal, quantidade: int, primeiro_vencimento: date
+    principal: Dinheiro,
+    taxa_ao_mes: Decimal,
+    quantidade: int,
+    primeiro_vencimento: date,
+    contratado_em: date | None = None,
 ) -> list[Parcela]:
     """Parcelas iguais (Tabela Price), vencendo todo mês no dia do primeiro vencimento.
 
     A parcela é arredondada para cima ao centavo; os juros de cada mês, para baixo; a
-    última parcela fecha o saldo (a soma das amortizações é o principal).
+    última parcela fecha o saldo (a soma das amortizações é o principal). `contratado_em`
+    abre o primeiro período (sem ele, um mês antes do primeiro vencimento).
     """
     if not principal.positivo:
         raise ValorInvalido("O principal do empréstimo precisa ser positivo")
@@ -184,6 +213,7 @@ def cronograma_price(
 
     parcelas: list[Parcela] = []
     saldo = principal
+    inicio = contratado_em or _somar_meses(primeiro_vencimento, -1)
     for numero in range(1, quantidade + 1):
         juros = saldo.aplicar_razao(taxa_ao_mes)
         amortizacao = saldo if numero == quantidade else min(prestacao - juros, saldo)
@@ -193,15 +223,18 @@ def cronograma_price(
                 principal=principal.texto(),
                 parcelas=quantidade,
             )
+        vencimento = _somar_meses(primeiro_vencimento, numero - 1)
         parcelas.append(
             Parcela(
                 numero=numero,
-                vencimento=_somar_meses(primeiro_vencimento, numero - 1),
+                vencimento=vencimento,
                 valor=amortizacao + juros,
                 juros=juros,
                 amortizacao=amortizacao,
+                inicio=inicio,
             )
         )
+        inicio = vencimento
         saldo = saldo - amortizacao
     return parcelas
 
