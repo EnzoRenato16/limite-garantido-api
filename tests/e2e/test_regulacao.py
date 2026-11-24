@@ -9,6 +9,7 @@ que gera o documento; o que a página desenha vem da API, em JavaScript.
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,13 @@ def _script() -> Any:
     modulo = importlib.util.module_from_spec(especificacao)
     especificacao.loader.exec_module(modulo)
     return modulo
+
+
+def _fotografar(pagina: Any, nome: str) -> None:
+    pasta = os.environ.get("SALVAR_TELAS")
+    if pasta:
+        pagina.wait_for_timeout(500)
+        pagina.screenshot(path=str(Path(pasta) / nome))
 
 
 def _esperar() -> Any:
@@ -77,3 +85,4 @@ def test_a_pagina_mostra_os_selos_o_aviso_e_a_navegacao(pagina: Any) -> None:
     # Um selo de cada categoria aparece na matriz: o catálogo usa as cinco.
     for categoria in ("norma", "pratica_de_mercado", "interpretacao", "nao_verificado"):
         esperar(pagina.locator(f"#matriz .selo-{categoria}").first).to_be_visible()
+    _fotografar(pagina, "regulacao.png")
