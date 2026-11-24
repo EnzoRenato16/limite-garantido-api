@@ -1,0 +1,223 @@
+# Feriados nacionais que não são dia útil bancário, 2026 e 2027.
+#
+# Vale para os prazos em dias úteis: regulatórios (portabilidade da Res. CVM 210,
+# informações da Res. Conjunta 12), operacionais dos trilhos e baixa do gravame. O atraso
+# do cartão e do empréstimo continua em dias corridos.
+#
+# Cada data foi conferida, uma a uma, no calendário de feriados nacionais da ANBIMA
+# (urls abaixo), com o dia da semana publicado lá. Os feriados por lei foram conferidos
+# também no texto da lei, no Planalto. Carnaval, Paixão de Cristo e Corpus Christi não
+# constam das leis de feriado nacional conferidas; entram porque não são dia útil
+# bancário pelo calendário da ANBIMA (prática de mercado).
+#
+# Fora de 2026 e 2027 o calendário levanta ForaDaCobertura: estender exige nova consulta.
+
+cobertura_inicio = 2026-01-01
+cobertura_fim = 2027-12-31
+
+[fonte]
+nome = "ANBIMA — Feriados nacionais"
+urls = [
+    "https://www.anbima.com.br/feriados/fer_nacionais/2026.asp",
+    "https://www.anbima.com.br/feriados/fer_nacionais/2027.asp",
+]
+consultado_em = 2026-11-22
+leis_conferidas = [
+    "Lei 662/1949, art. 1º, na redação da Lei 10.607/2002 — https://www.planalto.gov.br/ccivil_03/leis/l0662.htm",
+    "Lei 6.802/1980, art. 1º — https://www.planalto.gov.br/ccivil_03/leis/l6802.htm",
+    "Lei 14.759/2023, art. 1º — https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/l14759.htm",
+]
+
+# ------------------------------------------------------------------------ 2026
+[[feriados]]
+data = 2026-01-01
+dia_da_semana = "quinta"
+nome = "Confraternização Universal"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-02-16
+dia_da_semana = "segunda"
+nome = "Carnaval"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2026-02-17
+dia_da_semana = "terca"
+nome = "Carnaval"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2026-04-03
+dia_da_semana = "sexta"
+nome = "Paixão de Cristo"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2026-04-21
+dia_da_semana = "terca"
+nome = "Tiradentes"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-05-01
+dia_da_semana = "sexta"
+nome = "Dia do Trabalho"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-06-04
+dia_da_semana = "quinta"
+nome = "Corpus Christi"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2026-09-07
+dia_da_semana = "segunda"
+nome = "Independência do Brasil"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-10-12
+dia_da_semana = "segunda"
+nome = "Nossa Senhora Aparecida, Padroeira do Brasil"
+categoria = "norma"
+norma = "Lei 6.802/1980"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-11-02
+dia_da_semana = "segunda"
+nome = "Finados"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-11-15
+dia_da_semana = "domingo"
+nome = "Proclamação da República"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-11-20
+dia_da_semana = "sexta"
+nome = "Dia Nacional de Zumbi e da Consciência Negra"
+categoria = "norma"
+norma = "Lei 14.759/2023"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2026-12-25
+dia_da_semana = "sexta"
+nome = "Natal"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+# ------------------------------------------------------------------------ 2027
+[[feriados]]
+data = 2027-01-01
+dia_da_semana = "sexta"
+nome = "Confraternização Universal"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-02-08
+dia_da_semana = "segunda"
+nome = "Carnaval"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2027-02-09
+dia_da_semana = "terca"
+nome = "Carnaval"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2027-03-26
+dia_da_semana = "sexta"
+nome = "Paixão de Cristo"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2027-04-21
+dia_da_semana = "quarta"
+nome = "Tiradentes"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-05-01
+dia_da_semana = "sabado"
+nome = "Dia do Trabalho"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-05-27
+dia_da_semana = "quinta"
+nome = "Corpus Christi"
+categoria = "pratica_de_mercado"
+
+[[feriados]]
+data = 2027-09-07
+dia_da_semana = "terca"
+nome = "Independência do Brasil"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-10-12
+dia_da_semana = "terca"
+nome = "Nossa Senhora Aparecida, Padroeira do Brasil"
+categoria = "norma"
+norma = "Lei 6.802/1980"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-11-02
+dia_da_semana = "terca"
+nome = "Finados"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-11-15
+dia_da_semana = "segunda"
+nome = "Proclamação da República"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-11-20
+dia_da_semana = "sabado"
+nome = "Dia Nacional de Zumbi e da Consciência Negra"
+categoria = "norma"
+norma = "Lei 14.759/2023"
+artigo = "art. 1º"
+
+[[feriados]]
+data = 2027-12-25
+dia_da_semana = "sabado"
+nome = "Natal"
+categoria = "norma"
+norma = "Lei 662/1949 (redação da Lei 10.607/2002)"
+artigo = "art. 1º"

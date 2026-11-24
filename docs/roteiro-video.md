@@ -1,113 +1,98 @@
 # Roteiro do vídeo (até 3 min)
 
-Gravação de tela das páginas `/demo`, `/risco` e `/negocio`, falada em primeira pessoa. No `/demo`, a
+Gravação de tela, em primeira pessoa, começando pelo Docker e passando pelos trilhos
+simulados da `/demo`, pela `/regulacao`, pelo `/risco` e pelo `/negocio`. Na `/demo`, a
 coluna da esquerda é o app de um parceiro fictício; a da direita mostra os webhooks
 chegando.
 
 **Antes de gravar**
 
-- `docker compose up --build` (ou `./scripts/dev.sh`) e abrir
-  `http://localhost:8000/demo` numa aba, `http://localhost:8000/risco` em outra e
-  `http://localhost:8000/negocio` numa terceira.
-- Janela do navegador em 1440 × 900, zoom em 100%. A régua fica presa no topo, então dá
-  para rolar a página sem perder os números.
-- No `/demo`, clicar em **Começar de novo** para sair de uma conta zerada.
-- Falar devagar. Os tempos abaixo somam 2 min 50 s.
+- Terminal aberto na pasta do projeto, com o Docker pronto. Abas: `/demo`, `/regulacao`,
+  `/risco` e `/negocio`, em janela de 1440 × 900, zoom em 100%.
+- Falar devagar. Os tempos abaixo somam 2 min 55 s.
 
 ---
 
-### 0:00 a 0:15 · O problema
+### 0:00 a 0:20 · O problema e o Docker
 
-**Na tela:** o `/demo` parado, limite em R$ 0,00.
+**Na tela:** o terminal com `docker compose up --build` já rodando, depois a `/demo`
+parada, limite em R$ 0,00.
 
-> Hoje, se você tem dinheiro investido e quer limite no cartão, isso só funciona no
-> banco onde o investimento está. Eu montei um protótipo de como isso poderia virar um
-> serviço que uma plataforma oferece para quem não é banco: uma API.
+> Meu investimento só vira limite no cartão no banco onde ele está custodiado. Montei um
+> protótipo de como isso poderia virar uma API para quem não é banco. Sobe com um
+> comando, Docker compose, com Postgres, API e worker. Tudo aqui é simulado: não integra
+> com a B3, com o Selic nem com ninguém de verdade.
 
-### 0:15 a 0:35 · Fase 1, dentro de casa (20 segundos)
+### 0:20 a 0:45 · Dentro de casa
 
-**Na tela:** **Guardar como garantia** (CDB, R$ 5.000,00), depois **Comprar**
-(R$ 4.000,00).
+**Na tela:** garantia de CDB, R$ 5.000,00, depois uma compra de R$ 4.000,00.
 
-> O cliente guarda cinco mil num CDB. O dinheiro continua rendendo, fica bloqueado como
-> garantia e vira quatro mil duzentos e cinquenta de limite na hora. Compra de quatro
-> mil, aprovada. Do lado direito, o parceiro recebe cada evento, assinado.
+> O ativo fica custodiado na casa, o gravame é registrado e só então nasce o limite:
+> quatro mil duzentos e cinquenta. Compra aprovada. Do lado direito, o parceiro recebe cada
+> evento, assinado.
 
-### 0:35 a 1:00 · Fase 2: investimento em outra instituição
+### 0:45 a 1:20 · Os trilhos de fora
 
-**Na tela:** **Começar de novo**. Em "Onde está o investimento", escolher **Investimento
-em outra instituição** e **Custodiante Lento (simulador)**; Tesouro Selic, R$ 10.000,00;
-**Guardar como garantia**. Esperar a linha do tempo chegar em "Custodiante analisando".
+**Na tela:** **Começar de novo**. Em "Trazer de fora", escolher **Portabilidade** de ações,
+R$ 10.000,00, **Pedir a entrada**. Apontar o prazo em dias úteis e a linha do tempo
+(solicitado, registrado, baixa pedida, baixado). Clicar em **Informar impedimento
+(simulador)**, depois pedir de novo e **Concluir (simulador)**.
 
-> Agora o investimento está em outro lugar. Aqui o bloqueio não é meu: eu peço a quem
-> guarda o ativo, e ele responde quando quiser. Neste projeto esse custodiante é um
-> simulador, não tem integração com ninguém de verdade. O pedido saiu, ele está
-> analisando, e repara no limite: continua zero. Ele só nasce quando o bloqueio for
-> confirmado.
+> Investimento de outra instituição não vale para qualquer ativo. Cada tipo tem o seu
+> trilho: portabilidade da CVM 210 para ações, transferência de custódia para CDB, TD
+> Garantia para o Tesouro e a Resolução Conjunta 12 para a previdência. Aqui as ações
+> vêm por portabilidade. O limite continua zero até o gravame ser registrado. Se houver
+> impedimento, nada entra no livro contábil. Se concluir, o gravame nasce, e o limite
+> também.
 
-### 1:00 a 1:20 · A recusa
+### 1:20 a 1:45 · Previdência e empréstimo
 
-**Na tela:** clicar em **Custodiante recusa**. Apontar a linha do tempo e o webhook
-`gravame.recusado` na direita.
+**Na tela:** previdência com a régua: avisos de 45 e de 10 dias e a execução só depois
+de 90 dias de atraso.
 
-> E se ele recusar? Por exemplo, porque o título já está dado em garantia em outro
-> lugar. A garantia termina recusada, nenhum centavo entra no livro contábil, e o
-> parceiro é avisado com o motivo. Se o custodiante simplesmente não responder, o pedido
-> expira no prazo, com o mesmo cuidado.
+> Na previdência, a norma exige avisos ao cliente e só permite a execução depois de
+> noventa dias de atraso. A régua está no código. A execução vende por inteiro, retém o
+> tributo e devolve o excedente com demonstrativo.
 
-### 1:20 a 1:35 · A confirmação
+### 1:45 a 2:05 · A regulação
 
-**Na tela:** guardar de novo (mesmo custodiante) e clicar em **Custodiante confirma**.
+**Na tela:** aba `/regulacao`, apontar os selos de categoria e uma linha da matriz.
 
-> Quando ele confirma, aí sim: nove mil e quinhentos de limite. A confirmação chega
-> assinada, e se ela vier duas vezes, ou pelo aviso e pela consulta ao mesmo tempo, é
-> aplicada uma vez só.
+> Cada afirmação regulatória tem norma e artigo, ou uma categoria: prática de mercado,
+> interpretação, imprensa ou não verificado. A matriz sai de um único arquivo, e a página,
+> a API e o documento leem dele.
 
-### 1:35 a 2:10 · O crash da bolsa no painel de risco
+### 2:05 a 2:30 · O painel de risco
 
-**Na tela:** trocar para a aba do `/risco`. Clicar em **Crash da bolsa (ações -30%)**.
-Apontar o "9 → 43" e a régua de Ações com o tracejado. Depois clicar em **Custodiante
-fora do ar** e apontar a perda adicional da garantia externa.
+**Na tela:** aba `/risco`. Clicar em **Quebra de emissor** e apontar a perda e a
+concentração contra o teto do FGC. O aviso de carteira sintética deve aparecer na tela.
 
-> Do lado de quem cuida do risco: uma carteira sintética de mil clientes, com parte das
-> garantias em custodiantes de fora. Crash da bolsa, ações caindo trinta por cento. Os
-> clientes em chamada de margem vão de nove para quarenta e três, mas a perda fica em
-> zero, porque a margem de segurança das ações absorve a queda. Agora, se um
-> custodiante sai do ar, a perda aparece, e ela vem inteira da garantia que estava fora.
-> Os números são de uma carteira inventada, mas a pergunta é a que um time de risco faria.
+> Do lado de quem cuida do risco: uma carteira sintética de mil clientes, sem dado real.
+> Se o emissor quebra, o FGC paga o titular, não o credor, e a perda aparece. A garantia
+> reduz a perda, não a elimina.
 
-### 2:10 a 2:35 · O modelo econômico (25 segundos)
+### 2:30 a 2:55 · O modelo econômico e o fechamento
 
-**Na tela:** abrir a aba do `/negocio`, no conjunto **Base**. Apontar a margem da
-plataforma e a do parceiro por cliente por mês e o ponto de equilíbrio. Clicar em
-**Conservador** e mostrar a margem negativa e o "não há ponto de equilíbrio".
+**Na tela:** aba `/negocio`, conjunto **Base**: margem da plataforma, do parceiro e ponto
+de equilíbrio. Depois **Conservador**, com margem negativa.
 
-> E o negócio fecha? Esta página mostra, por cliente por mês, quanto a plataforma e o
-> parceiro ganham, e quantos clientes a plataforma precisa para pagar o custo fixo. Os
-> números são ilustrativos: premissas minhas, editáveis, sem dado de empresa nenhuma.
-> No conjunto base, a margem é de uns quatro reais por cliente e o equilíbrio fica logo
-> abaixo da carteira. No conservador, a margem é negativa e não existe equilíbrio: com
-> premissa ruim, a conta não fecha, e eu preferi deixar isso à vista.
-
-### 2:35 a 2:50 · Fechamento
-
-**Na tela:** voltar ao `/demo` e abrir um **ver o JSON entregue**.
-
-> Por baixo tem um livro contábil de partidas dobradas, proteção contra operações
-> simultâneas e testes para tudo isso. É um projeto pessoal de estudo, e a parte de
-> outra instituição é simulada. Se você trabalha com crédito ou infraestrutura
-> financeira, eu adoraria ouvir onde isso quebra.
+> E o negócio fecha? Os números são ilustrativos, premissas minhas, sem dado de empresa.
+> No base, fecha por pouco, e no conservador, não. Por baixo há um livro contábil de
+> partidas dobradas e testes para tudo isso. É um projeto de estudo, e eu não sou
+> advogado. Eu adoraria ouvir onde isso quebra.
 
 ---
 
 **Se alguém perguntar na apresentação ao vivo**, respostas curtas:
 
-- *"Isso fala com o Tesouro ou com a B3?"* Não. A fase 2 é simulada. Está documentado
-  onde um trilho real entraria e o que as fontes públicas dizem sobre ele.
-- *"E se o mesmo aviso do custodiante chegar duas vezes?"* Cada resposta tem um id, e o
-  banco não aceita o mesmo id duas vezes. Tem teste com dez avisos iguais ao mesmo tempo.
-- *"E se duas compras chegarem juntas?"* A conta é travada durante a decisão. Tem um
-  teste que dispara quarenta compras ao mesmo tempo e exige que passem exatamente as
-  que cabem.
-- *"Isso é legal?"* A base é a alienação fiduciária de ativos financeiros, mas eu não
-  sou advogado e isso está escrito em toda a documentação.
+- *"Isso fala com o Tesouro, a B3 ou o Selic?"* Não. O registro é simulado. Está
+  documentado onde um trilho real entraria e o que as fontes públicas dizem.
+- *"Funciona com qualquer ativo de outra instituição?"* Não. Só nos trilhos da matriz; para
+  CDB, LCI e LCA, não encontramos norma que obrigue o custodiante a cooperar.
+- *"E o Drex?"* Não há norma nem data; nada depende dele.
+- *"E se o mesmo aviso da contraparte chegar duas vezes?"* Cada resposta tem um id, e o
+  banco não aceita o mesmo id duas vezes.
+- *"E se duas compras chegarem juntas?"* A conta é travada durante a decisão. Um teste
+  dispara quarenta compras ao mesmo tempo.
+- *"Isso é legal?"* Há norma por trás de cada trilho, mas eu não sou advogado e isso
+  está escrito em toda a documentação.

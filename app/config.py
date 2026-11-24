@@ -47,18 +47,23 @@ class Configuracao(BaseSettings):
     custodia_modo: Literal["interna", "assincrona"] = "interna"
     custodia_prazo_legado_minutos: int = Field(default=1440, ge=1)
 
-    # Fase 2: custodiante externo. Não há integração real; "simulador" liga os
-    # custodiantes fictícios de app/custodiantes_simulados.toml. Sem valor explícito, o
-    # simulador fica ligado fora de produção e desligado em produção.
-    custodia_externa: Literal["simulador", "desligada"] | None = None
-    custodia_perfis_arquivo: Path | None = None
-    # Segredo HMAC de cada custodiante para assinar callbacks, em JSON:
-    # CUSTODIA_SEGREDOS='{"custodiante_agil": "...", "custodiante_lento": "..."}'
-    custodia_segredos: dict[str, SecretStr] = Field(default_factory=dict)
+    # Trilhos de fora (portabilidade, transferência de custódia, TD Garantia, Res. Conjunta 12).
+    # Não há integração real: "simulador" liga as contrapartes fictícias de
+    # app/contrapartes_simuladas.toml. Sem valor explícito, o simulador fica ligado fora de
+    # produção e desligado em produção.
+    contrapartes: Literal["simulador", "desligada"] | None = None
+    contrapartes_perfis_arquivo: Path | None = None
+    # Onde o gravame seria registrado (B3, Selic, plataforma da Res. Conjunta 12). Também só
+    # há simulação: em produção ela é recusada, e "desligada" responde 503
+    # `infraestrutura_indisponivel` em vez de fingir um registro.
+    infraestrutura_de_registro: Literal["simulada", "desligada"] | None = None
+    # Segredo HMAC de cada contraparte para assinar callbacks, em JSON:
+    # CONTRAPARTES_SEGREDOS='{"banco_de_origem_simulado": "...", ...}'
+    contrapartes_segredos: dict[str, SecretStr] = Field(default_factory=dict)
     # Janela contra reapresentação de callback (diferença máxima do timestamp assinado).
-    custodia_tolerancia_segundos: int = Field(default=300, ge=1, le=900)
+    contrapartes_tolerancia_segundos: int = Field(default=300, ge=1, le=900)
     # De quanto em quanto tempo o worker consulta pedidos sem resposta (polling).
-    custodia_intervalo_segundos: float = Field(default=2.0, gt=0)
+    contrapartes_intervalo_segundos: float = Field(default=2.0, gt=0)
 
     webhook_timeout_segundos: float = Field(default=5.0, gt=0)
     webhook_max_tentativas: int = Field(default=8, ge=1)
@@ -82,8 +87,8 @@ class Configuracao(BaseSettings):
         # Vale em qualquer ambiente: com segredo vazio ou curto, qualquer um forja a
         # confirmação de um gravame, e isso vira limite sem garantia.
         fracos = [
-            custodiante_id
-            for custodiante_id, segredo in self.custodia_segredos.items()
+            contraparte_id
+            for contraparte_id, segredo in self.contrapartes_segredos.items()
             if len(segredo.get_secret_value()) < TAMANHO_MINIMO_DE_SEGREDO
         ]
         if fracos:
@@ -104,15 +109,18 @@ class Configuracao(BaseSettings):
             problemas.append("SANDBOX_HABILITADO precisa ser false")
         if self.webhook_permitir_rede_interna:
             problemas.append("WEBHOOK_PERMITIR_REDE_INTERNA precisa ser false")
-        if self.custodia_externa == "simulador":
+        if self.contrapartes == "simulador":
+            problemas.append("CONTRAPARTES=simulador não roda em produção: não há contraparte real")
+        if self.infraestrutura_de_registro == "simulada":
             problemas.append(
-                "CUSTODIA_EXTERNA=simulador não roda em produção: não há custodiante real"
+                "INFRAESTRUTURA_DE_REGISTRO=simulada não roda em produção: "
+                "não há registro real de gravame"
             )
-        for custodiante_id, segredo in self.custodia_segredos.items():
+        for contraparte_id, segredo in self.contrapartes_segredos.items():
             valor = segredo.get_secret_value()
             if len(valor) < TAMANHO_MINIMO_DE_SEGREDO or MARCA_DE_SEGREDO_DE_EXEMPLO in valor:
                 problemas.append(
-                    f"segredo de callback de {custodiante_id} precisa ter "
+                    f"segredo de callback de {contraparte_id} precisa ter "
                     f"{TAMANHO_MINIMO_DE_SEGREDO}+ caracteres e não pode ser o do .env.example"
                 )
         if self.database_url.startswith("sqlite"):
@@ -133,9 +141,15 @@ class Configuracao(BaseSettings):
         return self.ambiente is Ambiente.PRODUCAO
 
     @property
-    def custodia_externa_efetiva(self) -> Literal["simulador", "desligada"]:
-        if self.custodia_externa is not None:
-            return self.custodia_externa
+    def infraestrutura_efetiva(self) -> Literal["simulada", "desligada"]:
+        if self.infraestrutura_de_registro is not None:
+            return self.infraestrutura_de_registro
+        return "desligada" if self.em_producao else "simulada"
+
+    @property
+    def contrapartes_efetivas(self) -> Literal["simulador", "desligada"]:
+        if self.contrapartes is not None:
+            return self.contrapartes
         return "desligada" if self.em_producao else "simulador"
 
 

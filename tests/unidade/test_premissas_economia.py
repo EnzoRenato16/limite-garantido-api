@@ -23,7 +23,7 @@ def _montar(**mudancas: str) -> Premissas:
     valores = dict(VALORES_BASE)
     for nome, valor in mudancas.items():
         valores[N(nome)] = Decimal(valor)
-    return montar_premissas(valores, set(FonteDeReceita), "custodiante_fora_do_ar", ESQUEMA)
+    return montar_premissas(valores, set(FonteDeReceita), "quebra_de_emissor", ESQUEMA)
 
 
 def _erros(**mudancas: str) -> list[dict[str, str]]:
@@ -34,7 +34,7 @@ def _erros(**mudancas: str) -> list[dict[str, str]]:
 
 
 def test_sao_34_premissas_e_o_esquema_cobre_todas() -> None:
-    assert len(N) == 34
+    assert len(N) == 36
     assert set(ESQUEMA) == set(N)
     assert set(VALORES_BASE) == set(N)
 
@@ -48,7 +48,7 @@ def test_base_monta_com_tipos_certos() -> None:
     assert p.meses_no_rotativo == 2
     assert isinstance(p.meses_no_rotativo, int)
     assert p.receitas_ligadas == frozenset(FonteDeReceita)
-    assert p.cenario_de_risco == "custodiante_fora_do_ar"
+    assert p.cenario_de_risco == "quebra_de_emissor"
     assert p.valores() == VALORES_BASE
 
 
@@ -67,8 +67,8 @@ def test_erro_e_um_valor_invalido_com_codigo_proprio() -> None:
 def test_fora_da_faixa_lista_campo_e_unidade() -> None:
     erros = _erros(ltv_medio="1.5")
     assert [e["campo"] for e in erros] == ["ltv_medio"]
-    assert "0,60" in erros[0]["mensagem"]
-    assert "1,00" in erros[0]["mensagem"]
+    assert "0,50" in erros[0]["mensagem"]
+    assert "0,90" in erros[0]["mensagem"]
     assert "fração" in erros[0]["mensagem"]
 
 

@@ -35,7 +35,7 @@ from tests.economia_base import ESQUEMA, premissas_base
 N = NomeDaPremissa
 
 PERDAS = TaxasDePerda(
-    cenario_id="custodiante_fora_do_ar",
+    cenario_id="quebra_de_emissor",
     nome="Custodiante fora do ar",
     condicional_interna=Fracao(Decimal("0.000052")),
     condicional_externa=Fracao(Decimal("0.08552")),
@@ -267,8 +267,8 @@ def test_fee_fora_da_faixa_aceita_nao_empata() -> None:
     assert c.custo_a_mais_da_externa.positivo
     assert c.fee_de_gravame_externo_para_empatar is None
     assert c.motivo_fee == (
-        "Nenhum fee de gravame externo na faixa aceita, de R$ 0,00 a R$ 500,00, empata a "
-        "externa com a interna."
+        "Nenhum fee de gravame de fora na faixa aceita, de R$ 0,00 a R$ 500,00, empata a "
+        "garantia de fora com a de dentro de casa."
     )
     # None é verdade: nas duas pontas da faixa aceita a externa continua abaixo da interna.
     for fee in (Dinheiro(0), Dinheiro(50000)):
@@ -310,8 +310,8 @@ def test_gasto_sem_empate_em_lado_nenhum_diz_o_motivo() -> None:
     assert c.gasto_para_empatar is None
     assert c.gasto_cabe_no_limite is None
     assert c.motivo_gasto == (
-        "Nenhum gasto mensal na faixa aceita, de R$ 0,00 a R$ 50.000,00, empata a externa "
-        "com a interna."
+        "Nenhum gasto mensal na faixa aceita, de R$ 0,00 a R$ 50.000,00, empata a garantia "
+        "de fora com a de dentro de casa."
     )
     for gasto in (Dinheiro(0), Dinheiro(5000000)):
         assert _margem(p.com(**TODA_EXTERNA, gasto_mensal=gasto)) < c.margem_interna
@@ -406,7 +406,7 @@ def test_tornado_corta_saldo_e_ltv() -> None:
 
     ltv = _barra(barras, N.ltv_medio)
     assert ltv.valor_baixo == Decimal("0.8000")
-    assert ltv.valor_alto == Decimal("0.95")
+    assert ltv.valor_alto == Decimal("0.90")
     assert ltv.cortado_pela_coerencia is True
 
     # O gasto alto também é cortado: R$ 2.500,00 × 85% = R$ 2.125,00.

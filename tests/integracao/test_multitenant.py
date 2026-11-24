@@ -102,7 +102,8 @@ def test_parceiro_sem_politica_informada_recebe_a_de_referencia(cliente: TestCli
     parceiro = criar_parceiro(cliente)
     politica = parceiro.get("/v1/parceiro").json()["politica"]
     assert politica["ltv_por_ativo"]["cdb"] == "0.85"
-    assert politica["ltv_por_ativo"]["acoes"] == "0.60"
+    assert politica["ltv_por_ativo"]["acoes"] == "0.50"
+    assert "coe" not in politica["ltv_por_ativo"]
     assert politica["dias_para_execucao"] == 7
     assert politica["teto_limite_por_cliente"] == "50000.00"
 

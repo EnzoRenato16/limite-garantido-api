@@ -55,10 +55,10 @@ MOTIVO_SEM_EQUILIBRIO_SEM_CUSTO_FIXO = (
 
 # Por que não há fee ou gasto que empata a externa com a interna.
 MOTIVO_EXTERNA_NAO_CUSTA_MAIS = (
-    "A garantia externa não custa mais que a interna: não há diferença para empatar."
+    "A garantia de fora não custa mais que a de dentro de casa: não há diferença para empatar."
 )
 MOTIVO_SEM_GRAVAME = (
-    "Sem gravame por cliente (0 por mês), o fee de gravame externo não mexe na margem."
+    "Sem gravame por cliente (0 por mês), o fee de gravame de fora não mexe na margem."
 )
 MOTIVO_FEE_DE_GRAVAME_DESLIGADO = (
     "A receita de fee de gravame está desligada: o fee de gravame externo não entra na conta."
@@ -277,7 +277,7 @@ def comparar_interna_externa(
                 esquema[N.fee_gravame_externa],
                 alvo,
                 PASSO_DO_FEE,
-                "fee de gravame externo",
+                "fee de gravame de fora",
             )
         # O gasto é procurado sem exigir coerência; o limite só entra na resposta.
         gasto, motivo_gasto = _valor_para_empatar(
@@ -334,7 +334,7 @@ def _valor_para_empatar(
         case _SemEmpate.fora_da_faixa:
             return None, (
                 f"Nenhum {rotulo} na faixa aceita, de {minimo.formatado()} a "
-                f"{maximo.formatado()}, empata a externa com a interna."
+                f"{maximo.formatado()}, empata a garantia de fora com a de dentro de casa."
             )
         case _SemEmpate.nao_confirmado:
             return None, (

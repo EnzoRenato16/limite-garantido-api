@@ -170,40 +170,66 @@ def test_coluna_de_instante_exige_fuso_e_devolve_utc() -> None:
     assert lido == datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
 
 
-def test_simulador_de_custodiantes_fica_fora_da_producao() -> None:
-    assert _config().custodia_externa_efetiva == "simulador"
+def test_simulador_de_contrapartes_fica_fora_da_producao() -> None:
+    assert _config().contrapartes_efetivas == "simulador"
     producao = _config(
         ambiente="producao",
         database_url="postgresql+psycopg://app@banco/lg",
         admin_token=TOKEN_FORTE,
     )
-    assert producao.custodia_externa_efetiva == "desligada"
-    with pytest.raises(ValueError, match="CUSTODIA_EXTERNA=simulador"):
+    assert producao.contrapartes_efetivas == "desligada"
+    with pytest.raises(ValueError, match="CONTRAPARTES=simulador"):
         _config(
             ambiente="producao",
             database_url="postgresql+psycopg://app@banco/lg",
             admin_token=TOKEN_FORTE,
-            custodia_externa="simulador",
+            contrapartes="simulador",
         )
 
 
+def test_infraestrutura_de_registro_simulada_fica_fora_da_producao() -> None:
+    assert _config().infraestrutura_efetiva == "simulada"
+    producao = {
+        "ambiente": "producao",
+        "database_url": "postgresql+psycopg://app@banco/lg",
+        "admin_token": TOKEN_FORTE,
+    }
+    assert _config(**producao).infraestrutura_efetiva == "desligada"
+    with pytest.raises(ValueError, match="INFRAESTRUTURA_DE_REGISTRO=simulada"):
+        _config(**producao, infraestrutura_de_registro="simulada")
+
+
+def test_infraestrutura_desligada_recusa_em_vez_de_fingir_registro() -> None:
+    from app.dominio.erros import InfraestruturaIndisponivel
+    from app.infra.infraestrutura_simulada import InfraestruturaDesligada, montar_infraestrutura
+
+    assert isinstance(
+        montar_infraestrutura(_config(infraestrutura_de_registro="desligada")),
+        InfraestruturaDesligada,
+    )
+    with pytest.raises(InfraestruturaIndisponivel):
+        InfraestruturaDesligada().registrar(None)  # type: ignore[arg-type]
+
+
 def test_segredo_de_callback_fraco_nao_sobe_em_producao() -> None:
-    with pytest.raises(ValueError, match="segredo de callback de custodiante_agil"):
+    with pytest.raises(ValueError, match="segredo de callback de banco_de_origem_simulado"):
         _config(
             ambiente="producao",
             database_url="postgresql+psycopg://app@banco/lg",
             admin_token=TOKEN_FORTE,
-            custodia_externa="desligada",
-            custodia_segredos={"custodiante_agil": "segredo-de-exemplo-com-mais-de-32-letras"},
+            contrapartes="desligada",
+            contrapartes_segredos={
+                "banco_de_origem_simulado": "segredo-de-exemplo-com-mais-de-32-letras"
+            },
         )
 
 
 @pytest.mark.parametrize("segredo", ["", "curto"])
 def test_segredo_de_callback_curto_nao_sobe_em_ambiente_nenhum(segredo: str) -> None:
     with pytest.raises(ValueError, match="segredo de callback"):
-        _config(custodia_segredos={"custodiante_agil": segredo})
+        _config(contrapartes_segredos={"banco_de_origem_simulado": segredo})
 
 
 def test_janela_de_replay_tem_teto() -> None:
-    with pytest.raises(ValueError, match="custodia_tolerancia_segundos"):
-        _config(custodia_tolerancia_segundos=86_400)
+    with pytest.raises(ValueError, match="contrapartes_tolerancia_segundos"):
+        _config(contrapartes_tolerancia_segundos=86_400)

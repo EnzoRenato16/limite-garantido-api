@@ -40,6 +40,22 @@ TETO_DE_JUROS_E_ENCARGOS = Decimal(1)
 
 ARRANJO = "arranjo"  # nome da visão de plataforma e parceiro juntos
 
+# IOF-crédito de pessoa física incide até 365 {dia_corrido} (Decreto 6.306/2007, art. 7º, I).
+DIAS_MAXIMOS_DO_IOF = 365
+
+# O que o modelo não conta, e por quê. Aparece no resultado, na tela e em docs/economia.md.
+NOTAS = (
+    "O IR da execução é do cliente: quem paga o rendimento retém na fonte (no Tesouro, o "
+    "agente de custódia). Não é receita nem custo da plataforma ou do parceiro, e por isso "
+    "fica fora das margens (norma: Lei 11.033/2004, art. 1º; IN RFB 1.585/2015).",
+    "O alívio de capital só vale se o colateral cumprir a Circular BCB 3.809/2016, art. 4º: "
+    "registrado em entidade autorizada, marcado a mercado e movimentável só por ordem do "
+    "credor. O modelo não conta nenhum alívio de capital (norma).",
+    "O teto de juros e encargos de 100% do valor original (Lei 14.690/2023, art. 28) vale "
+    "para o rotativo e para o parcelado da fatura (norma). O modelo calcula só o rotativo: "
+    "não há linha de parcelado, e isso fica em Próximos passos.",
+)
+
 
 class Parte(StrEnum):
     cliente = "cliente"
@@ -122,6 +138,7 @@ class ResultadoDoMes:
     arranjo: Visao
     perda: ContaDaPerda
     rotativo_no_teto: bool
+    notas: tuple[str, ...] = NOTAS
 
 
 # --------------------------------------------------------------------- texto
@@ -284,7 +301,7 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
                 Parte.cliente,
                 Parte.plataforma,
                 _para_baixo(_centavos(p.saldo_em_garantia) * fi * ao_mes),
-                f"{_reais(p.saldo_em_garantia)} × {_percentual(fi)} interna × "
+                f"{_reais(p.saldo_em_garantia)} × {_percentual(fi)} dentro de casa × "
                 f"{_percentual(ao_ano.valor)} a.a. ({_percentual(ao_mes)} a.m.)",
                 (N.saldo_em_garantia, N.fracao_interna, N.taxa_sobre_investimento_ao_ano),
             )
@@ -422,12 +439,12 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
     linhas.append(
         Linha(
             "gravame_custodiante",
-            "Gravame no custodiante",
+            "Gravame no custodiante de fora",
             None,
             Parte.plataforma,
             Parte.custodiante,
             _para_cima(p.gravames_ao_mes * fe * _centavos(p.custo_do_gravame_externo)),
-            f"{_numero(p.gravames_ao_mes)} gravames × {_percentual(fe)} externa × "
+            f"{_numero(p.gravames_ao_mes)} gravames × {_percentual(fe)} de fora × "
             f"{_reais(p.custo_do_gravame_externo)}",
             (N.gravames_ao_mes, N.fracao_externa, N.custo_do_gravame_externo),
         )
@@ -437,21 +454,21 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
     for id_, nome, destino, fracao, custo, nome_da_fracao, campo_da_fracao, campo_do_custo in (
         (
             "execucao_interna",
-            "Execução de garantia interna",
+            "Execução de garantia dentro de casa",
             Parte.fornecedores,
             fi,
             p.custo_de_execucao_interna,
-            "interna",
+            "dentro de casa",
             N.fracao_interna,
             N.custo_de_execucao_interna,
         ),
         (
             "execucao_externa",
-            "Execução de garantia externa",
+            "Execução de garantia de fora",
             Parte.custodiante,
             fe,
             p.custo_de_execucao_externa,
-            "externa",
+            "de fora",
             N.fracao_externa,
             N.custo_de_execucao_externa,
         ),
@@ -488,6 +505,36 @@ def _calcular(p: Premissas, perdas: TaxasDePerda) -> ResultadoDoMes:
                 (N.aliquota_sobre_receita,),
             )
         )
+
+    # IOF-crédito: o cliente paga ao governo, e a conta não passa pela margem de ninguém.
+    # A base é só o saldo financiado a crédito, o que rola da fatura a cada mês; a compra
+    # paga integralmente na fatura não gera IOF (prática de mercado).
+    dias_do_iof = min(
+        Decimal(n) * DIAS_CORRIDOS_NO_ANO / MESES_NO_ANO, Decimal(DIAS_MAXIMOS_DO_IOF)
+    )
+    aliquota_do_iof = p.iof_diario.valor * dias_do_iof + p.iof_adicional.valor
+    linhas.append(
+        Linha(
+            "iof_credito",
+            "IOF do crédito",
+            None,
+            Parte.cliente,
+            Parte.governo,
+            _para_cima(rolado * aliquota_do_iof),
+            f"{_reais(Dinheiro(int(rolado.to_integral_value(rounding=ROUND_CEILING))))} "
+            f"financiados × ({_percentual(p.iof_diario.valor)} ao dia × "
+            f"{_numero(dias_do_iof.quantize(Decimal('0.01')))} dias + "
+            f"{_percentual(p.iof_adicional.valor)})",
+            (
+                N.gasto_mensal,
+                N.fracao_de_clientes_no_rotativo,
+                N.fracao_da_fatura_rolada,
+                N.meses_no_rotativo,
+                N.iof_diario,
+                N.iof_adicional,
+            ),
+        )
+    )
 
     return ResultadoDoMes(
         linhas=tuple(linhas),

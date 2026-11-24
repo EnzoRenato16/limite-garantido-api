@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -31,33 +32,35 @@ from app.dominio.conta import (
     MotivoBloqueio,
 )
 from app.dominio.dinheiro import Dinheiro
+from app.dominio.emprestimo import Emprestimo, EstadoEmprestimo, Parcela
 from app.dominio.garantia import (
-    ESTADOS_AGUARDANDO_CUSTODIANTE,
-    ESTADOS_ATIVOS,
-    ESTADOS_FINAIS,
-    EstadoGarantia,
     Garantia,
-    OrigemGarantia,
+    InformacoesDaOperadora,
     Solicitacao,
     TipoSolicitacao,
 )
+from app.dominio.gravame import ESTADOS_FINAIS, EstadoGravame, Gravame
 from app.dominio.ids import novo_id
 from app.dominio.ledger import ChaveDeSaldo, ContaContabil, Saldos, Sentido
 from app.dominio.parceiro import Parceiro
 from app.dominio.politica import PoliticaRisco, TipoAtivo
+from app.dominio.regulacao import Infraestrutura, Instrumento, Produto, Trilho
 from app.dominio.stress import ContaNaCarteira, GarantiaNaCarteira
 from app.infra.banco.modelos import (
     ChamadaDeMargemModelo,
     ChaveDeIdempotenciaModelo,
     CompraModelo,
     ContaModelo,
+    EmprestimoModelo,
     EntregaDeWebhookModelo,
     EventoModelo,
     FaturaModelo,
     GarantiaModelo,
+    GravameModelo,
     LancamentoModelo,
     PagamentoModelo,
     ParceiroModelo,
+    ParcelaModelo,
     PartidaModelo,
     RespostaDeCustodianteModelo,
     SolicitacaoDeCustodiaModelo,
@@ -67,12 +70,11 @@ ESTADO_DE_ENTREGA_PENDENTE = "pendente"
 ESTADO_DE_ENTREGA_ENTREGUE = "entregue"
 ESTADO_DE_ENTREGA_MORTA = "morta"
 
-# Tudo o que ainda pode mudar entra no agregado; as encerradas ficam de fora.
-_GARANTIAS_VIVAS = [estado.value for estado in EstadoGarantia if estado not in ESTADOS_FINAIS]
-_GARANTIAS_AGUARDANDO = [
-    estado.value for estado in ESTADOS_AGUARDANDO_CUSTODIANTE | {EstadoGarantia.PENDENTE}
-]
-_GARANTIAS_ATIVAS = [estado.value for estado in ESTADOS_ATIVOS]
+# Tudo o que ainda pode mudar entra no agregado; os gravames encerrados ficam de fora.
+_GRAVAMES_VIVOS = [e.value for e in EstadoGravame if e not in ESTADOS_FINAIS]
+# Garantia que ainda onera o ativo a favor da SCD (vigente ou liberada para excussão).
+_GRAVAMES_ONERADOS = [EstadoGravame.REGISTRADO.value, EstadoGravame.LIBERADO_PARA_EXCUSSAO.value]
+_EMPRESTIMOS_ABERTOS = [EstadoEmprestimo.ATIVO.value, EstadoEmprestimo.EM_ATRASO.value]
 _FATURAS_EM_ABERTO = [EstadoFatura.FECHADA.value, EstadoFatura.EM_ATRASO.value]
 _RECEBIVEIS = [
     ContaContabil.RECEBIVEIS_A_FATURAR.value,
@@ -134,8 +136,11 @@ class RepositorioDeContasSql:
             # Garantia já encerrada (liberada ou executada): entra só para o domínio
             # poder responder com o erro de transição certo.
             modelo = self._sessao.get(GarantiaModelo, garantia_id)
-            if modelo is not None:
-                conta.garantias.append(_garantia_do_modelo(modelo, {}))
+            gravame = self._sessao.scalars(
+                select(GravameModelo).where(GravameModelo.garantia_id == garantia_id)
+            ).one_or_none()
+            if modelo is not None and gravame is not None:
+                conta.garantias.append(_garantia_do_modelo(modelo, gravame, {}))
         return conta
 
     def _carregar(self, consulta: Select[ContaModelo]) -> Conta | None:
@@ -145,14 +150,13 @@ class RepositorioDeContasSql:
         ).scalar_one_or_none()
         if modelo is None:
             return None
-        garantias = self._sessao.scalars(
-            select(GarantiaModelo)
-            .where(
-                GarantiaModelo.conta_id == modelo.id, GarantiaModelo.estado.in_(_GARANTIAS_VIVAS)
-            )
+        garantias = self._sessao.execute(
+            select(GarantiaModelo, GravameModelo)
+            .join(GravameModelo, GravameModelo.garantia_id == GarantiaModelo.id)
+            .where(GarantiaModelo.conta_id == modelo.id, GravameModelo.estado.in_(_GRAVAMES_VIVOS))
             .order_by(GarantiaModelo.id)
         ).all()
-        ids_de_pedidos = [g.solicitacao_id for g in garantias if g.solicitacao_id]
+        ids_de_pedidos = [g.solicitacao_id for g, _ in garantias if g.solicitacao_id]
         pedidos = (
             {
                 pedido.id: pedido
@@ -185,12 +189,90 @@ class RepositorioDeContasSql:
             motivo_bloqueio=MotivoBloqueio(modelo.motivo_bloqueio)
             if modelo.motivo_bloqueio
             else None,
-            garantias=[_garantia_do_modelo(g, pedidos) for g in garantias],
+            garantias=[_garantia_do_modelo(g, v, pedidos) for g, v in garantias],
             faturas=[_fatura_do_modelo(f) for f in faturas],
             chamadas=[_chamada_do_modelo(c) for c in chamadas],
+            emprestimos=self._emprestimos_abertos(modelo.id),
             saldos=self._saldos(modelo.id),
             versao=modelo.versao,
         )
+
+    def _emprestimos_abertos(self, conta_id: str) -> list[Emprestimo]:
+        modelos = self._sessao.scalars(
+            select(EmprestimoModelo)
+            .where(
+                EmprestimoModelo.conta_id == conta_id,
+                EmprestimoModelo.estado.in_(_EMPRESTIMOS_ABERTOS),
+            )
+            .order_by(EmprestimoModelo.id)
+        ).all()
+        return self._emprestimos_dos_modelos(modelos)
+
+    def _emprestimos_dos_modelos(self, modelos: Sequence[EmprestimoModelo]) -> list[Emprestimo]:
+        if not modelos:
+            return []
+        ids = [m.id for m in modelos]
+        parcelas = self._sessao.scalars(
+            select(ParcelaModelo)
+            .where(ParcelaModelo.emprestimo_id.in_(ids))
+            .order_by(ParcelaModelo.emprestimo_id, ParcelaModelo.numero)
+        ).all()
+        garantias = self._sessao.execute(
+            select(GarantiaModelo.emprestimo_id, GarantiaModelo.id)
+            .where(GarantiaModelo.emprestimo_id.in_(ids))
+            .order_by(GarantiaModelo.id)
+        ).all()
+        return [
+            Emprestimo(
+                id=m.id,
+                conta_id=m.conta_id,
+                principal=m.principal,
+                taxa_ao_mes=Decimal(m.taxa_ao_mes),
+                parcelas=[_parcela_do_modelo(p) for p in parcelas if p.emprestimo_id == m.id],
+                garantia_ids=tuple(g_id for e_id, g_id in garantias if e_id == m.id),
+                contratado_em=m.contratado_em,
+                estado=EstadoEmprestimo(m.estado),
+                dias_minimos_execucao=m.dias_minimos_execucao,
+                aviso_45_em=m.aviso_45_em,
+                aviso_10_em=m.aviso_10_em,
+            )
+            for m in modelos
+        ]
+
+    # Leituras sem trava, de qualquer estado (a API de consulta).
+    def obter_com_encerradas(self, parceiro_id: str, conta_id: str) -> Conta | None:
+        """A conta com todas as garantias, inclusive as de gravame já encerrado. Só leitura."""
+        conta = self.obter(parceiro_id, conta_id)
+        if conta is None:
+            return None
+        vivas = {g.id for g in conta.garantias}
+        consulta = (
+            select(GarantiaModelo, GravameModelo)
+            .join(GravameModelo, GravameModelo.garantia_id == GarantiaModelo.id)
+            .where(GarantiaModelo.conta_id == conta_id)
+            .order_by(GarantiaModelo.id)
+        )
+        for modelo, gravame in self._sessao.execute(consulta).all():
+            if modelo.id not in vivas:
+                conta.garantias.append(_garantia_do_modelo(modelo, gravame, {}))
+        conta.garantias.sort(key=lambda g: g.id)
+        return conta
+
+    def emprestimos_por_id(self, ids: Sequence[str]) -> dict[str, Emprestimo]:
+        modelos = self._sessao.scalars(
+            select(EmprestimoModelo).where(EmprestimoModelo.id.in_(ids))
+        ).all()
+        return {e.id: e for e in self._emprestimos_dos_modelos(modelos)}
+
+    def obter_emprestimo(self, parceiro_id: str, emprestimo_id: str) -> Emprestimo | None:
+        modelo = self._sessao.scalars(
+            select(EmprestimoModelo).where(
+                EmprestimoModelo.id == emprestimo_id, EmprestimoModelo.parceiro_id == parceiro_id
+            )
+        ).one_or_none()
+        if modelo is None:
+            return None
+        return self._emprestimos_dos_modelos([modelo])[0]
 
     def _saldos(self, conta_id: str) -> Saldos:
         linhas = self._sessao.execute(
@@ -241,8 +323,16 @@ class RepositorioDeContasSql:
             )
         conta.versao += 1
 
+        for emprestimo in conta.emprestimos:
+            self._sessao.merge(_modelo_do_emprestimo(emprestimo, conta.parceiro_id))
+            for parcela in emprestimo.parcelas:
+                self._sessao.merge(_modelo_da_parcela(parcela, emprestimo.id))
+        self._sessao.flush()
         for garantia in conta.garantias:
             self._sessao.merge(_modelo_da_garantia(garantia, conta.parceiro_id))
+        self._sessao.flush()
+        for garantia in conta.garantias:
+            self._sessao.merge(_modelo_do_gravame(garantia, conta.parceiro_id))
         self._sessao.flush()
         for garantia in conta.garantias:
             # O pedido é gravado uma vez, quando nasce, e não muda mais.
@@ -251,14 +341,14 @@ class RepositorioDeContasSql:
                 pedido is not None
                 and self._sessao.get(SolicitacaoDeCustodiaModelo, pedido.id) is None
             ):
-                assert garantia.custodiante_id is not None  # noqa: S101 - só a externa pede
+                assert garantia.contraparte_id is not None  # noqa: S101 - só a de fora pede
                 self._sessao.add(
                     SolicitacaoDeCustodiaModelo(
                         id=pedido.id,
                         garantia_id=garantia.id,
                         conta_id=conta.id,
                         parceiro_id=conta.parceiro_id,
-                        custodiante_id=garantia.custodiante_id,
+                        custodiante_id=garantia.contraparte_id,
                         tipo=pedido.tipo.value,
                         criada_em=pedido.criada_em,
                         prazo_ate=pedido.prazo_ate,
@@ -357,7 +447,9 @@ class RepositorioDeContasSql:
         total = self._sessao.execute(
             select(_DEBITOS_MENOS_CREDITOS).where(
                 PartidaModelo.parceiro_id == parceiro_id,
-                PartidaModelo.conta_contabil.in_(_RECEBIVEIS),
+                PartidaModelo.conta_contabil.in_(
+                    [*_RECEBIVEIS, ContaContabil.EMPRESTIMOS_A_RECEBER.value]
+                ),
             )
         ).scalar_one()
         return Dinheiro(int(total))
@@ -378,9 +470,12 @@ class RepositorioDeContasSql:
         linhas = self._sessao.execute(
             select(GarantiaModelo.conta_id, GarantiaModelo.tipo_ativo, _DEBITOS_MENOS_CREDITOS)
             .join(PartidaModelo, PartidaModelo.garantia_id == GarantiaModelo.id)
+            .join(GravameModelo, GravameModelo.garantia_id == GarantiaModelo.id)
             .where(
                 GarantiaModelo.parceiro_id == parceiro_id,
-                GarantiaModelo.estado.in_(_GARANTIAS_ATIVAS),
+                GarantiaModelo.produto == Produto.CARTAO.value,
+                GravameModelo.estado == EstadoGravame.REGISTRADO.value,
+                GravameModelo.baixa_pedida_em.is_(None),
                 PartidaModelo.conta_contabil == ContaContabil.GARANTIAS_CUSTODIADAS.value,
             )
             .group_by(GarantiaModelo.id, GarantiaModelo.conta_id, GarantiaModelo.tipo_ativo)
@@ -420,7 +515,12 @@ class RepositorioDeContasSql:
     ) -> Sequence[tuple[str, str]]:
         consulta = (
             select(GarantiaModelo.parceiro_id, GarantiaModelo.conta_id)
-            .where(GarantiaModelo.estado.in_(_GARANTIAS_ATIVAS), GarantiaModelo.marcada_em < hoje)
+            .join(GravameModelo, GravameModelo.garantia_id == GarantiaModelo.id)
+            .where(
+                GravameModelo.estado == EstadoGravame.REGISTRADO.value,
+                GravameModelo.baixa_pedida_em.is_(None),
+                GarantiaModelo.marcada_em < hoje,
+            )
             .distinct()
             .order_by(GarantiaModelo.conta_id)
         )
@@ -428,31 +528,89 @@ class RepositorioDeContasSql:
             consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
         return [(linha[0], linha[1]) for linha in self._sessao.execute(consulta)]
 
+    def contas_a_conciliar(self, parceiro_id: str | None = None) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com gravame ainda vivo ou dívida em aberto."""
+        com_gravame = select(GravameModelo.parceiro_id, GravameModelo.conta_id).where(
+            GravameModelo.estado.in_(_GRAVAMES_VIVOS)
+        )
+        com_divida = (
+            select(PartidaModelo.parceiro_id, PartidaModelo.conta_id)
+            .where(
+                PartidaModelo.conta_contabil.in_(
+                    [*_RECEBIVEIS, ContaContabil.EMPRESTIMOS_A_RECEBER.value]
+                )
+            )
+            .group_by(PartidaModelo.parceiro_id, PartidaModelo.conta_id)
+            .having(_DEBITOS_MENOS_CREDITOS != 0)
+        )
+        if parceiro_id is not None:
+            com_gravame = com_gravame.where(GravameModelo.parceiro_id == parceiro_id)
+            com_divida = com_divida.where(PartidaModelo.parceiro_id == parceiro_id)
+        linhas = self._sessao.execute(union(com_gravame, com_divida)).all()
+        return sorted((linha[0], linha[1]) for linha in linhas)
+
+    def contas_com_baixa_pendente(self) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com baixa de gravame pedida e ainda não feita."""
+        consulta = (
+            select(GravameModelo.parceiro_id, GravameModelo.conta_id)
+            .where(
+                GravameModelo.baixa_pedida_em.is_not(None),
+                GravameModelo.estado.in_(
+                    [EstadoGravame.REGISTRADO.value, EstadoGravame.EXECUTADO.value]
+                ),
+            )
+            .distinct()
+            .order_by(GravameModelo.parceiro_id, GravameModelo.conta_id)
+        )
+        return [(linha[0], linha[1]) for linha in self._sessao.execute(consulta)]
+
+    def contas_com_emprestimo_a_avaliar(
+        self, hoje: date, parceiro_id: str | None = None
+    ) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com empréstimo aberto e parcela vencida em aberto."""
+        consulta = (
+            select(EmprestimoModelo.parceiro_id, EmprestimoModelo.conta_id)
+            .join(ParcelaModelo, ParcelaModelo.emprestimo_id == EmprestimoModelo.id)
+            .where(
+                EmprestimoModelo.estado.in_(_EMPRESTIMOS_ABERTOS),
+                ParcelaModelo.paga_em.is_(None),
+                ParcelaModelo.vencimento < hoje,
+            )
+            .distinct()
+            .order_by(EmprestimoModelo.parceiro_id, EmprestimoModelo.conta_id)
+        )
+        if parceiro_id is not None:
+            consulta = consulta.where(EmprestimoModelo.parceiro_id == parceiro_id)
+        return [(linha[0], linha[1]) for linha in self._sessao.execute(consulta)]
+
     # ------------------------------------------------------------- custódia
     def localizar_solicitacao(self, solicitacao_id: str) -> LocalDaSolicitacao | None:
         modelo = self._sessao.get(SolicitacaoDeCustodiaModelo, solicitacao_id)
-        if modelo is None:
+        if modelo is None or modelo.tipo != TipoSolicitacao.ENTRADA.value:
+            # Pedidos de liberação e execução de antes da migração 0003 são só histórico.
             return None
         return LocalDaSolicitacao(
             solicitacao_id=modelo.id,
             parceiro_id=modelo.parceiro_id,
             conta_id=modelo.conta_id,
             garantia_id=modelo.garantia_id,
-            custodiante_id=modelo.custodiante_id,
+            contraparte_id=modelo.custodiante_id,
             tipo=TipoSolicitacao(modelo.tipo),
         )
 
-    def garantias_aguardando_custodiante(
-        self, parceiro_id: str | None = None
-    ) -> Sequence[tuple[str, str, str]]:
-        """Trios (parceiro_id, conta_id, garantia_id) que esperam resposta de custódia."""
+    def garantias_aguardando_contraparte(
+        self, limite: int, parceiro_id: str | None = None
+    ) -> list[tuple[str, str, str]]:
+        """Trios (parceiro_id, conta_id, garantia_id) com gravame `solicitado`, os mais
+        antigos primeiro, até `limite`."""
         consulta = (
-            select(GarantiaModelo.parceiro_id, GarantiaModelo.conta_id, GarantiaModelo.id)
-            .where(GarantiaModelo.estado.in_(_GARANTIAS_AGUARDANDO))
-            .order_by(GarantiaModelo.id)
+            select(GravameModelo.parceiro_id, GravameModelo.conta_id, GravameModelo.garantia_id)
+            .where(GravameModelo.estado == EstadoGravame.SOLICITADO.value)
+            .order_by(GravameModelo.solicitado_em, GravameModelo.id)
+            .limit(limite)
         )
         if parceiro_id is not None:
-            consulta = consulta.where(GarantiaModelo.parceiro_id == parceiro_id)
+            consulta = consulta.where(GravameModelo.parceiro_id == parceiro_id)
         return [(linha[0], linha[1], linha[2]) for linha in self._sessao.execute(consulta)]
 
     def antecipar_prazo(self, solicitacao_id: str, prazo_ate: datetime) -> None:
@@ -462,15 +620,15 @@ class RepositorioDeContasSql:
             .values(prazo_ate=prazo_ate)
         )
 
-    def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool:
+    def resposta_ja_registrada(self, contraparte_id: str, evento_id: str) -> bool:
         return (
-            self._sessao.get(RespostaDeCustodianteModelo, (custodiante_id, evento_id)) is not None
+            self._sessao.get(RespostaDeCustodianteModelo, (contraparte_id, evento_id)) is not None
         )
 
     def registrar_resposta(
         self,
         *,
-        custodiante_id: str,
+        contraparte_id: str,
         evento_id: str,
         solicitacao_id: str,
         garantia_id: str,
@@ -490,7 +648,7 @@ class RepositorioDeContasSql:
             with self._sessao.begin_nested():
                 self._sessao.add(
                     RespostaDeCustodianteModelo(
-                        custodiante_id=custodiante_id,
+                        custodiante_id=contraparte_id,
                         evento_id=evento_id,
                         solicitacao_id=solicitacao_id,
                         garantia_id=garantia_id,
@@ -506,9 +664,9 @@ class RepositorioDeContasSql:
         except IntegrityError:
             # Só a chave (custodiante, evento) repetida é duplicata. Qualquer outra
             # violação (pedido inexistente, campo inválido) é erro e sobe como erro.
-            if self.resposta_ja_registrada(custodiante_id, evento_id):
+            if self.resposta_ja_registrada(contraparte_id, evento_id):
                 raise RespostaDuplicada(
-                    "Esta resposta do custodiante já foi recebida", evento_id=evento_id
+                    "Esta resposta da contraparte já foi recebida", evento_id=evento_id
                 ) from None
             raise
 
@@ -522,10 +680,15 @@ class RepositorioDeContasSql:
             ChamadaDeMargemModelo.estado == EstadoChamada.ABERTA.value,
             ChamadaDeMargemModelo.prazo_ate < hoje,
         )
+        # Gravame migrado em `liberado_para_excussao`: a rotina diária termina a venda.
+        excussoes = select(GravameModelo.parceiro_id, GravameModelo.conta_id).where(
+            GravameModelo.estado == EstadoGravame.LIBERADO_PARA_EXCUSSAO.value
+        )
         if parceiro_id is not None:
             faturas = faturas.where(FaturaModelo.parceiro_id == parceiro_id)
             chamadas = chamadas.where(ChamadaDeMargemModelo.parceiro_id == parceiro_id)
-        linhas = self._sessao.execute(union(faturas, chamadas)).all()
+            excussoes = excussoes.where(GravameModelo.parceiro_id == parceiro_id)
+        linhas = self._sessao.execute(union(faturas, chamadas, excussoes)).all()
         return sorted((linha[0], linha[1]) for linha in linhas)
 
 
@@ -653,19 +816,33 @@ def _parceiro_do_modelo(modelo: ParceiroModelo) -> Parceiro:
 
 
 def _garantia_do_modelo(
-    modelo: GarantiaModelo, pedidos: dict[str, SolicitacaoDeCustodiaModelo]
+    modelo: GarantiaModelo,
+    gravame: GravameModelo,
+    pedidos: dict[str, SolicitacaoDeCustodiaModelo],
 ) -> Garantia:
     pedido = pedidos.get(modelo.solicitacao_id) if modelo.solicitacao_id else None
+    informacoes = None
+    if modelo.informacoes_valor_disponivel is not None:
+        assert modelo.informacoes_tributos is not None  # noqa: S101 - gravados juntos
+        assert modelo.informacoes_recebidas_em is not None  # noqa: S101
+        informacoes = InformacoesDaOperadora(
+            modelo.informacoes_valor_disponivel,
+            modelo.informacoes_tributos,
+            modelo.informacoes_recebidas_em,
+        )
     return Garantia(
         id=modelo.id,
         conta_id=modelo.conta_id,
         tipo_ativo=TipoAtivo(modelo.tipo_ativo),
         valor_aplicado=modelo.valor_aplicado,
-        estado=EstadoGarantia(modelo.estado),
         criada_em=modelo.criada_em,
         marcada_em=modelo.marcada_em,
-        origem=OrigemGarantia(modelo.origem or OrigemGarantia.INTERNA.value),
-        custodiante_id=modelo.custodiante_id,
+        produto=Produto(modelo.produto),
+        gravame=_gravame_do_modelo(gravame),
+        emissor=modelo.emissor,
+        vencimento=modelo.vencimento,
+        liquidez_dias=modelo.liquidez_dias,
+        contraparte_id=modelo.contraparte_id,
         solicitacao=None
         if pedido is None
         else Solicitacao(
@@ -674,28 +851,125 @@ def _garantia_do_modelo(
             criada_em=pedido.criada_em,
             prazo_ate=pedido.prazo_ate,
             enviada_em=modelo.solicitacao_enviada_em,
+            prazo_regulatorio_vencido_em=modelo.solicitacao_prazo_vencido_em,
         ),
-        valor_em_execucao=modelo.valor_em_execucao,
-        motivo=modelo.motivo,
+        emprestimo_id=modelo.emprestimo_id,
+        plano=modelo.plano,
+        fim_da_acumulacao=modelo.fim_da_acumulacao,
+        informacoes=informacoes,
+        aplicado_em=modelo.aplicado_em,
     )
 
 
 def _modelo_da_garantia(garantia: Garantia, parceiro_id: str) -> GarantiaModelo:
+    informacoes = garantia.informacoes
     return GarantiaModelo(
         id=garantia.id,
         conta_id=garantia.conta_id,
         parceiro_id=parceiro_id,
         tipo_ativo=garantia.tipo_ativo.value,
         valor_aplicado=garantia.valor_aplicado,
-        estado=garantia.estado.value,
         marcada_em=garantia.marcada_em,
         criada_em=garantia.criada_em,
-        origem=garantia.origem.value,
-        custodiante_id=garantia.custodiante_id,
+        produto=garantia.produto.value,
+        emissor=garantia.emissor,
+        vencimento=garantia.vencimento,
+        liquidez_dias=garantia.liquidez_dias,
+        contraparte_id=garantia.contraparte_id,
+        plano=garantia.plano,
+        fim_da_acumulacao=garantia.fim_da_acumulacao,
+        aplicado_em=garantia.aplicado_em,
+        emprestimo_id=garantia.emprestimo_id,
+        informacoes_valor_disponivel=informacoes.valor_disponivel if informacoes else None,
+        informacoes_tributos=informacoes.tributos_informados if informacoes else None,
+        informacoes_recebidas_em=informacoes.recebidas_em if informacoes else None,
         solicitacao_id=garantia.solicitacao.id if garantia.solicitacao else None,
         solicitacao_enviada_em=garantia.solicitacao.enviada_em if garantia.solicitacao else None,
-        valor_em_execucao=garantia.valor_em_execucao,
-        motivo=garantia.motivo,
+        solicitacao_prazo_vencido_em=(
+            garantia.solicitacao.prazo_regulatorio_vencido_em if garantia.solicitacao else None
+        ),
+    )
+
+
+def _gravame_do_modelo(modelo: GravameModelo) -> Gravame:
+    return Gravame(
+        id=modelo.id,
+        infraestrutura=Infraestrutura(modelo.infraestrutura),
+        instrumento=Instrumento(modelo.instrumento),
+        trilho=Trilho(modelo.trilho),
+        estado=EstadoGravame(modelo.estado),
+        solicitado_em=modelo.solicitado_em,
+        registrado_em=modelo.registrado_em,
+        protocolo=modelo.protocolo,
+        baixa_pedida_em=modelo.baixa_pedida_em,
+        baixa_prazo=modelo.baixa_prazo,
+        encerrado_em=modelo.encerrado_em,
+        motivo=modelo.motivo,
+    )
+
+
+def _modelo_do_gravame(garantia: Garantia, parceiro_id: str) -> GravameModelo:
+    gravame = garantia.gravame
+    return GravameModelo(
+        id=gravame.id,
+        garantia_id=garantia.id,
+        conta_id=garantia.conta_id,
+        parceiro_id=parceiro_id,
+        infraestrutura=gravame.infraestrutura.value,
+        instrumento=gravame.instrumento.value,
+        trilho=gravame.trilho.value,
+        estado=gravame.estado.value,
+        solicitado_em=gravame.solicitado_em,
+        registrado_em=gravame.registrado_em,
+        protocolo=gravame.protocolo,
+        baixa_pedida_em=gravame.baixa_pedida_em,
+        baixa_prazo=gravame.baixa_prazo,
+        encerrado_em=gravame.encerrado_em,
+        motivo=gravame.motivo,
+    )
+
+
+def _parcela_do_modelo(modelo: ParcelaModelo) -> Parcela:
+    return Parcela(
+        numero=modelo.numero,
+        vencimento=modelo.vencimento,
+        valor=modelo.valor,
+        juros=modelo.juros,
+        amortizacao=modelo.amortizacao,
+        paga_em=modelo.paga_em,
+        juros_pago=modelo.juros_pago,
+        amortizacao_paga=modelo.amortizacao_paga,
+        inicio=modelo.inicio,
+    )
+
+
+def _modelo_da_parcela(parcela: Parcela, emprestimo_id: str) -> ParcelaModelo:
+    return ParcelaModelo(
+        emprestimo_id=emprestimo_id,
+        numero=parcela.numero,
+        vencimento=parcela.vencimento,
+        inicio=parcela.inicio_do_periodo,
+        valor=parcela.valor,
+        juros=parcela.juros,
+        amortizacao=parcela.amortizacao,
+        juros_pago=parcela.juros_pago,
+        amortizacao_paga=parcela.amortizacao_paga,
+        paga_em=parcela.paga_em,
+    )
+
+
+def _modelo_do_emprestimo(emprestimo: Emprestimo, parceiro_id: str) -> EmprestimoModelo:
+    return EmprestimoModelo(
+        id=emprestimo.id,
+        conta_id=emprestimo.conta_id,
+        parceiro_id=parceiro_id,
+        principal=emprestimo.principal,
+        taxa_ao_mes=str(emprestimo.taxa_ao_mes),
+        estado=emprestimo.estado.value,
+        contratado_em=emprestimo.contratado_em,
+        dias_minimos_execucao=emprestimo.dias_minimos_execucao,
+        aviso_45_em=emprestimo.aviso_45_em,
+        aviso_10_em=emprestimo.aviso_10_em,
     )
 
 

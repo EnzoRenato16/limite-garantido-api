@@ -46,7 +46,7 @@ def endereco(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         "DEMO_WEBHOOK_URL": f"{base}/demo/webhooks",
         "WEBHOOK_PERMITIR_REDE_INTERNA": "true",
         "WORKER_INTERVALO_SEGUNDOS": "0.2",
-        "CUSTODIA_INTERVALO_SEGUNDOS": "0.5",
+        "CONTRAPARTES_INTERVALO_SEGUNDOS": "0.5",
         "LOG_NIVEL": "WARNING",
     }
     python = sys.executable

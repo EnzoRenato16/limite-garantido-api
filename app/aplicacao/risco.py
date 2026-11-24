@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
-from app.aplicacao import custodia
+from app.aplicacao import trilhos
 from app.aplicacao.erros import ContaNaoEncontrada, SemFaturaEmAberto
 from app.aplicacao.portas import FabricaDeUnidades, ProvedorDePrecos, UnidadeDeTrabalho
 from app.dominio.conta import Conta
@@ -51,7 +51,7 @@ def marcar_a_mercado(
             with abrir_unidade() as uow:
                 parceiro, conta = _carregar(uow, id_do_parceiro, conta_id)
                 agora, hoje = uow.relogio.agora(), uow.relogio.hoje()
-                for garantia in conta.garantias_ativas:
+                for garantia in conta.garantias_vigentes:
                     if garantia.marcada_em >= hoje:
                         continue
                     # {BRL/unidade} / {BRL/unidade} -> fator adimensional {1}
@@ -59,8 +59,10 @@ def marcar_a_mercado(
                         garantia.tipo_ativo, garantia.marcada_em
                     )
                     # {BRL} * {1} -> {BRL}, para baixo: na dúvida a garantia vale menos.
-                    novo_valor = conta.valor_de_mercado(garantia.id).aplicar_razao(fator)
-                    conta.remarcar(garantia.id, novo_valor, parceiro.politica, agora, hoje)
+                    novo_valor = conta.valor_do_titulo(garantia.id).aplicar_razao(fator)
+                    conta.remarcar(
+                        garantia.id, novo_valor, parceiro.politica, uow.catalogo, agora, hoje
+                    )
                 eventos += len(conta.pendencias.eventos)
                 uow.contas.salvar(conta, parceiro)
                 uow.commit()
@@ -72,9 +74,17 @@ def marcar_a_mercado(
 
 
 def virar_o_dia(abrir_unidade: FabricaDeUnidades, parceiro_id: str | None = None) -> ResumoDaRotina:
-    """Rotina diária: marca atraso, executa garantia no prazo e vence chamadas de margem."""
+    """Rotina diária: marca atraso, executa garantia no prazo, vence chamadas de margem e
+    avalia os empréstimos (atraso, avisos da previdência e execução)."""
     with abrir_unidade() as uow:
-        alvos = list(uow.contas.contas_com_prazo_vencido(uow.relogio.hoje(), parceiro_id))
+        hoje = uow.relogio.hoje()
+        # Cartão (fatura ou chamada vencida) e empréstimo (parcela vencida em aberto).
+        alvos = sorted(
+            {
+                *uow.contas.contas_com_prazo_vencido(hoje, parceiro_id),
+                *uow.contas.contas_com_emprestimo_a_avaliar(hoje, parceiro_id),
+            }
+        )
 
     processadas = erros = eventos = 0
     for id_do_parceiro, conta_id in alvos:
@@ -83,9 +93,10 @@ def virar_o_dia(abrir_unidade: FabricaDeUnidades, parceiro_id: str | None = None
                 parceiro, conta = _carregar(uow, id_do_parceiro, conta_id)
                 conta.virar_o_dia(
                     parceiro.politica,
+                    uow.catalogo,
                     uow.relogio.agora(),
                     uow.relogio.hoje(),
-                    custodia.prazos_dos_custodiantes(uow),
+                    trilhos.prazo_da_baixa(uow),
                 )
                 eventos += len(conta.pendencias.eventos)
                 uow.contas.salvar(conta, parceiro)
@@ -138,9 +149,14 @@ def remarcar_no_sandbox(
             raise ValorInvalido("Um ativo não cai mais que 100%")
         # {%} / 100 -> {1}; fator = 1 + variação
         fator = Decimal(1) + variacao_percentual / Decimal(100)
-        novo_valor = conta.valor_de_mercado(garantia_id).aplicar_razao(fator)
+        novo_valor = conta.valor_do_titulo(garantia_id).aplicar_razao(fator)
     garantia = conta.remarcar(
-        garantia_id, novo_valor, parceiro.politica, uow.relogio.agora(), uow.relogio.hoje()
+        garantia_id,
+        novo_valor,
+        parceiro.politica,
+        uow.catalogo,
+        uow.relogio.agora(),
+        uow.relogio.hoje(),
     )
     uow.contas.salvar(conta, parceiro)
     return conta, garantia
@@ -157,20 +173,32 @@ def avancar_dias_no_sandbox(
     if conta is None:
         raise ContaNaoEncontrada("Conta não encontrada", conta_id=conta_id)
     fatura, chamada = conta.fatura_em_aberto, conta.chamada_aberta
-    if fatura is None and chamada is None:
+    emprestimos = [e for e in conta.emprestimos if not e.encerrado]
+    if fatura is None and chamada is None and not emprestimos:
         raise SemFaturaEmAberto(
-            "Não há fatura fechada nem chamada de margem aberta para o tempo agir"
+            "Não há fatura fechada, chamada de margem aberta nem empréstimo em aberto para o "
+            "tempo agir"
         )
     recuo = timedelta(days=dias)
     if fatura is not None:
         fatura.vencimento -= recuo
     if chamada is not None:
         chamada.prazo_ate -= recuo
+    for emprestimo in emprestimos:
+        # O tempo anda para os dois lados da parcela: vencimento e início do período.
+        for parcela in emprestimo.parcelas:
+            parcela.vencimento -= recuo
+            parcela.inicio = parcela.inicio_do_periodo - recuo
+        if emprestimo.aviso_45_em is not None:
+            emprestimo.aviso_45_em -= recuo
+        if emprestimo.aviso_10_em is not None:
+            emprestimo.aviso_10_em -= recuo
     conta.virar_o_dia(
         parceiro.politica,
+        uow.catalogo,
         uow.relogio.agora(),
         uow.relogio.hoje(),
-        custodia.prazos_dos_custodiantes(uow),
+        trilhos.prazo_da_baixa(uow),
     )
     uow.contas.salvar(conta, parceiro)
     return conta

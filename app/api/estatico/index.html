@@ -12,6 +12,7 @@
   <nav class="paginas" aria-label="Páginas">
     <span class="paginas-produto">Limite Garantido</span>
     <a href="/demo" aria-current="page">Demonstração</a>
+    <a href="/regulacao">Regulação</a>
     <a href="/risco">Risco</a>
     <a href="/negocio">Negócio</a>
   </nav>
@@ -21,7 +22,7 @@
       <header class="cabecalho">
         <div>
           <p class="marca">Carteira Exemplo</p>
-          <p class="nota">App de um parceiro fictício. Ele só chama a API; quem guarda o
+          <p class="nota">App de um parceiro fictício. Ele só chama a API; quem custodia o
             investimento e libera o limite é a plataforma.</p>
         </div>
         <button type="button" class="discreto" id="recomecar">Começar de novo</button>
@@ -34,7 +35,7 @@
         </h1>
 
         <div class="trilho" id="trilho" role="img" aria-label="Garantia, limite e uso">
-          <p class="trilho-vazio" id="trilho-vazio">Sem garantia ainda. O limite nasce do que você guardar.</p>
+          <p class="trilho-vazio" id="trilho-vazio">Sem garantia ainda. O limite nasce do que você der em garantia.</p>
           <div class="aplicado" id="barra-aplicado"></div>
           <div class="garantia" id="barra-garantia"></div>
           <div class="usado" id="barra-usado"></div>
@@ -53,36 +54,27 @@
       </section>
 
       <ol class="passos">
-        <li>
-          <h2>Guardar dinheiro e ganhar limite</h2>
-          <p>O dinheiro vai para um investimento que continua rendendo e fica bloqueado como garantia.</p>
+        <li id="bloco-cartao">
+          <h2>Cartão: garantia dentro de casa</h2>
+          <p>O investimento fica custodiado na CTVM do grupo (o fundo DI, na DTVM do grupo) e o
+            gravame é registrado na B3 a favor da SCD do grupo. O registro é simulado: o projeto
+            não integra com a B3.</p>
           <form id="form-garantia" class="linha">
-            <label>Onde está o investimento
-              <select id="origem" name="origem">
-                <option value="interna">Nesta instituição</option>
-                <option value="externa">Investimento em outra instituição</option>
+            <label>Investimento
+              <select id="ativo-da-casa" name="tipo_ativo">
+                <option value="cdb">CDB de banco parceiro, liquidez diária</option>
+                <option value="fundo_di">Fundo DI da DTVM do grupo, resgate em D+1</option>
               </select>
-            </label>
-            <label id="rotulo-custodiante" hidden>Custodiante (simulado)
-              <select id="custodiante" name="custodiante_id"></select>
-            </label>
-            <label>Onde investir
-              <select id="tipo-ativo" name="tipo_ativo"></select>
             </label>
             <label>Quanto
               <input id="valor-da-garantia" name="valor" inputmode="decimal" value="5.000,00" autocomplete="off">
             </label>
-            <button type="submit">Guardar como garantia</button>
+            <button type="submit" id="dar-em-garantia">Dar em garantia</button>
           </form>
-          <p class="nota-externa" id="nota-externa" hidden>Em outra instituição, o bloqueio
-            (gravame) é pedido a um custodiante e confirmado depois. Os custodiantes aqui são
-            simuladores: os botões abaixo de cada garantia fazem o papel dele.</p>
           <p class="resultado" id="resultado-garantia" role="status" aria-live="polite"></p>
-          <ul class="garantias" id="garantias" aria-label="Investimentos em garantia"></ul>
-        </li>
+          <ul class="garantias" id="garantias-da-casa" aria-label="Garantias dentro de casa"></ul>
 
-        <li>
-          <h2>Comprar no cartão</h2>
+          <h3>Comprar no cartão</h3>
           <p>Cada compra é autorizada contra o limite disponível.</p>
           <form id="form-compra" class="linha">
             <label>Valor
@@ -94,20 +86,16 @@
             <button type="submit">Comprar</button>
           </form>
           <p class="resultado" id="resultado-compra" role="status" aria-live="polite"></p>
-        </li>
 
-        <li class="simulacao">
-          <h2>E se o investimento cair?</h2>
-          <p>Simulação. Na vida real quem faz isso é o mercado, todo dia, na marcação a mercado.</p>
+          <h3>E se o investimento cair? (simulador)</h3>
+          <p>Na vida real quem faz isso é o mercado, todo dia, na marcação a mercado.</p>
           <div class="linha">
             <button type="button" id="derrubar">Derrubar o ativo em 10%</button>
           </div>
           <p class="resultado" id="resultado-queda" role="status" aria-live="polite"></p>
-        </li>
 
-        <li class="simulacao">
-          <h2>E se a fatura atrasar?</h2>
-          <p>Simulação. Feche a fatura e faça os dias passarem. No 7º dia de atraso a garantia é executada.</p>
+          <h3>E se a fatura atrasar? (simulador)</h3>
+          <p>Feche a fatura e faça os dias passarem. No 7º dia de atraso a garantia é executada.</p>
           <div class="linha">
             <button type="button" id="fechar-fatura">Fechar a fatura</button>
             <button type="button" id="passar-dia" disabled>Passar 1 dia</button>
@@ -118,6 +106,84 @@
           </ol>
           <p class="resultado" id="resultado-fatura" role="status" aria-live="polite"></p>
         </li>
+
+        <li id="bloco-fora">
+          <h2>Trazer de fora</h2>
+          <p>O ativo está em outra instituição. Cada tipo de ativo entra por um trilho, com prazo
+            e contraparte próprios. As contrapartes aqui são simuladores: os botões abaixo de
+            cada pedido fazem o papel delas.</p>
+          <form id="form-fora" class="linha">
+            <label>Trilho
+              <select id="trilho-de-entrada" name="trilho">
+                <option value="portabilidade_cvm_210">Portabilidade (Res. CVM 210)</option>
+                <option value="transferencia_de_custodia">Transferência de custódia</option>
+                <option value="td_garantia">TD Garantia (Tesouro Direto)</option>
+                <option value="res_conjunta_12">Previdência (Res. Conjunta 12)</option>
+              </select>
+            </label>
+            <label>Ativo
+              <select id="ativo-de-fora" name="tipo_ativo"></select>
+            </label>
+            <label>Para
+              <select id="produto-de-fora" name="produto">
+                <option value="emprestimo">Empréstimo</option>
+                <option value="cartao">Cartão</option>
+              </select>
+            </label>
+            <label>Contraparte (simulador)
+              <select id="contraparte" name="contraparte_id"></select>
+            </label>
+            <label id="rotulo-plano" hidden>Plano
+              <select id="plano" name="plano">
+                <option value="pgbl">PGBL</option>
+                <option value="vgbl">VGBL</option>
+                <option value="capitalizacao">Capitalização</option>
+              </select>
+            </label>
+            <label>Quanto
+              <input id="valor-de-fora" name="valor" inputmode="decimal" value="10.000,00" autocomplete="off">
+            </label>
+            <button type="submit" id="pedir-entrada">Pedir a entrada</button>
+          </form>
+          <p class="prazo-previo" id="prazo-previo"></p>
+          <p class="resultado" id="resultado-fora" role="status" aria-live="polite"></p>
+          <ul class="garantias" id="garantias-de-fora" aria-label="Garantias trazidas de fora"></ul>
+        </li>
+
+        <li id="bloco-emprestimo">
+          <h2>Empréstimo com garantia</h2>
+          <p>Garantias de empréstimo, com gravame registrado, sustentam um empréstimo parcelado
+            (Tabela Price). Quitado o empréstimo, a baixa do gravame é pedida em 2 dias úteis.</p>
+          <form id="form-emprestimo" class="linha">
+            <label>Garantia
+              <select id="garantia-do-emprestimo" name="garantia_id"></select>
+            </label>
+            <label>Quanto
+              <input id="valor-do-emprestimo" name="valor" inputmode="decimal" value="2.000,00" autocomplete="off">
+            </label>
+            <label>Parcelas
+              <select id="parcelas" name="parcelas">
+                <option value="3">3</option>
+                <option value="6">6</option>
+                <option value="12">12</option>
+              </select>
+            </label>
+            <button type="submit" id="contratar">Contratar empréstimo</button>
+          </form>
+          <p class="nota-externa" id="dica-do-emprestimo"></p>
+          <p class="resultado" id="resultado-emprestimo" role="status" aria-live="polite"></p>
+          <ul class="emprestimos" id="emprestimos" aria-label="Empréstimos"></ul>
+
+          <h3>E se o empréstimo atrasar? (simulador)</h3>
+          <p>Faça o tempo passar. Na previdência, a execução só vem depois de 90 dias de atraso,
+            com aviso aos 45 dias e outro 10 dias antes da liquidação.</p>
+          <div class="linha" role="group" aria-label="Relógio (simulador)">
+            <button type="button" class="relogio" data-dias="45">+45 dias</button>
+            <button type="button" class="relogio" data-dias="36">+36 dias</button>
+            <button type="button" class="relogio" data-dias="10">+10 dias</button>
+          </div>
+          <p class="resultado" id="resultado-relogio" role="status" aria-live="polite"></p>
+        </li>
       </ol>
     </main>
 
@@ -127,10 +193,11 @@
         <p>Webhooks de verdade: gravados na mesma transação da operação, entregues por um
           worker e assinados com HMAC-SHA256. Esta coluna confere a assinatura de cada um.</p>
       </header>
-      <p class="vazio" id="vazio">Nenhum evento ainda. Guarde um investimento para começar.</p>
+      <p class="vazio" id="vazio">Nenhum evento ainda. Dê um investimento em garantia para começar.</p>
       <ol class="eventos" id="eventos" aria-live="polite"></ol>
       <footer>
         <span id="conta-atual"></span>
+        <a href="/regulacao">Regulação por ativo</a>
         <a href="/risco">Painel de risco</a>
         <a href="/docs">Documentação da API</a>
       </footer>

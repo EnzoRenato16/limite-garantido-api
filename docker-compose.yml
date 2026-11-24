@@ -28,9 +28,11 @@ x-aplicacao: &aplicacao
     WEBHOOK_PERMITIR_REDE_INTERNA: "true"
     WEBHOOK_BACKOFF_BASE_SEGUNDOS: "2"
     WORKER_INTERVALO_SEGUNDOS: "0.5"
-    # Fase 2: custodiantes SIMULADOS. Segredos de callback fictícios.
-    CUSTODIA_SEGREDOS: '{"custodiante_agil": "cbsec_exemplo-agil-ficticio-so-para-desenvolvimento", "custodiante_lento": "cbsec_exemplo-lento-ficticio-so-para-desenvolvimento"}'
-    CUSTODIA_INTERVALO_SEGUNDOS: "1"
+    # Trilhos de fora: contrapartes SIMULADAS. Segredos de callback fictícios.
+    CONTRAPARTES: simulador
+    INFRAESTRUTURA_DE_REGISTRO: simulada
+    CONTRAPARTES_SEGREDOS: '{"corretora_de_origem_simulada": "cbsec_exemplo-corretora-de-origem-simulada-ficticio-so-para-desenvolvimento", "banco_de_origem_simulado": "cbsec_exemplo-banco-de-origem-simulado-ficticio-so-para-desenvolvimento", "agente_td_simulado": "cbsec_exemplo-agente-td-simulado-ficticio-so-para-desenvolvimento", "agente_td_sem_servico_simulado": "cbsec_exemplo-agente-td-sem-servico-simulado-ficticio-so-para-desenvolvimento", "entidade_operadora_simulada": "cbsec_exemplo-entidade-operadora-simulada-ficticio-so-para-desenvolvimento"}'
+    CONTRAPARTES_INTERVALO_SEGUNDOS: "1"
   security_opt:
     - no-new-privileges:true
   cap_drop:

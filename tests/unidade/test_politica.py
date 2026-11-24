@@ -11,7 +11,7 @@ def test_limite_da_garantia_e_valor_vezes_ltv_para_baixo() -> None:
     pol = politica()
     assert pol.limite_da_garantia(TipoAtivo.CDB, reais("5000.00")) == reais("4250.00")
     assert pol.limite_da_garantia(TipoAtivo.FUNDO_DI, reais("33.33")) == reais("31.66")
-    assert pol.limite_da_garantia(TipoAtivo.DEPOSITO, reais("1.00")) == reais("1.00")
+    assert pol.limite_da_garantia(TipoAtivo.CDB, reais("1.00")) == reais("0.85")
 
 
 def test_ativo_fora_da_politica_nao_e_aceito() -> None:
@@ -59,7 +59,7 @@ def test_todo_ativo_aceito_precisa_estar_na_ordem_de_execucao() -> None:
 
 def test_prioridade_de_execucao_segue_a_ordem_configurada() -> None:
     pol = politica()
-    assert pol.prioridade_de_execucao(TipoAtivo.DEPOSITO) == 0
+    assert pol.prioridade_de_execucao(TipoAtivo.CDB) == 0
     assert pol.prioridade_de_execucao(TipoAtivo.CDB) < pol.prioridade_de_execucao(TipoAtivo.ACOES)
     so_cdb = PoliticaRisco(
         ltv_por_ativo={TipoAtivo.CDB: Decimal("0.85")},
@@ -97,3 +97,43 @@ def test_dicionario_malformado_vira_politica_invalida(estrago: dict[str, object]
 
 def test_ordem_padrao_dos_testes_cobre_todos_os_ativos() -> None:
     assert set(ORDEM_PADRAO) == set(TipoAtivo)
+
+
+def test_campos_do_emprestimo_tem_padrao_ilustrativo() -> None:
+    pol = politica()
+    assert pol.dias_para_execucao_emprestimo == 30
+    assert pol.taxa_do_emprestimo_ao_mes == Decimal("0.0199")
+    dados = pol.para_dict()
+    assert dados["dias_para_execucao_emprestimo"] == 30
+    assert dados["taxa_do_emprestimo_ao_mes"] == "0.0199"
+
+
+def test_politica_antiga_sem_os_campos_do_emprestimo_ainda_carrega() -> None:
+    dados = politica().para_dict()
+    del dados["dias_para_execucao_emprestimo"]
+    del dados["taxa_do_emprestimo_ao_mes"]
+    antiga = PoliticaRisco.de_dict(dados)
+    assert antiga.dias_para_execucao_emprestimo == 30
+    assert antiga.taxa_do_emprestimo_ao_mes == Decimal("0.0199")
+    nova = PoliticaRisco.de_dict(
+        {**dados, "dias_para_execucao_emprestimo": 45, "taxa_do_emprestimo_ao_mes": "0.025"}
+    )
+    assert (nova.dias_para_execucao_emprestimo, nova.taxa_do_emprestimo_ao_mes) == (
+        45,
+        Decimal("0.025"),
+    )
+
+
+@pytest.mark.parametrize(
+    "estrago",
+    [
+        {"dias_para_execucao_emprestimo": 0},
+        {"taxa_do_emprestimo_ao_mes": "-0.01"},
+        {"taxa_do_emprestimo_ao_mes": "1"},
+        {"taxa_do_emprestimo_ao_mes": "NaN"},
+        {"taxa_do_emprestimo_ao_mes": "abc"},
+    ],
+)
+def test_campos_do_emprestimo_invalidos(estrago: dict[str, object]) -> None:
+    with pytest.raises(PoliticaInvalida):
+        PoliticaRisco.de_dict({**politica().para_dict(), **estrago})

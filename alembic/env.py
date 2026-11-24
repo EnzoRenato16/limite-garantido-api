@@ -40,9 +40,18 @@ def rodar_online() -> None:
         return
     engine = criar_engine(_url())
     with engine.connect() as conexao:
+        sqlite = conexao.dialect.name == "sqlite"
+        if sqlite:
+            # O batch do SQLite recria tabelas (DROP + RENAME): com as chaves estrangeiras
+            # ligadas, recriar uma tabela referenciada falha.
+            conexao.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            conexao.commit()
         context.configure(connection=conexao, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()
+        conexao.commit()
+        if sqlite:
+            conexao.exec_driver_sql("PRAGMA foreign_keys=ON")
     engine.dispose()
 
 

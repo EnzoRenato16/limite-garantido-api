@@ -92,7 +92,11 @@ def test_evento_e_entrega_nascem_na_mesma_transacao_da_operacao(parceiro: Parcei
     conta = parceiro.abrir_conta()
     parceiro.bloquear(conta, "cdb", "5000.00")
     entregas = _entregas(parceiro)
-    assert sorted(e["evento_tipo"] for e in entregas) == ["garantia.bloqueada", "limite.atualizado"]
+    assert sorted(e["evento_tipo"] for e in entregas) == [
+        "gravame.registrado",
+        "gravame.solicitado",
+        "limite.atualizado",
+    ]
     assert {e["estado"] for e in entregas} == {"pendente"}
     assert {e["tentativas"] for e in entregas} == {0}
     assert sorted(e["evento_id"] for e in entregas) == sorted(e["id"] for e in parceiro.eventos())
@@ -110,7 +114,8 @@ def test_se_a_operacao_e_desfeita_nao_sobra_evento_nem_entrega(
     with monkeypatch.context() as contexto:
         contexto.setattr(UnidadeDeTrabalhoSql, "commit", commit_que_falha)
         resposta = parceiro.post(
-            f"/v1/contas/{conta}/garantias", {"tipo_ativo": "cdb", "valor": "5000.00"}
+            f"/v1/contas/{conta}/garantias",
+            {"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0},
         )
         assert resposta.status_code == 500
     # Nem garantia, nem lançamento, nem evento, nem webhook: tudo ou nada.
@@ -123,7 +128,7 @@ def test_se_a_operacao_e_desfeita_nao_sobra_evento_nem_entrega(
 def test_sem_webhook_configurado_o_evento_fica_so_no_log(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
     parceiro.bloquear(conta, "cdb", "5000.00")
-    assert len(parceiro.eventos()) == 2
+    assert len(parceiro.eventos()) == 3  # solicitado, registrado e limite atualizado
     assert _entregas(parceiro) == []
 
 
@@ -135,7 +140,7 @@ def test_worker_entrega_com_assinatura_hmac_que_o_parceiro_consegue_conferir(
     parceiro.bloquear(conta, "cdb", "5000.00")
 
     resultado = entregador.processar_lote()
-    assert (resultado.entregues, resultado.reagendadas, resultado.mortas) == (2, 0, 0)
+    assert (resultado.entregues, resultado.reagendadas, resultado.mortas) == (3, 0, 0)
     assert entregador.processar_lote().total == 0  # nada é entregue duas vezes
 
     agora = int(relogio.agora().timestamp())
@@ -153,9 +158,9 @@ def test_worker_entrega_com_assinatura_hmac_que_o_parceiro_consegue_conferir(
         assert corpo["dados"]["conta_id"] == conta
 
     tipos = sorted(json.loads(r.content)["tipo"] for r in destino.recebidas)
-    assert tipos == ["garantia.bloqueada", "limite.atualizado"]
+    assert tipos == ["gravame.registrado", "gravame.solicitado", "limite.atualizado"]
     bloqueada = next(
-        json.loads(r.content) for r in destino.recebidas if b"garantia.bloqueada" in r.content
+        json.loads(r.content) for r in destino.recebidas if b"gravame.registrado" in r.content
     )
     assert bloqueada["dados"]["valor_de_mercado"] == "5000.00"
     assert bloqueada["dados"]["limite_gerado"] == "4250.00"
@@ -171,7 +176,7 @@ def test_entrega_segue_a_ordem_em_que_os_eventos_aconteceram(
 ) -> None:
     _configurar(parceiro)
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     for _ in range(5):
         parceiro.comprar(conta, "10.00")
     parceiro.comprar(conta, "999.00")
@@ -180,8 +185,9 @@ def test_entrega_segue_a_ordem_em_que_os_eventos_aconteceram(
     assert entregues == [evento["id"] for evento in parceiro.eventos()]
     # Dentro de uma mesma operação a ordem também é a do domínio.
     tipos = [json.loads(r.content)["tipo"] for r in destino.recebidas]
-    assert tipos[:4] == [
-        "garantia.bloqueada",
+    assert tipos[:5] == [
+        "gravame.solicitado",
+        "gravame.registrado",
         "limite.atualizado",
         "compra.aprovada",
         "limite.atualizado",

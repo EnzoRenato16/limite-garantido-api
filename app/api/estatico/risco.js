@@ -4,16 +4,37 @@
 // os números de largura das barras são proporções para desenhar, não contas de dinheiro.
 
 const NOMES = {
-  deposito: "Conta remunerada",
+  cdb: "CDB",
+  lci: "LCI",
+  lca: "LCA",
+  coe: "COE",
   fundo_di: "Fundo DI",
   tesouro_selic: "Tesouro Selic",
-  cdb: "CDB",
   tesouro_prefixado: "Tesouro Prefixado",
   tesouro_ipca: "Tesouro IPCA+",
   acoes: "Ações",
-  interna: "Dentro de casa",
+  fii: "FII",
+  etf: "ETF",
+  previdencia: "Previdência",
+  casa: "Na casa (custodiado pela CTVM do grupo)",
+  agente_td_a: "Agente de custódia A (simulado)",
+  agente_td_b: "Agente de custódia B (simulado)",
+  entidade_operadora_simulada: "Entidade operadora (simulada)",
+  conglomerado_a: "Conglomerado A (fictício)",
+  conglomerado_b: "Conglomerado B (fictício)",
+  conglomerado_c: "Conglomerado C (fictício)",
+  conglomerado_d: "Conglomerado D (fictício)",
+  c1: "C1",
+  c2: "C2",
+  c3: "C3",
+  c4: "C4",
+  c5: "C5",
 };
-const ATIVOS_DO_PAINEL = ["deposito", "tesouro_selic", "cdb", "tesouro_prefixado", "tesouro_ipca", "acoes"];
+const ATIVOS_DO_PAINEL = [
+  "cdb", "lci", "lca", "tesouro_selic", "tesouro_prefixado", "tesouro_ipca", "acoes", "fii", "etf",
+];
+const AGENTE_B = "agente_td_b";
+const CONGLOMERADO_B = "conglomerado_b";
 const SVG = "http://www.w3.org/2000/svg";
 
 const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -21,7 +42,7 @@ const inteiro = new Intl.NumberFormat("pt-BR");
 const $ = (id) => document.getElementById(id);
 const reais = (texto) => moeda.format(Number(texto));
 
-const estado = { chave: null, cenarios: [], custodiantes: [], cenarioAtual: null, ultimo: null };
+const estado = { chave: null, cenarios: [], cenarioAtual: null, ultimo: null };
 
 async function chamar(metodo, caminho, corpo) {
   const resposta = await fetch(`/v1${caminho}`, {
@@ -72,16 +93,6 @@ function montarControles() {
     rotulo.append(campo);
     grade.append(rotulo);
   }
-  const caixas = $("indisponiveis");
-  for (const custodiante of estado.custodiantes) {
-    const rotulo = document.createElement("label");
-    const caixa = document.createElement("input");
-    caixa.type = "checkbox";
-    caixa.value = custodiante.id;
-    caixa.id = `fora-${custodiante.id}`;
-    rotulo.append(caixa, document.createTextNode(`${custodiante.nome} fora do ar`));
-    caixas.append(rotulo);
-  }
   const botoes = $("cenarios");
   for (const cenario of estado.cenarios) {
     const botao = document.createElement("button");
@@ -101,9 +112,8 @@ function preencherControles(cenario) {
   }
   $("taxa").value = fracaoParaPercentual(cenario.taxa_sem_reforco);
   $("dias-extra").value = String(cenario.dias_extra_de_execucao);
-  for (const caixa of $("indisponiveis").querySelectorAll("input")) {
-    caixa.checked = cenario.custodiantes_indisponiveis.includes(caixa.value);
-  }
+  $("agente-b").checked = Object.hasOwn(cenario.atraso_por_onde_esta, AGENTE_B);
+  $("quebra-b").checked = cenario.emissores_em_quebra.includes(CONGLOMERADO_B);
 }
 
 function lerControles() {
@@ -119,7 +129,8 @@ function lerControles() {
     choques,
     taxa_sem_reforco: taxa,
     dias_extra_de_execucao: Number($("dias-extra").value || "0"),
-    custodiantes_indisponiveis: [...$("indisponiveis").querySelectorAll("input:checked")].map((c) => c.value),
+    atraso_por_onde_esta: $("agente-b").checked ? { [AGENTE_B]: 14 } : {},
+    emissores_em_quebra: $("quebra-b").checked ? [CONGLOMERADO_B] : [],
   };
 }
 
@@ -167,6 +178,7 @@ function numero(id, texto, formatado) {
 
 function mostrar(r) {
   estado.ultimo = r;
+  $("aviso-sintetico").textContent = r.aviso_sintetico;
   $("tamanho").textContent = inteiro.format(r.carteira.tamanho);
   $("semente").textContent = String(r.carteira.semente);
   numero("chamada-antes", String(r.antes.contas_em_chamada), inteiro.format(r.antes.contas_em_chamada));
@@ -193,18 +205,66 @@ function mostrar(r) {
 
   desenharReguas($("grafico-ativos"), r.concentracao_por_ativo, (f) => NOMES[f.chave] || f.chave, () => "");
   desenharReguas(
-    $("grafico-custodiantes"),
-    r.concentracao_por_custodiante,
-    (f) => nomeDoCustodiante(f.chave),
-    (f) => (f.chave === "interna" ? "interna" : "externa"),
+    $("grafico-onde-esta"),
+    r.concentracao_por_onde_esta,
+    (f) => NOMES[f.chave] || f.chave,
+    (f) => (f.chave === "casa" ? "interna" : "externa"),
   );
+  mostrarRegulatorio(r.regulatorio);
   mostrarPremissas(r.premissas);
 }
 
-function nomeDoCustodiante(chave) {
-  if (chave === "interna") return NOMES.interna;
-  const achado = estado.custodiantes.find((c) => c.id === chave);
-  return achado ? achado.nome : chave;
+// ------------------------------------------------------------ painel regulatório
+function preencherTabela(id, linhas) {
+  const corpo = $(id).querySelector("tbody");
+  corpo.replaceChildren();
+  for (const celulas of linhas) {
+    const tr = document.createElement("tr");
+    for (const celula of celulas) {
+      const td = document.createElement("td");
+      td.textContent = celula.texto ?? celula;
+      if (celula.alerta) td.className = "alerta";
+      tr.append(td);
+    }
+    corpo.append(tr);
+  }
+}
+
+const percentualDe = (texto) => `${fracaoParaPercentual(texto).replace(".", ",")}%`;
+
+function mostrarRegulatorio(reg) {
+  preencherTabela(
+    "tabela-haircut",
+    reg.haircut_por_classe_e_prazo.map((h) => [
+      NOMES[h.tipo_ativo] || h.tipo_ativo,
+      h.ate_anos === null ? "qualquer prazo" : `até ${h.ate_anos} ano(s)`,
+      h.haircut_minimo === h.haircut_maximo
+        ? percentualDe(h.haircut_minimo)
+        : `${percentualDe(h.haircut_minimo)} a ${percentualDe(h.haircut_maximo)}`,
+    ]),
+  );
+  $("teto-fgc").textContent = reais(reg.teto_do_fgc);
+  preencherTabela(
+    "tabela-fgc",
+    reg.concentracao_por_conglomerado.map((c) => [
+      NOMES[c.conglomerado] || c.conglomerado,
+      reais(c.valor),
+      inteiro.format(c.clientes),
+      { texto: inteiro.format(c.clientes_acima_do_teto), alerta: c.clientes_acima_do_teto > 0 },
+      { texto: reais(c.excesso_total), alerta: Number(c.excesso_total) > 0 },
+    ]),
+  );
+  preencherTabela(
+    "tabela-provisao",
+    reg.carteiras_de_provisao.map((p) => [
+      NOMES[p.carteira] || p.carteira,
+      inteiro.format(p.contas),
+      reais(p.saldo),
+      reais(p.provisao_primeiro_mes),
+      reais(p.provisao_decimo_terceiro_mes),
+    ]),
+  );
+  $("marcacao").textContent = `${reg.marcacao_a_mercado} ${reg.avisos_de_risco}`;
 }
 
 function elemento(nome, atributos = {}, texto) {
@@ -256,8 +316,13 @@ function mostrarPremissas(p) {
       ? Object.entries(p.choques).map(([a, v]) => `${NOMES[a] || a} ${fracaoParaPercentual(v).replace(".", ",")}%`).join("; ")
       : "nenhum"],
     ["Não reforçam", `${fracaoParaPercentual(p.taxa_sem_reforco).replace(".", ",")}% dos descobertos`],
-    ["Fora do ar", p.custodiantes_indisponiveis.length ? p.custodiantes_indisponiveis.map(nomeDoCustodiante).join(", ") : "nenhum custodiante"],
-    ["Venda externa", `${p.dias_extra_de_execucao} dia(s) a mais que a interna`],
+    ["Atraso por agente", Object.keys(p.atraso_por_onde_esta).length
+      ? Object.entries(p.atraso_por_onde_esta).map(([a, d]) => `${NOMES[a] || a}: ${d} dias corridos`).join("; ")
+      : "nenhum agente"],
+    ["Emissor em quebra", p.emissores_em_quebra.length
+      ? p.emissores_em_quebra.map((e) => NOMES[e] || e).join(", ")
+      : "nenhum emissor"],
+    ["Venda fora da casa", `${p.dias_extra_de_execucao} dia(s) a mais que a de dentro`],
     ["Desconto por dia", Object.entries(p.desconto_diario_por_ativo)
       .filter(([, v]) => Number(v) > 0)
       .map(([a, v]) => `${NOMES[a] || a} ${fracaoParaPercentual(v).replace(".", ",")}%`).join("; ")],
@@ -284,10 +349,7 @@ async function iniciar() {
     return;
   }
   estado.chave = (await config.json()).api_key;
-  [estado.cenarios, estado.custodiantes] = await Promise.all([
-    chamar("GET", "/risco/cenarios"),
-    chamar("GET", "/custodiantes"),
-  ]);
+  estado.cenarios = await chamar("GET", "/risco/cenarios");
   montarControles();
   await escolherCenario(estado.cenarios[0]);
   document.body.dataset.pronta = "true";

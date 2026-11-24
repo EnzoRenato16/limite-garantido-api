@@ -163,9 +163,9 @@ def test_perda_sem_sentido_e_500(parceiro: Parceiro, monkeypatch: pytest.MonkeyP
 
 
 def test_limites_do_corpo(parceiro: Parceiro) -> None:
-    # 34 premissas de verdade mais 7 inventadas: 41 chaves.
+    # 36 premissas de verdade mais 5 inventadas: 41 chaves.
     premissas = {nome.value: "1" for nome in NomeDaPremissa}
-    premissas |= {f"inventada_{i}": "1" for i in range(7)}
+    premissas |= {f"inventada_{i}": "1" for i in range(5)}
     assert len(premissas) == 41
     resposta = parceiro.post(SIMULACOES, {"premissas": premissas}, chave=None)
     assert resposta.status_code == 422
@@ -240,6 +240,22 @@ def test_csv_numeros_batem_com_json(parceiro: Parceiro) -> None:
         assert por_id[linha["nome"]] == linha["valor"].replace(".", ",")
     margem = json_["por_cliente_mes"]["plataforma"]["margem"].replace(".", ",")
     assert any(x[:2] == ["Margem por cliente por mês", margem] for x in linhas)
+
+
+def test_rotulos_notas_e_iof_na_resposta(parceiro: Parceiro) -> None:
+    corpo = _simular(parceiro, incluir_tornado=False)
+    ix = corpo["interna_x_externa"]
+    assert (ix["rotulo_interna"], ix["rotulo_externa"]) == ("dentro de casa", "de fora")
+    assert len(corpo["notas"]) == 3
+    assert "IR da execução é do cliente" in corpo["notas"][0]
+    assert "Circular BCB 3.809/2016, art. 4º" in corpo["notas"][1]
+    assert "Lei 14.690/2023, art. 28" in corpo["notas"][2]
+    iof = next(x for x in corpo["linhas"] if x["id"] == "iof_credito")
+    assert (iof["origem"], iof["destino"]) == ("cliente", "governo")
+    valores = corpo["premissas"]["valores"]
+    assert (valores["iof_diario"], valores["iof_adicional"]) == ("0.000082", "0.0038")
+    assert "interna" not in " ".join(x["nome"] for x in corpo["linhas"])
+    assert "perda zero" not in str(corpo).lower()
 
 
 def test_interna_x_externa_traz_valor_ou_motivo(parceiro: Parceiro) -> None:

@@ -46,13 +46,24 @@ class SemFaturaEmAberto(ErroDominio):
 
 
 class RespostaDuplicada(ErroDominio):
-    """A mesma resposta do custodiante (mesmo evento) já foi registrada."""
+    """A mesma resposta da contraparte (mesmo evento) já foi registrada."""
 
     codigo = "resposta_duplicada"
 
 
-class CustodianteNaoConfigurado(ErroDominio):
-    codigo = "custodiante_nao_configurado"
+class ContraparteNaoConfigurada(ErroDominio):
+    codigo = "contraparte_nao_configurada"
+
+
+class ContraparteNaoAtendeOTrilho(ErroDominio):
+    codigo = "contraparte_nao_atende_o_trilho"
+
+
+class RespostaInvalida(ErroDominio):
+    """Resposta que a contraparte não pode dar naquele trilho (a operadora não recusa:
+    Res. Conjunta 12, art. 18; só a portabilidade tem impedimento: Res. CVM 210, art. 19)."""
+
+    codigo = "resposta_invalida_para_o_trilho"
 
 
 class SolicitacaoNaoEncontrada(ErroDominio):

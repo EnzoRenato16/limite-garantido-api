@@ -17,7 +17,7 @@ def _historia_completa(parceiro: Parceiro) -> str:
     """Bloqueio, compras, queda do ativo, fatura, pagamento parcial, execução, liberação."""
     conta = parceiro.abrir_conta()
     cdb = parceiro.bloquear(conta, "cdb", "5000.00")["garantia"]
-    acoes = parceiro.bloquear(conta, "acoes", "2000.00")["garantia"]
+    acoes = parceiro.bloquear(conta, "fundo_di", "2000.00")["garantia"]
     parceiro.comprar(conta, "3000.00")
     parceiro.comprar(conta, "9999.00")  # negada: não mexe no ledger
     parceiro.remarcar(acoes["id"], variacao_percentual="-30")
@@ -55,6 +55,7 @@ def test_todo_lancamento_do_extrato_fecha_debitos_e_creditos(parceiro: Parceiro)
         "pagamento",
         "compra",
         "execucao_garantia",
+        "devolucao_de_excedente",
         "pagamento",
         "liberacao_garantia",
     ]
@@ -85,15 +86,20 @@ def test_o_saldo_da_api_e_exatamente_a_soma_das_partidas(parceiro: Parceiro) -> 
     assert sum(liquido.values()) == 0
 
 
-def test_execucao_gera_um_lancamento_de_quatro_partidas(parceiro: Parceiro) -> None:
+def test_execucao_vende_a_garantia_inteira_com_retencao_e_devolve_o_excedente(
+    parceiro: Parceiro,
+) -> None:
     conta = _historia_completa(parceiro)
     execucao = next(x for x in _extrato(parceiro, conta) if x["tipo"] == "execucao_garantia")
     partidas = {(p["conta_contabil"], p["sentido"]): p["valor"] for p in execucao["partidas"]}
+    # O CDB vale 5.100,00 (5.000 aplicados + 2%); o IR de 22,5% sobre os 100 de rendimento
+    # fica retido por quem paga: entra 5.077,50, abatem os 2.500 da fatura e sobram 2.577,50.
     assert partidas == {
-        ("garantias_a_devolver", "D"): "2500.00",
-        ("garantias_custodiadas", "C"): "2500.00",
-        ("caixa_recebimentos", "D"): "2500.00",
+        ("garantias_a_devolver", "D"): "5100.00",
+        ("garantias_custodiadas", "C"): "5100.00",
+        ("caixa_recebimentos", "D"): "5077.50",
         ("recebiveis_faturados", "C"): "2500.00",
+        ("excedente_a_devolver", "C"): "2577.50",
     }
 
 

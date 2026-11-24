@@ -264,15 +264,15 @@ ol, ul { list-style: none; }
   background: color-mix(in srgb, var(--limite) 10%, white);
 }
 
-.garantias {
+.garantias, .emprestimos {
   margin-top: calc(var(--passo) * 1.5);
-  max-width: 36rem;
+  max-width: 44rem;
   display: grid;
   gap: 0.35rem;
   font-size: 0.9rem;
 }
 
-.garantias li {
+.garantias > li, .emprestimos > li {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -281,14 +281,19 @@ ol, ul { list-style: none; }
   border-top: 1px solid var(--linha);
 }
 
-.garantias .nome { font-variation-settings: "wght" 600; }
-.garantias .valor { font-feature-settings: "tnum"; }
-.garantias .estado { color: var(--tinta-suave); }
-.garantias .estado.executada { color: var(--deficit); }
-.garantias button { margin-left: auto; }
-.garantias .acoes { display: flex; flex-wrap: wrap; gap: 0.35rem; width: 100%; }
-.garantias .acoes button { margin-left: 0; }
-.garantias .custodiante { color: var(--tinta-suave); font-size: 0.82rem; }
+.garantias .nome, .emprestimos .nome { font-variation-settings: "wght" 600; }
+.garantias .valor, .emprestimos .valor { font-feature-settings: "tnum"; }
+.garantias .estado, .emprestimos .estado { color: var(--tinta-suave); }
+.garantias .estado.executada, .emprestimos .estado.executada { color: var(--deficit); }
+.garantias > li > button { margin-left: auto; }
+.garantias .acoes, .emprestimos .acoes { display: flex; flex-wrap: wrap; gap: 0.35rem; width: 100%; }
+.garantias .acoes button, .emprestimos .acoes button { margin-left: 0; }
+.garantias .origem, .garantias .produto-da-garantia { color: var(--tinta-suave); font-size: 0.82rem; }
+.garantias p, .emprestimos p { width: 100%; max-width: none; font-size: 0.84rem; }
+.garantias .tecnico { color: var(--tinta-suave); }
+.garantias .prazo { color: var(--tinta); font-variation-settings: "wght" 560; }
+.garantias .motivo, .garantias .alerta { color: var(--deficit); }
+.garantias .informacoes { color: var(--tinta); }
 
 /* Linha do tempo do pedido ao custodiante externo: o limite só existe no último passo. */
 .linha-do-tempo {
@@ -369,7 +374,75 @@ ol, ul { list-style: none; }
   letter-spacing: -0.015em;
 }
 
-.passos li > p { color: var(--tinta-suave); font-size: 0.93rem; max-width: 36rem; }
+.passos li > p { color: var(--tinta-suave); font-size: 0.93rem; max-width: 40rem; }
+
+.passos h3 {
+  margin: calc(var(--passo) * 4) 0 0.2rem;
+  font-size: 1.02rem;
+  font-variation-settings: "wght" 620;
+  letter-spacing: -0.01em;
+}
+
+.passos li > p.prazo-previo { margin-top: 0.5rem; font-size: 0.88rem; color: var(--tinta); }
+
+/* Régua do atraso do empréstimo: a pista vai de zero ao dia da execução; cada marco é um
+   aviso (previdência) ou a própria execução, e fica cheio quando o atraso o alcança. */
+.regua-de-atraso { width: 100%; padding: 1.9rem 0.4rem 0.2rem; }
+.regua-de-atraso .pista {
+  position: relative;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--linha);
+}
+.regua-de-atraso .preenchimento {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--usado);
+  transition: width 0.4s ease;
+}
+.marco-de-atraso {
+  position: absolute;
+  top: -1.9rem;
+  transform: translateX(-100%);
+  display: grid;
+  justify-items: end;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  color: var(--tinta-suave);
+  white-space: nowrap;
+}
+.marco-de-atraso b { font-variation-settings: "wght" 640; }
+.marco-de-atraso::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 1.75rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid var(--tinta-suave);
+  background: var(--superficie);
+  transform: translate(50%, 0);
+}
+.marco-de-atraso.atingido { color: var(--deficit); }
+.marco-de-atraso.atingido::after { background: var(--deficit); border-color: var(--deficit); }
+.regua-de-atraso .dias-de-atraso { margin-top: 0.5rem; color: var(--tinta-suave); }
+
+.cronograma {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-feature-settings: "tnum";
+}
+.cronograma th, .cronograma td { padding: 0.2rem 0.5rem 0.2rem 0; text-align: left; }
+.cronograma th { color: var(--tinta-suave); font-variation-settings: "wght" 520; }
+
+.demonstrativo-da-execucao { width: 100%; }
+.demonstrativo-da-execucao h4 { font-size: 0.9rem; font-variation-settings: "wght" 620; margin: 0.4rem 0 0.2rem; }
+.demonstrativo { display: grid; gap: 0.15rem; font-size: 0.84rem; }
+.demonstrativo > div { display: flex; justify-content: space-between; gap: 1rem; max-width: 26rem; }
+.demonstrativo dt { color: var(--tinta-suave); }
+.demonstrativo dd { font-feature-settings: "tnum"; }
 
 .linha {
   display: flex;
@@ -621,4 +694,5 @@ button.pequeno { font-size: 0.82rem; padding: 0.25rem 0.6rem; }
 @media (prefers-reduced-motion: reduce) {
   .trilho > div, .dias li { transition: none; }
   .eventos > li { animation: none; }
+  .regua-de-atraso .preenchimento { transition: none; }
 }

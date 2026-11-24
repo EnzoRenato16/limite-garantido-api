@@ -52,7 +52,7 @@ def test_metricas_usam_o_template_da_rota_e_contam_eventos_de_negocio(
     parceiro: Parceiro, cliente: TestClient
 ) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     parceiro.comprar(conta, "10.00")
     parceiro.comprar(conta, "500.00")
     parceiro.put("/v1/parceiro/webhook", {"url": "https://parceiro.exemplo/hook"})
@@ -69,7 +69,7 @@ def test_metricas_usam_o_template_da_rota_e_contam_eventos_de_negocio(
     assert f'{compras},status="402"}} 1.0' in texto
     assert 'lg_eventos_total{tipo="compra.aprovada"} 2.0' in texto
     assert 'lg_eventos_total{tipo="compra.negada"} 1.0' in texto
-    assert 'lg_eventos_total{tipo="garantia.bloqueada"} 1.0' in texto
+    assert 'lg_eventos_total{tipo="gravame.registrado"} 1.0' in texto
     assert "lg_http_duracao_segundos_bucket" in texto
     assert 'lg_webhooks_na_fila{estado="pendente"}' in texto
 
@@ -79,10 +79,10 @@ def test_evento_de_operacao_desfeita_nao_entra_na_metrica(
 ) -> None:
     conta = parceiro.abrir_conta()
     # Pagamento maior que a dívida: erro de negócio, rollback, nenhum evento confirmado.
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
     assert parceiro.pagar(conta, "1.00").status_code == 422
     texto = cliente.get("/metrics").text
-    assert 'lg_eventos_total{tipo="garantia.bloqueada"} 1.0' in texto
+    assert 'lg_eventos_total{tipo="gravame.registrado"} 1.0' in texto
     assert "fatura.paga" not in texto
 
 
@@ -160,7 +160,7 @@ def test_corpo_gigante_e_recusado_antes_de_chegar_na_aplicacao(parceiro: Parceir
 
     # O caso perigoso: um JSON válido seguido de lixo. Se o corpo fosse só cortado, a
     # compra seria executada e o cliente receberia 413. Não pode executar.
-    parceiro.bloquear(conta, "deposito", "100.00")
+    parceiro.bloquear(conta, "cdb", "100.00")
 
     def valido_e_depois_lixo():  # type: ignore[no-untyped-def]
         yield b'{"valor": "10.00", "descricao": "compra escondida"}'

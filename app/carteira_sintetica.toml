@@ -5,20 +5,37 @@
 # para os cenários mostrarem o efeito de cada choque. A carteira é gerada em memória a
 # partir de uma semente; mesma semente, mesma carteira.
 
-# Peso de cada tipo de ativo no sorteio de uma garantia.
-[pesos_por_ativo]
-deposito = 20
-tesouro_selic = 25
-cdb = 20
+# Fração dos clientes com conta de empréstimo; os demais têm o cartão.
+[produtos]
+fracao_de_emprestimo = "0.30"
+
+# Peso de cada tipo de ativo no sorteio de uma garantia, por produto. O cartão só aceita
+# CDB com liquidez diária e fundo DI com resgate até D+1 (catálogo regulatório); Tesouro,
+# LCI, LCA, ações, FII, ETF e previdência vão só para o empréstimo. O Tesouro nunca vai
+# ao cartão porque a CTVM do grupo não é agente de custódia do TD (hipótese do catálogo).
+[pesos_por_ativo_no_cartao]
+cdb = 70
+fundo_di = 30
+
+[pesos_por_ativo_no_emprestimo]
+tesouro_selic = 15
 tesouro_prefixado = 10
 tesouro_ipca = 10
+cdb = 10
+fundo_di = 5
+lci = 10
+lca = 10
 acoes = 15
+fii = 5
+etf = 5
+previdencia = 5
 
 # Quantas garantias um cliente tem (1, 2 ou 3), com estes pesos.
 [garantias_por_cliente]
 pesos = [60, 30, 10]
 
-# Faixas de valor de cada garantia, em reais, com o peso de cada faixa.
+# Faixas de valor de cada garantia, em reais, com o peso de cada faixa. A última, de
+# R$ 100.000 a R$ 400.000, é rara, mas existe para a concentração do FGC aparecer.
 [[faixas_de_valor]]
 de = 1000
 ate = 5000
@@ -34,11 +51,35 @@ de = 20000
 ate = 100000
 peso = 20
 
-[garantia_externa]
-# Fração das garantias (fora depósito, que é sempre interno) em outro custodiante.
-fracao = "0.30"
-# Como as externas se dividem entre os custodiantes simulados.
-pesos_por_custodiante = { custodiante_agil = 60, custodiante_lento = 40 }
+[[faixas_de_valor]]
+de = 100000
+ate = 400000
+peso = 3
+
+# Onde cada ativo está. Tudo fica na casa, menos o Tesouro (com agentes de custódia dos
+# clientes, fictícios) e a previdência (com a entidade operadora, fictícia). Tudo simulado.
+[onde_esta]
+pesos_por_agente_de_custodia = { agente_td_a = 60, agente_td_b = 40 }
+entidade_operadora = "entidade_operadora_simulada"
+
+# Conglomerados emissores fictícios de CDB, LCI e LCA (para a concentração do FGC).
+[emissores]
+pesos = { conglomerado_a = 40, conglomerado_b = 30, conglomerado_c = 20, conglomerado_d = 10 }
+
+# Prazo até o vencimento, em anos, sorteado entre estes valores. Ativo que não vence
+# (ações, FII, ETF, fundo DI, previdência) fica sem prazo.
+[prazos_em_anos]
+tesouro_selic = [1, 2, 3, 5]
+tesouro_prefixado = [1, 2, 3, 5, 10]
+tesouro_ipca = [2, 3, 5, 10, 20]
+cdb = [1, 2, 3]
+lci = [1, 2, 3]
+lca = [1, 2, 3]
+
+# "Toda garantia de fora": simplificação da conta do negócio (dentro de casa x de fora). Divide as
+# garantias entre estes agentes de custódia fictícios, sempre com a semente de sempre.
+[garantia_de_fora]
+pesos_por_agente = { agente_td_a = 60, agente_td_b = 40 }
 
 [uso_do_limite]
 # Uso do limite de cada cliente saudável: sorteado entre estes percentuais.
@@ -48,34 +89,41 @@ maximo_percentual = 95
 # limite garantido).
 fracao_em_chamada = "0.01"
 
-# Desconto por dia de espera na venda de garantia externa, sobre o valor estressado.
+# Desconto por dia corrido de espera na venda de quem não está na casa, sobre o valor
+# estressado. Nunca perda total: só o desconto linear de cada dia.
 [desconto_diario_por_ativo]
-deposito = "0"
 fundo_di = "0.0002"
 tesouro_selic = "0.0002"
 cdb = "0.0005"
+lci = "0.0005"
+lca = "0.0005"
 tesouro_prefixado = "0.002"
 tesouro_ipca = "0.002"
 acoes = "0.01"
+fii = "0.01"
+etf = "0.01"
+previdencia = "0.0005"
 
 # --------------------------------------------------------------- cenários prontos
 # choques: variação de preço por ativo (-0.30 = queda de 30%).
 # taxa_sem_reforco: fração dos clientes descobertos que não reforçam nem pagam.
-# dias_extra_de_execucao: quanto a venda externa demora a mais que a interna.
+# dias_extra_de_execucao: quanto a venda de quem não está na casa demora a mais.
 # custodiantes_indisponiveis: não executam dentro do horizonte da análise.
+# atraso_por_onde_esta: atraso só de quem está naquele agente, em dias corridos.
+# emissores_em_quebra: CDB, LCI e LCA desses conglomerados valem zero para o credor.
 
 [cenarios.dia_normal]
 nome = "Dia normal"
-descricao = "Oscilação pequena de bolsa e prefixados. Venda externa leva 2 dias a mais."
-choques = { acoes = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
+descricao = "Oscilação pequena de bolsa e prefixados. Venda de quem não está na casa leva 2 dias a mais."
+choques = { acoes = "-0.02", fii = "-0.02", etf = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
 taxa_sem_reforco = "0.10"
 dias_extra_de_execucao = 2
 custodiantes_indisponiveis = []
 
 [cenarios.crash_da_bolsa]
-nome = "Crash da bolsa (ações -30%)"
-descricao = "Ações caem 30% de uma vez. Os outros ativos ficam onde estão."
-choques = { acoes = "-0.30" }
+nome = "Crash da bolsa (ações, FII e ETF -30%)"
+descricao = "Ações, FIIs e ETFs caem 30% de uma vez. Os outros ativos ficam onde estão."
+choques = { acoes = "-0.30", fii = "-0.30", etf = "-0.30" }
 taxa_sem_reforco = "0.30"
 dias_extra_de_execucao = 2
 custodiantes_indisponiveis = []
@@ -88,10 +136,20 @@ taxa_sem_reforco = "0.30"
 dias_extra_de_execucao = 2
 custodiantes_indisponiveis = []
 
-[cenarios.custodiante_fora_do_ar]
-nome = "Custodiante fora do ar"
-descricao = "Mercado como no dia normal, mas o Custodiante Lento não executa nenhuma garantia dentro do horizonte da análise: o que está com ele não recupera nada. Nos outros custodiantes externos, a venda atrasa 10 dias."
-choques = { acoes = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
+[cenarios.quebra_de_emissor]
+nome = "Quebra de emissor (conglomerado B)"
+descricao = "O conglomerado fictício B quebra. Premissa conservadora: CDB, LCI e LCA dele valem zero para o credor, porque o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º, §4º, I). O mercado fica como no dia normal."
+choques = { acoes = "-0.02", fii = "-0.02", etf = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
 taxa_sem_reforco = "0.30"
-dias_extra_de_execucao = 10
-custodiantes_indisponiveis = ["custodiante_lento"]
+dias_extra_de_execucao = 0
+custodiantes_indisponiveis = []
+emissores_em_quebra = ["conglomerado_b"]
+
+[cenarios.agente_perde_participacao]
+nome = "Agente de custódia perde a participação"
+descricao = "O agente de custódia fictício B perde a condição de participante do Selic. As contas dos clientes vão para outro participante em 10 dias úteis, cerca de 14 dias corridos (Res. BCB 409/2024; Regulamento do Selic, art. 15, §1º). Os títulos com ele atrasam e perdem o desconto de cada dia, mas não há perda total. Mercado como no dia normal."
+choques = { acoes = "-0.02", fii = "-0.02", etf = "-0.02", tesouro_prefixado = "-0.005", tesouro_ipca = "-0.005" }
+taxa_sem_reforco = "0.30"
+dias_extra_de_execucao = 0
+custodiantes_indisponiveis = []
+atraso_por_onde_esta = { agente_td_b = 14 }

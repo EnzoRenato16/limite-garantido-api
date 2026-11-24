@@ -1,7 +1,7 @@
 # Modelo econômico
 
 Quanto a plataforma e o parceiro ganham por cliente, a partir de quantos clientes a
-plataforma se paga, se a garantia em outra instituição compensa e o que mais pesa no
+plataforma se paga, se a garantia de fora compensa e o que mais pesa no
 resultado. A página é `/negocio`; a API, `/v1/negocio/...`.
 
 > **Todos os números deste documento são ilustrativos.** São premissas editáveis, não
@@ -21,9 +21,11 @@ por inteiros: a conta fecha centavo por centavo.
 - O **lojista** paga o intercâmbio, e quem o recebe é a plataforma (a emissora). A
   plataforma repassa uma parte ao parceiro.
 - O **parceiro** paga à plataforma um fee por garantia ativa e um fee por operação de
-  gravame (mais caro quando a garantia está em outra instituição).
+  gravame (mais caro quando a garantia está de fora).
 - O **cliente** paga os juros do rotativo, quando entra nele, e deixa a plataforma ficar
-  com uma pequena fração do rendimento do saldo em garantia.
+  com uma pequena fração do rendimento do saldo em garantia. Paga também o **IOF** do
+  crédito ao governo, só sobre o que financia a crédito; essa linha não entra na margem
+  de ninguém.
 - O **FIDC** (fundo de recebíveis) paga uma taxa à plataforma pela parte do saldo
   financiado que compra, e cobra funding (CDI mais spread) por ela.
 - A plataforma ainda paga funding de balanço pela parte que não cedeu, processamento
@@ -38,7 +40,7 @@ e está em `docs/DECISOES.md`, item 64.
 Por cliente, por mês. `origem → destino` diz quem paga e quem recebe. Receita é
 arredondada para baixo e custo para cima, uma única vez por linha. Os totais são a soma
 das linhas arredondadas. G é o gasto mensal, S o saldo em garantia, fi e fe as frações
-interna e externa, fc a fração cedida ao FIDC, R o que vai para o rotativo no mês e n
+dentro de casa e de fora, fc a fração cedida ao FIDC, R o que vai para o rotativo no mês e n
 os meses no rotativo.
 
 | id | Nome | origem → destino | Conta | Arredonda |
@@ -46,7 +48,7 @@ os meses no rotativo.
 | `intercambio` | Intercâmbio | lojista → plataforma | G × taxa de intercâmbio | para baixo |
 | `repasse_intercambio` | Repasse do intercâmbio ao parceiro | plataforma → parceiro (transferência) | G × taxa × (1 − fração da plataforma) | para baixo |
 | `fee_garantia_ativa` | Fee por garantia ativa | parceiro → plataforma (transferência) | garantias por cliente × fee | para baixo |
-| `fee_gravame` | Fee de gravame | parceiro → plataforma (transferência) | gravames/mês × (fi × fee interna + fe × fee externa) | para baixo |
+| `fee_gravame` | Fee de gravame | parceiro → plataforma (transferência) | gravames/mês × (fi × fee dentro de casa + fe × fee de fora) | para baixo |
 | `receita_sobre_investimento` | Receita sobre o investimento em garantia | cliente → plataforma | S × fi × taxa ao ano convertida para o mês | para baixo |
 | `juros_rotativo` | Juros do rotativo | cliente → plataforma | R × min((1+i)^n − 1, 100%) | para baixo |
 | `taxa_fidc` | Taxa do FIDC | fidc → plataforma | saldo financiado × fc × taxa ao ano convertida para o mês | para baixo |
@@ -54,11 +56,12 @@ os meses no rotativo.
 | `funding_balanco` | Funding de balanço | plataforma → financiadores | saldo financiado × (1 − fc) × (CDI ⊕ spread de balanço) no mês | para cima |
 | `perda_esperada` | Perda esperada | plataforma → inadimplência | saldo financiado × taxa anual de perda ÷ 12 | para cima |
 | `processamento` | Processamento do cartão | plataforma → fornecedores | custo por cartão ativo | para cima |
-| `gravame_custodiante` | Gravame no custodiante | plataforma → custodiante | gravames/mês × fe × custo do gravame externo | para cima |
-| `execucao_interna` | Execução de garantia interna | plataforma → fornecedores | execuções/ano ÷ 12 × fi × custo interno | para cima |
-| `execucao_externa` | Execução de garantia externa | plataforma → custodiante | execuções/ano ÷ 12 × fe × custo externo | para cima |
+| `gravame_custodiante` | Gravame no custodiante de fora | plataforma → custodiante | gravames/mês × fe × custo do gravame de fora | para cima |
+| `execucao_interna` | Execução de garantia dentro de casa | plataforma → fornecedores | execuções/ano ÷ 12 × fi × custo dentro de casa | para cima |
+| `execucao_externa` | Execução de garantia de fora | plataforma → custodiante | execuções/ano ÷ 12 × fe × custo de fora | para cima |
 | `tributos_plataforma` | Tributos da plataforma | plataforma → governo | alíquota × receita da plataforma (linhas já arredondadas) | para cima |
 | `tributos_parceiro` | Tributos do parceiro | parceiro → governo | alíquota × receita do parceiro | para cima |
+| `iof_credito` | IOF do crédito | cliente → governo | R × (IOF diário × min(n × 365/12, 365) dias + IOF adicional) | para cima |
 
 - **Saldo financiado** = G × dias financiados ÷ (365/12), mais R × n.
 - **R** = G × fração dos clientes no rotativo × fração da fatura rolada.
@@ -87,17 +90,17 @@ valor do conjunto Base. Frações e taxas são decimais (0,1365 = 13,65%).
 |---|---|---|---|---|---|
 | Gasto mensal (`gasto_mensal`) | R$/mês | 1500 | 0 a 50000 | 500 a 4000 | **Ilustrativa.** ordem de grandeza do gasto mensal no cartão de um cliente que usa o limite garantido; sem fonte de mercado. |
 | Saldo em garantia (`saldo_em_garantia`) | R$ | 8000 | 100 a 1000000 | 2000 a 30000 | **Ilustrativa.** saldo médio aplicado em garantia por cliente, de ordem de grandeza compatível com as faixas da carteira sintética; sem fonte de mercado. |
-| LTV médio (`ltv_medio`) | fração | 0,85 | 0,60 a 1,00 | 0,70 a 0,95 | **Ilustrativa.** média dentro dos LTVs da política de referência do projeto, que vão de 0,60 (ações) a 1,00 (depósito). |
-| Fração interna (`fracao_interna`) | fração | 0,70 | 0 a 1 | fora do tornado | **Ilustrativa.** parcela das garantias custodiadas na própria plataforma; soma com a fração externa e dá 1. |
-| Fração externa (`fracao_externa`) | fração | 0,30 | 0 a 1 | 0 a 1 | **Ilustrativa.** parcela das garantias em custódia externa; o valor base repete a fração da carteira sintética do painel de risco (0,30). |
+| LTV médio (`ltv_medio`) | fração | 0,85 | 0,50 a 0,90 | 0,70 a 0,90 | **Ilustrativa.** média dentro dos LTVs da política de referência do projeto, que vão de 0,50 (ações, FIIs e ETFs) a 0,90 (Tesouro Selic), no início das faixas do catálogo regulatório. A faixa aceita acompanha esses extremos. |
+| Fração dentro de casa (`fracao_interna`) | fração | 0,70 | 0 a 1 | fora do tornado | **Ilustrativa.** parcela das garantias custodiadas dentro de casa (na CTVM do grupo); soma com a fração de fora e dá 1. |
+| Fração de fora (`fracao_externa`) | fração | 0,30 | 0 a 1 | 0 a 1 | **Ilustrativa.** parcela das garantias de fora (em outro custodiante); o valor base repete a fração da carteira sintética do painel de risco (0,30). |
 | Garantias por cliente (`garantias_por_cliente`) | garantia/cliente | 1,5 | 1 a 10 | 1 a 3 | **Ilustrativa.** média da carteira sintética do painel de risco (pesos 60/30/10 para 1, 2 e 3 garantias). |
 | Gravames ao mês (`gravames_ao_mes`) | operação/cliente/mês | 0,10 | 0 a 5 | 0,05 a 0,30 | **Ilustrativa.** operações de gravame (constituir ou baixar) por cliente por mês; sem fonte de mercado. |
 | Dias financiados (`dias_financiados`) | dia | 10 | 0 a 60 | 0 a 30 | **Ilustrativa.** dias entre pagar o arranjo de pagamentos e receber do cliente, período em que a plataforma financia o gasto. |
 | Taxa de intercâmbio (`taxa_de_intercambio`) | fração do gasto | 0,012 | 0 a 0,05 | 0,008 a 0,018 | **Ilustrativa.** taxa média de intercâmbio sobre o gasto no crédito; o teto regulatório existe só para débito e pré-pago. Fonte: Res. BCB 246/2022 (teto só para débito e pré-pago). |
 | Fração do intercâmbio da plataforma (`fracao_do_intercambio_da_plataforma`) | fração | 0,50 | 0 a 1 | 0,30 a 0,70 | **Ilustrativa.** parte do intercâmbio que fica com a plataforma, o resto é repassado ao parceiro. |
 | Fee por garantia ativa (`fee_por_garantia_ativa`) | R$/garantia/mês | 2,00 | 0 a 100 | 0,50 a 5,00 | **Ilustrativa.** tarifa mensal que o parceiro paga à plataforma por garantia ativa; sem fonte de mercado. |
-| Fee de gravame interno (`fee_gravame_interna`) | R$/operação | 1,00 | 0 a 500 | 0 a 3 | **Ilustrativa.** tarifa por operação de gravame em garantia interna, cobrada do parceiro; sem fonte de mercado. |
-| Fee de gravame externo (`fee_gravame_externa`) | R$/operação | 8,00 | 0 a 500 | 3 a 20 | **Ilustrativa.** tarifa por operação de gravame em garantia externa, mais alta que a interna por repassar o custo do custodiante; sem fonte de mercado. |
+| Fee de gravame dentro de casa (`fee_gravame_interna`) | R$/operação | 1,00 | 0 a 500 | 0 a 3 | **Ilustrativa.** tarifa por operação de gravame em garantia dentro de casa, cobrada do parceiro; sem fonte de mercado. |
+| Fee de gravame de fora (`fee_gravame_externa`) | R$/operação | 8,00 | 0 a 500 | 3 a 20 | **Ilustrativa.** tarifa por operação de gravame em garantia de fora, mais alta que a de dentro de casa por repassar o custo do custodiante; sem fonte de mercado. |
 | Taxa sobre investimento ao ano (`taxa_sobre_investimento_ao_ano`) | 1/ano | 0,003 | 0 a 0,03 | 0,001 a 0,006 | **Ilustrativa.** parte do rendimento do saldo em garantia que a plataforma retém, ao ano; sem fonte de mercado. |
 | Fração de clientes no rotativo (`fracao_de_clientes_no_rotativo`) | fração | 0,05 | 0 a 1 | 0 a 0,15 | **Ilustrativa.** fração dos clientes que não paga a fatura inteira e entra no rotativo no mês; sem fonte de mercado. |
 | Fração da fatura rolada (`fracao_da_fatura_rolada`) | fração | 0,30 | 0 a 1 | 0,10 a 0,60 | **Ilustrativa.** fração da fatura que quem entra no rotativo deixa de pagar; sem fonte de mercado. |
@@ -111,11 +114,13 @@ valor do conjunto Base. Frações e taxas são decimais (0,1365 = 13,65%).
 | Taxa base de perda ao ano (`taxa_base_de_perda_ao_ano`) | 1/ano | 0,005 | 0 a 0,50 | 0,002 a 0,02 | **Ilustrativa.** perda anual de fundo sobre o saldo financiado, fora dos eventos do cenário de risco; sem fonte de mercado. |
 | Frequência do cenário ao ano (`frequencia_do_cenario_ao_ano`) | vez/ano | 0,05 | 0 a 12 | 0 a 0,5 | **Ilustrativa.** quantas vezes por ano o cenário de risco escolhido acontece; a perda do evento vem do painel de risco. |
 | Custo de processamento por cartão (`custo_de_processamento_por_cartao`) | R$/cartão/mês | 3,00 | 0 a 100 | 1 a 8 | **Ilustrativa.** custo mensal de processadora por cartão ativo; sem fonte de mercado. |
-| Custo do gravame externo (`custo_do_gravame_externo`) | R$/operação | 5,00 | 0 a 500 | 2 a 15 | **Ilustrativa.** custo por operação de gravame pago ao custodiante externo; sem fonte de mercado. |
+| Custo do gravame de fora (`custo_do_gravame_externo`) | R$/operação | 5,00 | 0 a 500 | 2 a 15 | **Ilustrativa.** custo por operação de gravame pago ao custodiante de fora; sem fonte de mercado. |
 | Execuções ao ano (`execucoes_ao_ano`) | execução/cliente/ano | 0,02 | 0 a 12 | 0 a 0,10 | **Ilustrativa.** execuções de garantia por cliente ao ano, quando a garantia é executada por inadimplência; sem fonte de mercado. |
-| Custo de execução interna (`custo_de_execucao_interna`) | R$/execução | 15,00 | 0 a 5000 | 5 a 50 | **Ilustrativa.** custo operacional por execução de garantia na própria plataforma; sem fonte de mercado. |
-| Custo de execução externa (`custo_de_execucao_externa`) | R$/execução | 60,00 | 0 a 5000 | 20 a 200 | **Ilustrativa.** custo por execução de garantia em custodiante externo, maior que o interno por envolver terceiros; sem fonte de mercado. |
+| Custo de execução dentro de casa (`custo_de_execucao_interna`) | R$/execução | 15,00 | 0 a 5000 | 5 a 50 | **Ilustrativa.** custo operacional por execução de garantia na própria plataforma; sem fonte de mercado. |
+| Custo de execução de fora (`custo_de_execucao_externa`) | R$/execução | 60,00 | 0 a 5000 | 20 a 200 | **Ilustrativa.** custo por execução de garantia em custodiante de fora, maior que a de dentro de casa por envolver terceiros; sem fonte de mercado. |
 | Alíquota sobre a receita (`aliquota_sobre_receita`) | fração | 0,10 | 0 a 0,50 | 0,06 a 0,17 | **Ilustrativa.** alíquota única de tributos sobre a receita; não representa o regime tributário de nenhuma empresa. |
+| IOF diário (`iof_diario`) | fração ao dia | 0,000082 | 0 a 0,001 | fora do tornado | IOF-crédito de pessoa física: 0,0082% ao dia, até 365 dias, sobre o saldo financiado. Norma: Decreto 6.306/2007, art. 7º, I (alíquota do Decreto 8.392/2015). |
+| IOF adicional (`iof_adicional`) | fração, uma vez | 0,0038 | 0 a 0,01 | fora do tornado | Adicional de 0,38% sobre o principal da operação de crédito. Norma: Decreto 6.306/2007, art. 7º, §15 (redação do Decreto 12.499/2025). |
 | Custo fixo mensal (`custo_fixo_mensal`) | R$/mês | 400000 | 0 a 100000000 | 200000 a 1000000 | **Ilustrativa.** custo fixo mensal da plataforma (equipe, infraestrutura), usado no ponto de equilíbrio; sem fonte de mercado. |
 | Parceiros (`parceiros`) | parceiro | 5 | 1 a 1000 | 1 a 20 | **Ilustrativa.** número de parceiros (emissores) que distribuem o produto; sem fonte de mercado. |
 | Clientes por parceiro (`clientes_por_parceiro`) | cliente/parceiro | 20000 | 1 a 10000000 | 2000 a 100000 | **Ilustrativa.** clientes ativos por parceiro; sem fonte de mercado. |
@@ -136,38 +141,49 @@ parte da perda.
 
 A taxa condicional é `perda_esperada_total / exposicao` do `simular_painel` na carteira
 sintética (1.000 clientes, semente 42), medida duas vezes **nos mesmos clientes**: uma
-com toda garantia interna (nenhuma com custodiante) e outra com toda garantia que não é
-depósito num custodiante (a que já tinha um continua com ele; a que não tinha ganha um
-sorteado pelos pesos da carteira, com um gerador à parte de mesma semente). Para uma
-fração externa fe, a condicional é a mistura linear: fi × condicional interna + fe ×
-condicional externa. Variar a fração não roda o motor de novo.
+com toda garantia dentro de casa (nenhuma fora do custodiante da casa) e outra com toda
+garantia de fora (a que já estava com um agente de custódia continua com ele; a que não
+estava ganha um agente fictício sorteado pelos pesos da carteira, com um gerador à parte
+de mesma semente). Para uma fração de fora fe, a condicional é a mistura linear: fi ×
+condicional dentro de casa + fe × condicional de fora. Variar a fração não roda o motor
+de novo.
 
 Condicionais medidas, por cenário:
 
-| Cenário | Toda interna | Toda externa |
+| Cenário | Toda dentro de casa | Toda de fora |
 |---|---:|---:|
 | Dia normal | 0,00% | 0,00% |
-| Crash da bolsa (ações -30%) | 0,00% | 0,00% |
+| Crash da bolsa (ações, FII e ETF -30%) | 0,00% | 0,00% |
 | Alta de juros (prefixado -10%) | 0,00% | 0,00% |
-| Custodiante fora do ar | 0,00% | 7,8435% |
+| Quebra de emissor (conglomerado B) | 4,0045% | 4,0045% |
+| Agente de custódia perde a participação | 0,00% | 0,00% |
 
-Nos três primeiros cenários nenhum cliente da carteira sintética (semente 42) fica
-descoberto depois da venda da garantia, e a perda condicional dá zero dos dois lados. É
-um resultado desta amostra, não uma lei: com outras sementes aparecem perdas pequenas
-(da ordem de 0,01% da exposição). Só com o custodiante fora do ar a garantia externa
-deixa dívida sem cobertura relevante.
+**Leia o zero com cuidado.** Com LTV abaixo de 100%, a garantia cobre a dívida mesmo
+depois de um choque de mercado ou de 14 dias de atraso com desconto diário: a perda
+esperada da carteira sintética (semente 42) dá zero nesses quatro cenários. Isso mostra o
+efeito das premissas, não que o risco tenha acabado: a garantia reduz a perda, e continuam
+o risco do emissor, o de preço, o de liquidez e o de execução.
 
-**Conta do conjunto Base** (cenário Custodiante fora do ar):
+**Por que Conservador e Base usam a quebra de emissor.** É o risco que a análise regulatória
+aponta como remanescente mesmo com garantia, e o único cenário em que a garantia deixa de
+cobrir: o CDB, a LCI e a LCA do conglomerado B valem zero para o credor. É uma premissa
+conservadora: o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º, §4º, I).
+Usar um cenário de perda nula no Base esconderia esse risco. O Otimista segue com o crash
+da bolsa, de propósito: é o conjunto que mostra o quanto a garantia protege. O atraso do
+agente de custódia (10 dias úteis, cerca de 14 corridos; Res. BCB 409/2024; Regulamento do
+Selic, art. 15, §1º) continua disponível como cenário no painel.
 
-1. Condicional interna: 0,00%; condicional externa: 7,8435%.
-2. Condicional mista: 70% × 0,00% + 30% × 7,8435% = 2,3531%.
-3. Taxa anual: 0,50% + 0,05 evento/ano × 2,3531% = 0,6177% ao ano.
-4. Taxa mensal: 0,6177% ÷ 12 = 0,0515% ao mês.
+**Conta do conjunto Base** (cenário Quebra de emissor):
+
+1. Condicional dentro de casa: 4,0045%; condicional de fora: 4,0045%.
+2. Condicional mista: 70% × 4,0045% + 30% × 4,0045% = 4,0045%.
+3. Taxa anual: 0,50% + 0,05 evento/ano × 4,0045% = 0,7002% ao ano.
+4. Taxa mensal: 0,7002% ÷ 12 = 0,0584% ao mês.
 5. Saldo financiado: R$ 1.500,00 × 10 ÷ (365/12) = R$ 493,1507, mais
    R$ 1.500,00 × 5% × 30% = R$ 22,50 por mês no rotativo × 2 meses = R$ 45,00;
    total de R$ 538,1507 (a tela mostra R$ 538,16).
-6. Perda esperada: R$ 538,1507 × 0,0515% = R$ 0,2770, que a linha arredonda para cima:
-   **R$ 0,28 por cliente por mês**.
+6. Perda esperada: R$ 538,1507 × 0,0584% = R$ 0,3140, que a linha arredonda para cima:
+   **R$ 0,32 por cliente por mês**.
 
 A carteira sintética usa entre 0% e 95% do limite. Se o cliente médio usar menos, a taxa
 medida tende a ser maior que a dele: erra para o lado prudente.
@@ -179,45 +195,47 @@ inteiros. Se a margem for zero ou negativa, nenhum número de clientes paga o cu
 e o resultado é "não existe", com o motivo (se o custo fixo também for zero, o motivo diz
 que nenhum cliente dá lucro).
 
-No conjunto Base: R$ 400.000,00 ÷ R$ 4,14 = 96.618,4, ou seja, **96.619 clientes**. A
+No conjunto Base: R$ 400.000,00 ÷ R$ 4,10 = 97.560,98, ou seja, **97.561 clientes**. A
 carteira Base tem 100.000. Fica pouco acima do ponto de equilíbrio, de propósito.
 
-## Interna x externa
+## Dentro de casa x de fora
 
-O modelo calcula a margem da plataforma por cliente com toda a garantia interna (fi = 1)
-e com toda a externa (fe = 1). A diferença é o custo a mais da garantia em outra
-instituição. Para empatar, ele procura, em centavos:
+O modelo calcula a margem da plataforma por cliente com toda a garantia dentro de casa
+(fi = 1) e com toda a de fora (fe = 1). A diferença é o custo a mais da garantia de fora.
+Na API os rótulos são "dentro de casa" e "de fora" (os campos mantêm os nomes `interna`
+e `externa`). Para empatar, ele procura, em centavos:
 
-- o **fee de gravame externo** que zera a diferença, se houver gravames e a receita de
+- o **fee de gravame de fora** que zera a diferença, se houver gravames e a receita de
   fee de gravame estiver ligada;
 - o **gasto mensal** que zera a diferença, dizendo se esse gasto cabe no limite que a
   garantia gera (S × LTV).
 
-A busca vai para o lado em que a margem da externa sobe. Mais fee sempre ajuda; mais
+A busca vai para o lado em que a margem da garantia de fora sobe. Mais fee sempre ajuda; mais
 gasto ajuda quando o intercâmbio e os juros que ele traz pagam o funding e a perda, e
 atrapalha quando não pagam, e aí o empate está num gasto **menor** que o atual. Se por
 esse lado nada empata, a busca ainda olha a outra ponta da faixa aceita. O valor achado é
-uma fronteira: com ele a externa empata e um centavo mais perto do valor atual, não. Sem
+uma fronteira: com ele a garantia de fora empata e um centavo mais perto do valor atual, não. Sem
 valor, a resposta traz o motivo (`motivo_fee`, `motivo_gasto`): a externa não custa
 mais, não há gravame, a receita de fee de gravame está desligada ou nenhum valor da faixa
 aceita empata.
 
-Conjunto Base (ilustrativo): margem interna R$ 4,71, externa R$ 2,80, diferença
-R$ 1,91. A externa empata com um fee de gravame externo de R$ 29,20 (a base é R$ 8,00)
-ou com um gasto mensal de R$ 2.452,50, que cabe no limite. Para os outros conjuntos:
+Conjunto Base (ilustrativo): margem dentro de casa R$ 4,62, de fora R$ 2,89, diferença
+R$ 1,73: **a garantia de fora custa R$ 1,73 por cliente por mês a mais que a de dentro de
+casa**. Ela empata com um fee de gravame de fora de R$ 27,20 (a base é R$ 8,00) ou com um
+gasto mensal de R$ 2.346,72, que cabe no limite. Para os outros conjuntos:
 
 | | Conservador | Base | Otimista |
 |---|---:|---:|---:|
-| Margem da plataforma, toda interna | R$ -3,05 | R$ 4,71 | R$ 19,84 |
-| Margem da plataforma, toda externa | R$ -5,03 | R$ 2,80 | R$ 16,45 |
-| Custo a mais da externa | R$ 1,98 | R$ 1,91 | R$ 3,39 |
-| Fee de gravame externo que empata | R$ 30,00 | R$ 29,20 | R$ 45,70 |
-| Gasto mensal que empata | R$ 408,74 | R$ 2.452,50 | R$ 3.030,72 |
+| Margem da plataforma, toda dentro de casa | R$ -3,39 | R$ 4,62 | R$ 19,84 |
+| Margem da plataforma, toda de fora | R$ -4,70 | R$ 2,89 | R$ 16,45 |
+| Custo a mais da garantia de fora | R$ 1,31 | R$ 1,73 | R$ 3,39 |
+| Fee de gravame de fora que empata | R$ 22,50 | R$ 27,20 | R$ 45,70 |
+| Gasto mensal que empata | R$ 563,66 | R$ 2.346,72 | R$ 3.030,72 |
 | Gasto mensal do conjunto | R$ 1.000,00 | R$ 1.500,00 | R$ 2.500,00 |
 
 No Conservador, o gasto que empata é **menor** que o do conjunto: ali cada real a mais de
-gasto custa mais em funding e perda do que traz de intercâmbio, e a margem da externa
-cai quando o gasto sobe.
+gasto custa mais em funding e perda do que traz de intercâmbio, e a margem da garantia de
+fora cai quando o gasto sobe.
 
 ## Tornado
 
@@ -229,15 +247,15 @@ porque algumas premissas não são monótonas (meses no rotativo: o teto legal t
 juros e o funding continua crescendo). As barras são ordenadas pela amplitude.
 
 No conjunto Base, as cinco que mais mexem (margem em R$ por cliente por mês, no extremo
-baixo e no alto da faixa razoável; a base é R$ 4,14):
+baixo e no alto da faixa razoável; a base é R$ 4,10):
 
 | Premissa | Faixa | Margem no baixo | Margem no alto |
 |---|---|---:|---:|
-| Dias financiados | 0 a 30 | R$ 10,95 | R$ -9,51 |
-| Meses no rotativo | 1 a 6 | R$ 2,69 | R$ 11,40 |
-| Fração de clientes no rotativo | 0 a 0,15 | R$ 1,39 | R$ 9,63 |
-| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,04 | R$ 9,34 |
-| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,54 | R$ 7,74 |
+| Dias financiados | 0 a 30 | R$ 10,95 | R$ -9,61 |
+| Meses no rotativo | 1 a 6 | R$ 2,65 | R$ 11,36 |
+| Fração de clientes no rotativo | 0 a 0,15 | R$ 1,36 | R$ 9,59 |
+| Gasto mensal | R$ 500 a R$ 4.000 | R$ 2,03 | R$ 9,24 |
+| Fração do intercâmbio da plataforma | 0,30 a 0,70 | R$ 0,50 | R$ 7,70 |
 
 Quem financia o gasto por mais dias perde margem (funding), e quem tem mais gente no
 rotativo ganha (juros). Com o rotativo limitado por lei, parte dessa margem é frágil.
@@ -249,30 +267,32 @@ em cada conjunto (com todas as fontes de receita ligadas).
 
 | | Conservador | Base | Otimista |
 |---|---:|---:|---:|
-| Cenário de risco | Custodiante fora do ar | Custodiante fora do ar | Crash da bolsa (ações -30%) |
+| Cenário de risco | Quebra de emissor (conglomerado B) | Quebra de emissor (conglomerado B) | Crash da bolsa (ações, FII e ETF -30%) |
 | Clientes (parceiros × clientes por parceiro) | 30.000 | 100.000 | 320.000 |
 | Receita da plataforma por cliente por mês | R$ 15,17 | R$ 26,57 | R$ 51,16 |
-| Custo da plataforma por cliente por mês | R$ 19,22 | R$ 22,43 | R$ 31,84 |
-| **Margem da plataforma por cliente por mês** | **R$ -4,05** | **R$ 4,14** | **R$ 19,32** |
+| Custo da plataforma por cliente por mês | R$ 19,22 | R$ 22,47 | R$ 31,84 |
+| **Margem da plataforma por cliente por mês** | **R$ -4,05** | **R$ 4,10** | **R$ 19,32** |
 | **Margem do parceiro por cliente por mês** | **R$ 1,05** | **R$ 4,79** | **R$ 12,55** |
-| Margem do arranjo por cliente por mês | R$ -3,00 | R$ 8,93 | R$ 31,87 |
+| Margem do arranjo por cliente por mês | R$ -3,00 | R$ 8,89 | R$ 31,87 |
 | Custo fixo mensal | R$ 600.000,00 | R$ 400.000,00 | R$ 300.000,00 |
-| Ponto de equilíbrio (clientes) | não existe | 96.619 | 15.528 |
-| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -721.500,00 | R$ 14.000,00 | R$ 5.882.400,00 |
-| Resultado anual da plataforma na carteira | R$ -8.658.000,00 | R$ 168.000,00 | R$ 70.588.800,00 |
+| Ponto de equilíbrio (clientes) | não existe | 97.561 | 15.528 |
+| Resultado mensal da plataforma na carteira (margem total menos custo fixo) | R$ -721.500,00 | R$ 10.000,00 | R$ 5.882.400,00 |
+| Resultado anual da plataforma na carteira | R$ -8.658.000,00 | R$ 120.000,00 | R$ 70.588.800,00 |
 | Resultado mensal do parceiro médio | R$ 10.500,00 | R$ 95.800,00 | R$ 502.000,00 |
-| Taxa anual de perda | 1,78% | 0,62% | 0,30% |
-| Perda esperada por cliente por mês | R$ 0,77 | R$ 0,28 | R$ 0,13 |
+| Taxa anual de perda | 1,80% | 0,70% | 0,30% |
+| Perda esperada por cliente por mês | R$ 0,77 | R$ 0,32 | R$ 0,13 |
+| IOF do crédito por cliente por mês (do cliente ao governo, fora das margens) | R$ 0,08 | R$ 0,20 | R$ 0,40 |
 
 - **Conservador** dá margem negativa para a plataforma e não tem ponto de equilíbrio.
   Foi mantido assim de propósito: com premissas ruins (gasto e saldo baixos, mais gente
-  na externa, custos e perda altos), o negócio não para de pé, e o modelo diz isso em vez
+  com garantia de fora, custos e perda altos), o negócio não para de pé, e o modelo diz isso em vez
   de esconder.
-- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 14.000,00 por mês sobre
+- **Base** fica pouco acima do equilíbrio: a plataforma ganha R$ 10.000,00 por mês sobre
   100.000 clientes. O resultado é sensível ao que o tornado mostra.
 - **Otimista** usa o crash da bolsa, cuja perda condicional na carteira sintética de semente
   42 dá zero (com outras sementes ela é pequena, mas não nula). Por isso a
-  perda anual fica só na taxa base, 0,30%, e a margem sobe.
+  perda anual fica só na taxa base, 0,30%, e a margem sobe. Conservador e Base usam a quebra de
+  emissor, com perda condicional de 4,0045%; por isso têm perda anual acima da taxa base.
 
 Os conjuntos são pontos de partida. A página permite editar cada premissa.
 
@@ -288,6 +308,36 @@ Os conjuntos são pontos de partida. A página permite editar cada premissa.
   `application/json` e o de `*/*`; em qualquer outro caso, JSON. As duas respostas levam
   `Vary: Accept`. O CSV é em português (`;` e vírgula decimal).
 
+## IOF, IR e capital
+
+- **IOF.** O financiamento paga IOF-crédito: 0,0082% ao dia (até 365 dias) mais 0,38%
+  sobre o principal (Decreto 6.306/2007, art. 7º, I e §15; **norma**). No cartão, incide
+  sobre o que vira crédito (rotativo, parcelado, empréstimo) e não sobre a compra paga
+  integralmente na fatura (prática de mercado). No modelo, a base é só o que rola da
+  fatura a cada mês, R. A linha `iof_credito` vai do cliente ao governo e não entra na
+  margem da plataforma, do parceiro nem do arranjo. No Base são R$ 0,20 por cliente por
+  mês.
+- **IR.** O IR da execução é do cliente, retido por quem paga o rendimento (no Tesouro, o
+  agente de custódia). Não é receita nem custo de ninguém no modelo (Lei 11.033/2004,
+  art. 1º; IN RFB 1.585/2015; **norma**).
+- **Capital.** O alívio de capital só vale se o colateral cumprir a Circular BCB
+  3.809/2016, art. 4º (registrado em entidade autorizada, marcado a mercado e movimentável
+  só por ordem do credor; **norma**). O modelo não conta nenhum alívio de capital.
+- **Teto de juros.** O teto de 100% do valor original (Lei 14.690/2023, art. 28; **norma**)
+  vale para o rotativo e para o parcelado da fatura. O modelo só tem a linha do rotativo.
+
+O resultado da simulação traz essas notas no campo `notas`, e a página `/negocio` as mostra.
+
+## Próximos passos
+
+- **Parcelado.** Não há linha de parcelado da fatura no modelo: nem a receita de juros, nem
+  o IOF dele, nem o teto aplicado a ele. Hoje só o rotativo é calculado.
+- **IOF sobre o empréstimo parcelado com garantia**, com prazo e amortização, em vez de
+  só o que rola da fatura.
+- **Perda com cauda.** Com LTV abaixo de 100% a perda esperada de quase todos os cenários dá
+  zero na carteira sintética; vale um cenário combinado (queda de preço com atraso de agente
+  e emissor em quebra) para a perda deixar de depender de uma única hipótese.
+
 <a id="dados-publicos"></a>
 ## Dados públicos
 
@@ -297,6 +347,7 @@ Só entra aqui o que tem fonte. O resto é "premissa ilustrativa".
 |---|---|---|
 | CDI / DI-B3 | 13,65% ao ano em 06/11/2026, após a decisão do Copom de 04/11/2026 que fixou a Selic em 13,75% | ANBIMA, indicadores: https://www.anbima.com.br/informacoes/indicadores/ |
 | Teto de intercâmbio | 0,5% para débito e 0,7% para pré-pago, vigente desde 01/04/2023 (Resolução BCB nº 246/2022). A norma trata de débito e pré-pago; não encontrei teto para crédito | https://www.mattosfilho.com.br/unico/regras-tarifas-intercambio-prazos-liquidacao/ e https://regulacaoemnumeros-direitorio.fgv.br/post/banco-central-aprova-resolucao-que-disciplina-tarifa-de-intercambio-de-cartao-de-debito-e-pre |
+| IOF-crédito | 0,0082% ao dia (até 365 dias) mais 0,38%, para pessoa física (Decreto 6.306/2007, art. 7º, I, e §15; categoria: norma) | Decreto 6.306/2007, citado nas premissas `iof_diario` e `iof_adicional` |
 | Teto do rotativo | Juros e encargos do rotativo e do parcelamento da fatura limitados a 100% do valor original da dívida, para dívidas a partir de 03/01/2024 (Lei 14.690/2023, art. 28, e Resolução CMN nº 5.112/2023) | https://www.mattosfilho.com.br/unico/banco-lei-desenrola/ |
 | Taxa média do rotativo | 451,7% ao ano em setembro de 2026 (444,9% em agosto) e, em agosto, 15,18% ao mês, segundo a imprensa citando o Banco Central; conferir na série das Estatísticas Monetárias e de Crédito do BC | https://wscom.com.br/economia/2026/10/30/juro-do-rotativo-do-cartao-de-credito-sobe-para-4517-ao-ano-em-setembro-aponta-banco-central/ |
 
@@ -324,8 +375,8 @@ Só entra aqui o que tem fonte. O resto é "premissa ilustrativa".
 - Os juros do rotativo entram em regime (uma leva por mês), e o IOF fica de fora por ser
   do governo. O saldo financiado conta só o principal rolado, sem os juros capitalizados
   no saldo; funding e perda incidem sobre esse principal.
-- As frações interna e externa são frações das garantias por contagem, e pesam o yield e
-  a perda como se as garantias internas e externas tivessem o mesmo saldo médio.
+- As frações dentro de casa e de fora são frações das garantias por contagem, e pesam o
+  yield e a perda como se as garantias dos dois lados tivessem o mesmo saldo médio.
 - Não é parecer jurídico, tributário ou contábil.
 
 As decisões de desenho estão em `docs/DECISOES.md`, itens 57 a 71.

@@ -19,6 +19,7 @@ def criar_parceiro(
 ) -> tuple[Parceiro, ChaveGerada]:
     """Cria o parceiro e devolve a API key, que só aparece neste momento."""
     chave = chave or gerar_api_key()
+    uow.catalogo.validar_ltv_da_politica(politica.ltv_por_ativo)
     parceiro = Parceiro(
         id=novo_id("par"),
         nome=nome,
@@ -41,6 +42,8 @@ def atualizar_politica(
     uow: UnidadeDeTrabalho, parceiro_id: str, politica: PoliticaRisco
 ) -> Parceiro:
     parceiro = obter_parceiro(uow, parceiro_id)
+    # A política do parceiro não pode passar do que o catálogo regulatório sustenta.
+    uow.catalogo.validar_ltv_da_politica(politica.ltv_por_ativo)
     parceiro.politica = politica
     uow.parceiros.salvar(parceiro)
     return parceiro

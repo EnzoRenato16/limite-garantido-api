@@ -12,7 +12,7 @@ COMPRA = {"valor": "100.00", "descricao": "Loja Exemplo"}
 
 def _conta_com_limite(parceiro: Parceiro, valor: str = "1000.00") -> str:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", valor)
+    parceiro.bloquear(conta, "cdb", valor)
     return conta
 
 
@@ -64,7 +64,7 @@ def test_compra_negada_tambem_e_idempotente(parceiro: Parceiro) -> None:
     assert segunda.headers["content-type"] == "application/problem+json"
     assert parceiro.tipos_de_evento(conta).count("compra.negada") == 1
     # Mesmo depois de ganhar limite, a chave antiga continua devolvendo a decisão antiga.
-    parceiro.bloquear(conta, "deposito", "500.00")
+    parceiro.bloquear(conta, "cdb", "500.00")
     assert parceiro.post(f"/v1/contas/{conta}/compras", COMPRA, chave="k3").status_code == 402
     assert parceiro.post(f"/v1/contas/{conta}/compras", COMPRA, chave="k3-nova").status_code == 201
 

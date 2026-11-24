@@ -14,14 +14,21 @@ from decimal import Decimal
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.erros import ValorInvalido
 from app.dominio.politica import PoliticaRisco, TipoAtivo
+from app.dominio.regulacao import CarteiraDeProvisao, CatalogoRegulatorio, Produto
 
 
 @dataclass(frozen=True, slots=True)
 class GarantiaNaCarteira:
     tipo_ativo: TipoAtivo
     valor_de_mercado: Dinheiro
-    # None: dentro de casa. Senão, o custodiante externo que guarda o ativo.
-    custodiante_id: str | None = None
+    # Onde o ativo está: None = na casa; senão um agente de custódia fictício (Tesouro) ou a
+    # entidade operadora fictícia (previdência).
+    onde_esta: str | None = None
+    # Conglomerado emissor (CDB, LCI e LCA); None para os demais.
+    emissor: str | None = None
+    # Prazo até o vencimento em {ano}; None quando o ativo não vence.
+    vencimento_em_anos: Decimal | None = None
+    produto: Produto = Produto.CARTAO
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +147,8 @@ def simular_stress(
 # ============================================================ painel de risco
 DIAS_EXTRA_MAXIMOS = 365
 DESCONTO_DIARIO_MAXIMO = Decimal("0.10")
+# Instrumentos cobertos pelo FGC: CDB, LCI e LCA (Regulamento do FGC, Res. CMN 4.222/2013).
+ATIVOS_DO_FGC = frozenset({TipoAtivo.CDB, TipoAtivo.LCI, TipoAtivo.LCA})
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,33 +157,46 @@ class PremissasDaGarantiaExterna:
 
     - `custodiantes_indisponiveis`: não executam dentro do horizonte da análise. O que
       está com eles não recupera nada (premissa conservadora).
-    - `dias_extra_de_execucao`: quanto a venda externa demora a mais que a interna.
-      Em cada dia de espera o ativo perde `desconto_diario_por_ativo` do valor
-      estressado (desconto linear, para baixo).
+    - `dias_extra_de_execucao`: quanto a venda de quem não está na casa demora a mais.
+    - `atraso_por_onde_esta`: atraso só de quem está naquele agente, em {dia_corrido}
+      (agente que perde a participação: Res. BCB 409/2024, Regulamento do Selic, art. 15,
+      §1º, transfere as contas em 10 dias úteis, cerca de 14 dias corridos).
+    - Em cada dia de espera o ativo perde `desconto_diario_por_ativo` do valor
+      estressado (desconto linear, para baixo; nunca perda total).
+    - `emissores_em_quebra`: CDB, LCI e LCA desses conglomerados valem zero para o
+      credor. Premissa conservadora: o FGC paga o titular, não o credor (Regulamento do
+      FGC, art. 2º, §4º, I).
     """
 
     custodiantes_indisponiveis: frozenset[str] = frozenset()
     dias_extra_de_execucao: int = 0
     desconto_diario_por_ativo: Mapping[TipoAtivo, Decimal] = field(default_factory=dict)
+    atraso_por_onde_esta: Mapping[str, int] = field(default_factory=dict)
+    emissores_em_quebra: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not 0 <= self.dias_extra_de_execucao <= DIAS_EXTRA_MAXIMOS:
             raise ValorInvalido(
                 f"Dias extras de execução precisam estar entre 0 e {DIAS_EXTRA_MAXIMOS}"
             )
+        if any(not 0 <= dias <= DIAS_EXTRA_MAXIMOS for dias in self.atraso_por_onde_esta.values()):
+            raise ValorInvalido(f"Atraso por agente precisa estar entre 0 e {DIAS_EXTRA_MAXIMOS}")
         for desconto in self.desconto_diario_por_ativo.values():
             if not 0 <= desconto <= DESCONTO_DIARIO_MAXIMO:
                 raise ValorInvalido("Desconto diário precisa estar entre 0 e 0,10")
 
     def fator_de_recuperacao(self, garantia: GarantiaNaCarteira) -> Decimal:
         """Quanto do valor estressado a execução recupera. {1}, entre 0 e 1."""
-        if garantia.custodiante_id is None:
-            return Decimal(1)
-        if garantia.custodiante_id in self.custodiantes_indisponiveis:
+        if garantia.tipo_ativo in ATIVOS_DO_FGC and garantia.emissor in self.emissores_em_quebra:
             return Decimal(0)
+        if garantia.onde_esta is None:
+            return Decimal(1)
+        if garantia.onde_esta in self.custodiantes_indisponiveis:
+            return Decimal(0)
+        dias = self.dias_extra_de_execucao + self.atraso_por_onde_esta.get(garantia.onde_esta, 0)
         desconto = self.desconto_diario_por_ativo.get(garantia.tipo_ativo, Decimal(0))
-        # {1/dia} x {dia} -> {1}
-        return max(Decimal(0), Decimal(1) - desconto * self.dias_extra_de_execucao)
+        # {1/dia_corrido} x {dia_corrido} -> {1}
+        return max(Decimal(0), Decimal(1) - desconto * dias)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +236,49 @@ class FatiaDeConcentracao:
 
 
 @dataclass(frozen=True, slots=True)
+class HaircutDaFaixa:
+    """Desconto {1} sobre o valor do ativo para títulos com até `ate_anos` {ano}.
+
+    É o complemento do LTV de partida da faixa no catálogo (1 - LTV). `None`: faixa aberta.
+    """
+
+    tipo_ativo: TipoAtivo
+    ate_anos: int | None
+    haircut_minimo: Decimal
+    haircut_maximo: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ConcentracaoDeConglomerado:
+    """CDB, LCI e LCA de um conglomerado emissor, somados por cliente (FGC)."""
+
+    conglomerado: str
+    valor: Dinheiro
+    clientes: int
+    # Clientes com mais que o teto do FGC neste conglomerado, e o quanto passa dele.
+    clientes_acima_do_teto: int
+    excesso_total: Dinheiro
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisaoDaCarteira:
+    carteira: CarteiraDeProvisao
+    contas: int
+    saldo: Dinheiro
+    # Provisão mínima sobre o saldo se a conta ficasse inadimplida, para cima.
+    provisao_primeiro_mes: Dinheiro
+    provisao_decimo_terceiro_mes: Dinheiro
+
+
+@dataclass(frozen=True, slots=True)
+class PainelRegulatorio:
+    haircut_por_classe_e_prazo: tuple[HaircutDaFaixa, ...]
+    concentracao_por_conglomerado: tuple[ConcentracaoDeConglomerado, ...]
+    teto_do_fgc: Dinheiro
+    carteiras_de_provisao: tuple[ProvisaoDaCarteira, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ResultadoDoPainel:
     stress: ResultadoDoStress
     antes: FotoDaCarteira
@@ -221,6 +286,7 @@ class ResultadoDoPainel:
     perda: PerdaDoPainel
     por_ativo: tuple[FatiaDeConcentracao, ...]
     por_custodiante: tuple[FatiaDeConcentracao, ...]
+    regulatorio: PainelRegulatorio
 
 
 def simular_painel(
@@ -229,12 +295,14 @@ def simular_painel(
     politica: PoliticaRisco,
     taxa_sem_reforco: Decimal,
     premissas: PremissasDaGarantiaExterna,
+    catalogo: CatalogoRegulatorio,
 ) -> ResultadoDoPainel:
     """O simulador de stress, mais o que a garantia externa muda.
 
     Reaproveita `simular_stress` para chamada de margem e déficit, e acrescenta: limite
     antes e depois, perda separando o que é da execução imediata e o que é da garantia
-    externa, e concentração por ativo e por custodiante.
+    externa, concentração por ativo e por local, e o painel regulatório (haircut por
+    classe e prazo, concentração por conglomerado do FGC e carteiras de provisão).
     """
     contas = list(carteira)
     stress = simular_stress(contas, choques, politica, taxa_sem_reforco)
@@ -252,7 +320,7 @@ def simular_painel(
             recuperado += estressado.aplicar_razao(premissas.fator_de_recuperacao(garantia))
             for grupo, chave in (
                 (por_ativo, str(garantia.tipo_ativo)),
-                (por_custodiante, garantia.custodiante_id or "interna"),
+                (por_custodiante, garantia.onde_esta or "casa"),
             ):
                 grupo.setdefault(chave, _Acumulador()).somar(
                     garantia.valor_de_mercado, estressado, conta.conta_id
@@ -299,6 +367,81 @@ def simular_painel(
         ),
         por_ativo=_fatias(por_ativo),
         por_custodiante=_fatias(por_custodiante),
+        regulatorio=_painel_regulatorio(contas, catalogo),
+    )
+
+
+def _painel_regulatorio(
+    contas: list[ContaNaCarteira], catalogo: CatalogoRegulatorio
+) -> PainelRegulatorio:
+    haircuts = tuple(
+        HaircutDaFaixa(
+            regra.tipo, faixa.ate_anos, Decimal(1) - faixa.maximo, Decimal(1) - faixa.minimo
+        )
+        for regra in catalogo.ativos.values()
+        if regra.recomendado
+        for faixa in regra.faixas_de_ltv
+    )
+
+    # Concentração por conglomerado: soma por (cliente, conglomerado), valor antes do choque.
+    por_cliente: dict[tuple[str, str], Dinheiro] = {}
+    for conta in contas:
+        for g in conta.garantias:
+            if g.tipo_ativo in ATIVOS_DO_FGC and g.emissor is not None:
+                chave = (g.emissor, conta.conta_id)
+                por_cliente[chave] = por_cliente.get(chave, Dinheiro.zero()) + g.valor_de_mercado
+    teto = catalogo.teto_do_fgc
+    emissores: dict[str, list[Dinheiro]] = {}
+    for (emissor, _), valor in por_cliente.items():
+        emissores.setdefault(emissor, []).append(valor)
+    concentracao = tuple(
+        ConcentracaoDeConglomerado(
+            conglomerado=emissor,
+            valor=Dinheiro.somar(valores),
+            clientes=len(valores),
+            clientes_acima_do_teto=sum(v > teto for v in valores),
+            excesso_total=Dinheiro.somar((v - teto).nao_negativo() for v in valores),
+        )
+        for emissor, valores in sorted(emissores.items())
+    )
+
+    # Provisão: a carteira de menor piso entre as garantias (Res. BCB 352, art. 81, §1º);
+    # sem garantia, C5.
+    pisos = catalogo.pisos_de_provisao
+    acumulado: dict[CarteiraDeProvisao, list[Dinheiro]] = {}
+    for conta in contas:
+        candidatas = [
+            regra.carteira_de_provisao[regra.instrumentos[0]]
+            for g in conta.garantias
+            if (regra := catalogo.regra(g.tipo_ativo)).instrumentos
+        ]
+        carteira_da_conta = (
+            min(candidatas, key=lambda c: pisos[c].primeiro_mes)
+            if candidatas
+            else CarteiraDeProvisao.C5
+        )
+        acumulado.setdefault(carteira_da_conta, []).append(conta.divida)
+    provisoes = tuple(
+        ProvisaoDaCarteira(
+            carteira=carteira_de_provisao,
+            contas=len(dividas),
+            saldo=Dinheiro.somar(dividas),
+            provisao_primeiro_mes=Dinheiro.somar(
+                d.aplicar_razao(pisos[carteira_de_provisao].primeiro_mes, para_cima=True)
+                for d in dividas
+            ),
+            provisao_decimo_terceiro_mes=Dinheiro.somar(
+                d.aplicar_razao(pisos[carteira_de_provisao].decimo_terceiro_mes, para_cima=True)
+                for d in dividas
+            ),
+        )
+        for carteira_de_provisao, dividas in sorted(acumulado.items())
+    )
+    return PainelRegulatorio(
+        haircut_por_classe_e_prazo=haircuts,
+        concentracao_por_conglomerado=concentracao,
+        teto_do_fgc=teto,
+        carteiras_de_provisao=provisoes,
     )
 
 

@@ -1,4 +1,4 @@
-"""Apoio de teste: o esquema das 34 premissas e a coluna `base`.
+"""Apoio de teste: o esquema das 36 premissas e a coluna `base`.
 
 O esquema vem do TOML (`app/premissas_economia.toml`), única fonte de verdade. Os valores
 da coluna `base` ficam aqui por extenso, e um teste confere que batem com o TOML.
@@ -51,6 +51,8 @@ VALORES_BASE: dict[N, Decimal] = {
     N.custo_de_execucao_interna: Decimal("15.00"),
     N.custo_de_execucao_externa: Decimal("60.00"),
     N.aliquota_sobre_receita: Decimal("0.10"),
+    N.iof_diario: Decimal("0.000082"),
+    N.iof_adicional: Decimal("0.0038"),
     N.custo_fixo_mensal: Decimal("400000"),
     N.parceiros: Decimal("5"),
     N.clientes_por_parceiro: Decimal("20000"),
@@ -59,4 +61,4 @@ VALORES_BASE: dict[N, Decimal] = {
 
 def premissas_base() -> Premissas:
     """Premissas da coluna base, com as seis receitas ligadas."""
-    return montar_premissas(VALORES_BASE, set(FonteDeReceita), "custodiante_fora_do_ar", ESQUEMA)
+    return montar_premissas(VALORES_BASE, set(FonteDeReceita), "quebra_de_emissor", ESQUEMA)

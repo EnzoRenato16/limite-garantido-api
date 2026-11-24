@@ -1,0 +1,75 @@
+# Perfis das CONTRAPARTES SIMULADAS de cada trilho de entrada.
+#
+# Não são instituições: são personagens fictícios para mostrar o que acontece quando o
+# ativo está em outra casa. Nada aqui integra com B3, Selic, corretora, banco ou
+# seguradora. Todos os números são ilustrativos, escolhidos para a demonstração.
+#
+# O destino de cada pedido sai de um hash de (semente, id do pedido): mesma semente e
+# mesmo pedido dão o mesmo resultado, em qualquer máquina.
+#
+# Cada perfil diz:
+#   simulado            sempre true; o nome termina em "(simulador)";
+#   trilhos             os trilhos de entrada que ele atende;
+#   latencia_segundos   {segundo} depois do pedido em que a resposta fica pronta;
+#   probabilidade_*     {1} razão entre 0 e 1; recusa + sem resposta não passa de 1.
+#
+# A entidade operadora não pode recusar pedido que siga as normas (Res. Conjunta 12,
+# art. 18) e a corretora de origem só recusa por impedimento (Res. CVM 210, art. 19,
+# §1º), que o sorteio não gera: os dois ficam com recusa zero.
+
+[corretora_de_origem_simulada]
+nome = "Corretora de origem (simulador)"
+descricao = "Corretora onde estão ações, FIIs, ETFs e cotas de fundos do cliente. Conclui a portabilidade e nunca recusa por sorteio."
+simulado = true
+trilhos = ["portabilidade_cvm_210"]
+semente = 31
+latencia_segundos = 3600
+probabilidade_de_recusa = "0"
+probabilidade_sem_resposta = "0.05"
+motivos_de_recusa = ["ativo_dado_em_garantia"]
+
+[banco_de_origem_simulado]
+nome = "Banco de origem (simulador)"
+descricao = "Banco onde estão o CDB, a LCI e a LCA do cliente. A transferência de custódia é combinação entre as partes: pode recusar e pode não responder."
+simulado = true
+trilhos = ["transferencia_de_custodia"]
+semente = 23
+latencia_segundos = 21600
+probabilidade_de_recusa = "0.15"
+probabilidade_sem_resposta = "0.10"
+motivos_de_recusa = ["ativo_nao_portavel", "titularidade_divergente", "bloqueio_judicial"]
+
+[agente_td_simulado]
+nome = "Agente de custódia do Tesouro (simulador)"
+descricao = "Agente de custódia do investidor que opera o TD Garantia. Confirma o gravame, e às vezes recusa."
+simulado = true
+trilhos = ["td_garantia"]
+semente = 11
+latencia_segundos = 300
+probabilidade_de_recusa = "0.05"
+probabilidade_sem_resposta = "0"
+motivos_de_recusa = ["titulo_ja_gravado", "titularidade_divergente"]
+
+[agente_td_sem_servico_simulado]
+nome = "Agente do Tesouro sem o serviço (simulador)"
+descricao = "Agente de custódia que não opera o serviço de gravames do TD Garantia: recusa sempre."
+simulado = true
+trilhos = ["td_garantia"]
+semente = 47
+latencia_segundos = 300
+probabilidade_de_recusa = "1"
+probabilidade_sem_resposta = "0"
+motivos_de_recusa = ["agente_nao_opera_td_garantia"]
+
+[entidade_operadora_simulada]
+nome = "Entidade operadora de previdência (simulador)"
+descricao = "Seguradora, EAPC ou sociedade de capitalização do plano. Informa o valor disponível e os tributos em 2 dias úteis e não recusa."
+simulado = true
+trilhos = ["res_conjunta_12"]
+semente = 59
+latencia_segundos = 7200
+probabilidade_de_recusa = "0"
+probabilidade_sem_resposta = "0.10"
+motivos_de_recusa = ["sem_recusa_possivel"]
+# Só a operadora: os tributos que ela informa, como razão {1} do valor disponível.
+percentual_de_tributos_informados = "0.10"

@@ -31,12 +31,13 @@ def test_demo_de_terminal_conta_a_historia_inteira() -> None:
         "Chamada de margem aberta: faltam R$ 175,00",
         "prazo da chamada de margem esgotado: conta bloqueada",
         "7º dia de atraso: a garantia é executada",
-        "Vendidos só os R$ 4.000,00 da fatura",
-        "disponível para comprar: R$ 425,00",  # sobra de R$ 500 x 85%
+        "Vendida a garantia inteira",
+        "R$ 4.000,00 quitam a fatura",
+        "disponível para comprar: R$ 0,00",  # a garantia foi vendida por inteiro
         "garantia.executada",
         "fecha",
         "entrariam em chamada de margem",
     ):
         assert trecho in saida, trecho
     assert "NÃO fecha" not in saida
-    assert saida.count("confere") == 11  # todos os webhooks com assinatura válida
+    assert saida.count("confere") == 14  # todos os webhooks com assinatura válida

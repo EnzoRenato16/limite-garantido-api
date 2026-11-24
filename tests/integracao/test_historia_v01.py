@@ -14,12 +14,12 @@ from tests.conftest import Parceiro
 def test_bloqueio_calcula_limite_pelo_ltv(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
     corpo = parceiro.bloquear(conta, "cdb", "5000.00")
-    assert corpo["garantia"]["estado"] == "bloqueada"
+    assert corpo["garantia"]["estado"] == "registrado"
     assert corpo["limite"]["limite_total"] == "4250.00"  # 5.000 x 85%
-    # Arredondamento sempre para baixo: 33,33 x 95% = 31,6635 -> 31,66
+    # Arredondamento sempre para baixo: 33,33 x 60% = 19,998 -> 19,99
     outra = parceiro.abrir_conta()
     corpo = parceiro.bloquear(outra, "fundo_di", "33.33")
-    assert corpo["limite"]["limite_total"] == "31.66"
+    assert corpo["limite"]["limite_total"] == "19.99"
 
 
 def test_compra_aprovada_e_compra_negada_com_402(parceiro: Parceiro) -> None:
@@ -56,7 +56,9 @@ def test_liberacao_e_bloqueada_enquanto_a_garantia_cobre_divida(parceiro: Parcei
     parceiro.pagar(conta, "1000.00")
     liberada = parceiro.post(f"/v1/garantias/{garantia['id']}/liberacao")
     assert liberada.status_code == 200
-    assert liberada.json()["garantia"]["estado"] == "liberada"
+    # O limite cai na hora; o gravame segue registrado até a baixa (2 dias úteis).
+    assert liberada.json()["garantia"]["estado"] == "registrado"
+    assert liberada.json()["garantia"]["gravame"]["baixa_prazo"] == "2026-03-04"
     assert liberada.json()["limite"]["limite_total"] == "0.00"
 
 
@@ -64,7 +66,7 @@ def test_execucao_no_setimo_dia_comeca_pelo_mais_liquido_e_mantem_a_sobra_bloque
     parceiro: Parceiro,
 ) -> None:
     conta = parceiro.abrir_conta()
-    acoes = parceiro.bloquear(conta, "acoes", "10000.00")["garantia"]
+    fundo = parceiro.bloquear(conta, "fundo_di", "10000.00")["garantia"]
     cdb = parceiro.bloquear(conta, "cdb", "5000.00")["garantia"]
     parceiro.comprar(conta, "4000.00")
     assert parceiro.fechar_fatura(conta, "2026-03-02").status_code == 201
@@ -78,20 +80,22 @@ def test_execucao_no_setimo_dia_comeca_pelo_mais_liquido_e_mantem_a_sobra_bloque
     depois = parceiro.avancar_dias(conta, 1).json()
     assert depois["limite"]["divida_total"] == "0.00"
     executadas = [e for e in parceiro.eventos(conta) if e["tipo"] == "garantia.executada"]
-    # O CDB é mais líquido que ações: só ele é vendido, e sobram R$ 1.000 bloqueados.
+    # O CDB é mais líquido que o fundo DI: só ele é vendido, por inteiro (Lei 4.728/1965,
+    # art. 66-B, §3º). Dos R$ 5.000, R$ 4.000 quitam a fatura e R$ 1.000 voltam ao cliente.
     assert [e["dados"]["garantia_id"] for e in executadas] == [cdb["id"]]
-    assert executadas[0]["dados"]["valor_executado"] == "4000.00"
-    assert executadas[0]["dados"]["valor_remanescente"] == "1000.00"
+    demonstrativo = executadas[0]["dados"]["demonstrativo"]
+    assert demonstrativo["divida_abatida"] == "4000.00"
+    assert demonstrativo["excedente_devolvido"] == "1000.00"
     assert executadas[0]["dados"]["dias_em_atraso"] == 7
-    assert parceiro.get(f"/v1/garantias/{cdb['id']}").json()["estado"] == "parcialmente_executada"
-    assert parceiro.get(f"/v1/garantias/{acoes['id']}").json()["estado"] == "bloqueada"
-    # Limite depois: ações 10.000 x 60% + sobra do CDB 1.000 x 85%.
-    assert depois["limite"]["limite_total"] == "6850.00"
+    assert parceiro.get(f"/v1/garantias/{cdb['id']}").json()["estado"] == "executado"
+    assert parceiro.get(f"/v1/garantias/{fundo['id']}").json()["estado"] == "registrado"
+    # Limite depois: só o fundo DI, 10.000 x 60%.
+    assert depois["limite"]["limite_total"] == "6000.00"
 
 
 def test_idempotencia_nao_duplica_garantia_nem_compra(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    corpo = {"tipo_ativo": "cdb", "valor": "5000.00"}
+    corpo = {"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0}
     primeira = parceiro.post(f"/v1/contas/{conta}/garantias", corpo, chave="chave-garantia")
     segunda = parceiro.post(f"/v1/contas/{conta}/garantias", corpo, chave="chave-garantia")
     assert primeira.json()["garantia"]["id"] == segunda.json()["garantia"]["id"]

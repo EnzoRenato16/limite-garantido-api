@@ -5,16 +5,18 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Protocol
 
+from app.dominio.calendario import CalendarioDeDiasUteis
 from app.dominio.conta import Conta
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.garantia import Garantia, TipoSolicitacao
 from app.dominio.parceiro import Parceiro
 from app.dominio.politica import TipoAtivo
+from app.dominio.regulacao import CatalogoRegulatorio, Trilho
 from app.dominio.stress import ContaNaCarteira
 
 
@@ -31,90 +33,112 @@ class Relogio(Protocol):
 class StatusDaResposta(StrEnum):
     # Pedido aceito, resposta ainda por vir.
     PENDENTE = "pendente"
-    CONFIRMADA = "confirmada"
+    # Entrada concluída: o ativo chegou (portabilidade, transferência, TD Garantia) ou a
+    # operadora enviou as informações (Res. Conjunta 12).
+    CONCLUIDA = "concluida"
+    # A contraparte recusou (transferência de custódia, TD Garantia).
     RECUSADA = "recusada"
+    # Impedimento à portabilidade (Res. CVM 210, art. 19): ativo em garantia, por exemplo.
+    IMPEDIMENTO = "impedimento"
 
 
 @dataclass(frozen=True, slots=True)
-class PedidoAoCustodiante:
-    """O que vai para o custodiante. `solicitacao_id` torna o pedido idempotente: o
+class PedidoDeEntrada:
+    """O que vai para a contraparte. `solicitacao_id` torna o pedido idempotente: o
     mesmo id enviado duas vezes é o mesmo pedido."""
 
     solicitacao_id: str
-    custodiante_id: str
-    tipo: TipoSolicitacao
+    contraparte_id: str
+    trilho: Trilho
     garantia_id: str
     tipo_ativo: TipoAtivo
-    # Gravame e liberação: o valor da garantia. Execução: quanto vender.
+    # O valor aplicado do ativo {BRL}.
     valor: Dinheiro
     criado_em: datetime
 
 
 @dataclass(frozen=True, slots=True)
-class RespostaDoCustodiante:
+class RespostaDaContraparte:
     solicitacao_id: str
     status: StatusDaResposta
-    # Id do evento do lado do custodiante. É a chave de idempotência das respostas:
-    # a mesma confirmação, por callback ou por consulta, tem o mesmo id.
+    # Id do evento do lado da contraparte. É a chave de idempotência das respostas:
+    # a mesma conclusão, por callback ou por consulta, tem o mesmo id.
     evento_id: str | None = None
-    # Execução confirmada: quanto a venda rendeu.
-    valor_obtido: Dinheiro | None = None
     motivo: str | None = None
+    # Só a entidade operadora (Res. Conjunta 12, art. 7º): o que ela informa ao pedido.
+    valor_disponivel: Dinheiro | None = None
+    tributos_informados: Dinheiro | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class InfoDoCustodiante:
+class InfoDaContraparte:
     id: str
     nome: str
     descricao: str
-    # Todos os custodiantes externos deste projeto são simulados.
+    # Todas as contrapartes deste projeto são simuladas.
     simulado: bool
-    # Quanto ele tem para responder a um pedido antes de o pedido expirar.
-    prazo_de_resposta: timedelta
+    # Os trilhos que ela atende.
+    trilhos: tuple[Trilho, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class LocalDaSolicitacao:
-    """Onde mora um pedido feito ao custodiante (aberto ou já encerrado)."""
+    """Onde mora um pedido feito à contraparte (aberto ou já encerrado)."""
 
     solicitacao_id: str
     parceiro_id: str
     conta_id: str
     garantia_id: str
-    custodiante_id: str
+    contraparte_id: str
     tipo: TipoSolicitacao
 
 
-class CustodianteDesconhecido(Exception):
-    """Pedido para um custodiante que não está configurado."""
+class ContraparteDesconhecida(Exception):
+    """Pedido para uma contraparte que não está configurada."""
 
 
-class Custodiante(Protocol):
-    """Quem coloca e tira o gravame do investimento.
+class Contraparte(Protocol):
+    """A outra ponta de um trilho de entrada: quem responde que o ativo chegou.
 
-    `solicitar_bloqueio` é a fase 1 (investimento dentro de casa). O resto é a fase 2:
-    custodiante externo, que responde depois e pode recusar ou não responder.
+    Todas as implementações são simuladores (corretora de origem, banco de origem, agente
+    de custódia do TD, entidade operadora): o projeto não integra com ninguém.
     """
 
-    def solicitar_bloqueio(self, garantia: Garantia) -> bool:
-        """Pede o gravame do ativo. `True` se já saiu confirmado; `False` se fica pendente."""
+    def contrapartes(self) -> Sequence[InfoDaContraparte]:
+        """Contrapartes disponíveis."""
         ...
 
-    def custodiantes(self) -> Sequence[InfoDoCustodiante]:
-        """Custodiantes externos disponíveis."""
+    def conhece(self, contraparte_id: str) -> bool: ...
+
+    def solicitar_entrada(self, pedido: PedidoDeEntrada) -> RespostaDaContraparte:
+        """Envia o pedido. A resposta já pode vir pronta, ou `pendente`."""
         ...
 
-    def conhece(self, custodiante_id: str) -> bool: ...
-
-    def solicitar_gravame(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
-
-    def solicitar_liberacao(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
-
-    def solicitar_execucao(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante: ...
-
-    def consultar(self, pedido: PedidoAoCustodiante) -> RespostaDoCustodiante:
+    def consultar(self, pedido: PedidoDeEntrada) -> RespostaDaContraparte:
         """Situação de um pedido já feito. É o caminho de reserva quando o callback
         não chega."""
+        ...
+
+
+class InfraestruturaDeRegistro(Protocol):
+    """Onde o gravame é registrado: B3 (balcão ou central depositária), Selic via TD
+    Garantia, escriturador, plataforma da Res. Conjunta 12. É só simulação."""
+
+    @property
+    def confirma_na_hora(self) -> bool:
+        """O registro de uma garantia da casa sai no mesmo ato? Falso no modo legado."""
+        ...
+
+    def registrar(self, garantia: Garantia) -> str:
+        """Registra o gravame e devolve o protocolo."""
+        ...
+
+    def executar(self, garantia: Garantia, valor_de_mercado: Dinheiro) -> Dinheiro:
+        """Vende a garantia: devolve o valor bruto da venda {BRL}."""
+        ...
+
+    def baixar(self, garantia: Garantia) -> None:
+        """Baixa o gravame na infraestrutura."""
         ...
 
 
@@ -161,18 +185,32 @@ class RepositorioDeContas(Protocol):
 
     def localizar_solicitacao(self, solicitacao_id: str) -> LocalDaSolicitacao | None: ...
 
-    def garantias_aguardando_custodiante(
-        self, parceiro_id: str | None = None
-    ) -> Sequence[tuple[str, str, str]]:
-        """Trios (parceiro_id, conta_id, garantia_id) que esperam resposta de custódia."""
+    def garantias_aguardando_contraparte(
+        self, limite: int, parceiro_id: str | None = None
+    ) -> list[tuple[str, str, str]]:
+        """Trios (parceiro_id, conta_id, garantia_id) com gravame `solicitado`, até `limite`."""
         ...
 
-    def resposta_ja_registrada(self, custodiante_id: str, evento_id: str) -> bool: ...
+    def contas_a_conciliar(self, parceiro_id: str | None = None) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com gravame ainda vivo ou dívida em aberto."""
+        ...
+
+    def contas_com_baixa_pendente(self) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com baixa de gravame pedida e ainda não feita."""
+        ...
+
+    def contas_com_emprestimo_a_avaliar(
+        self, hoje: date, parceiro_id: str | None = None
+    ) -> list[tuple[str, str]]:
+        """Pares (parceiro_id, conta_id) com empréstimo aberto e parcela vencida em aberto."""
+        ...
+
+    def resposta_ja_registrada(self, contraparte_id: str, evento_id: str) -> bool: ...
 
     def registrar_resposta(
         self,
         *,
-        custodiante_id: str,
+        contraparte_id: str,
         evento_id: str,
         solicitacao_id: str,
         garantia_id: str,
@@ -219,7 +257,16 @@ class UnidadeDeTrabalho(Protocol):
     def relogio(self) -> Relogio: ...
 
     @property
-    def custodiante(self) -> Custodiante: ...
+    def contraparte(self) -> Contraparte: ...
+
+    @property
+    def infraestrutura(self) -> InfraestruturaDeRegistro: ...
+
+    @property
+    def catalogo(self) -> CatalogoRegulatorio: ...
+
+    @property
+    def calendario(self) -> CalendarioDeDiasUteis: ...
 
     def commit(self) -> None: ...
 

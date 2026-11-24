@@ -52,6 +52,8 @@ class NomeDaPremissa(StrEnum):
     custo_de_execucao_interna = "custo_de_execucao_interna"
     custo_de_execucao_externa = "custo_de_execucao_externa"
     aliquota_sobre_receita = "aliquota_sobre_receita"
+    iof_diario = "iof_diario"
+    iof_adicional = "iof_adicional"
     custo_fixo_mensal = "custo_fixo_mensal"
     parceiros = "parceiros"
     clientes_por_parceiro = "clientes_por_parceiro"
@@ -138,6 +140,8 @@ class Premissas:
     custo_de_execucao_interna: Dinheiro
     custo_de_execucao_externa: Dinheiro
     aliquota_sobre_receita: Fracao
+    iof_diario: Fracao
+    iof_adicional: Fracao
     custo_fixo_mensal: Dinheiro
     parceiros: int
     clientes_por_parceiro: int

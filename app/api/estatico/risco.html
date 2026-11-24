@@ -13,6 +13,7 @@
   <nav class="paginas" aria-label="Páginas">
     <span class="paginas-produto">Limite Garantido</span>
     <a href="/demo">Demonstração</a>
+    <a href="/regulacao">Regulação</a>
     <a href="/risco" aria-current="page">Risco</a>
     <a href="/negocio">Negócio</a>
   </nav>
@@ -29,6 +30,10 @@
         <a class="discreto-link" href="/demo">Ver a demonstração</a>
       </header>
 
+      <p class="aviso-sintetico" id="aviso-sintetico" role="note">Os 1.000 clientes deste painel
+        são sintéticos: foram gerados por sorteio. Não são clientes reais, e os números não
+        estimam risco real.</p>
+
       <section aria-labelledby="titulo-cenarios">
         <h2 id="titulo-cenarios" class="secao">Cenário</h2>
         <div class="cenarios" id="cenarios" role="group" aria-label="Cenários prontos"></div>
@@ -41,15 +46,19 @@
           <div class="grade-choques" id="choques"></div>
         </fieldset>
         <fieldset>
-          <legend>Clientes e garantia externa</legend>
+          <legend>Clientes, atraso e emissor</legend>
           <label>Clientes descobertos que não reforçam, em %
             <input id="taxa" type="number" min="0" max="100" step="1" inputmode="decimal">
           </label>
-          <label>Dias a mais para vender garantia externa
+          <label>Dias a mais para vender garantia fora da casa
             <input id="dias-extra" type="number" min="0" max="365" step="1">
           </label>
-          <div class="indisponiveis" id="indisponiveis" role="group"
-               aria-label="Custodiantes fora do ar"></div>
+          <div class="indisponiveis" role="group" aria-label="Eventos">
+            <label><input id="agente-b" type="checkbox">
+              Agente de custódia B perde a participação (14 dias corridos)</label>
+            <label><input id="quebra-b" type="checkbox">
+              Conglomerado B quebra (CDB, LCI e LCA dele valem zero para o credor)</label>
+          </div>
         </fieldset>
         <div class="linha">
           <button type="submit">Simular com estes valores</button>
@@ -83,7 +92,7 @@
           </div>
           <dl class="legenda">
             <div><dt><i class="cor cor-imediata"></i>Mesmo vendendo tudo na hora</dt><dd id="perda-imediata">R$ 0,00</dd></div>
-            <div><dt><i class="cor cor-externa"></i>Adicional da garantia externa</dt><dd id="perda-externa">R$ 0,00</dd></div>
+            <div><dt><i class="cor cor-externa"></i>Adicional de fora da casa ou de emissor em quebra</dt><dd id="perda-externa">R$ 0,00</dd></div>
           </dl>
         </div>
       </section>
@@ -93,9 +102,55 @@
         <svg id="grafico-ativos" class="grafico" role="img" aria-labelledby="titulo-ativos"></svg>
       </section>
 
-      <section aria-labelledby="titulo-custodiantes">
-        <h2 id="titulo-custodiantes" class="secao">Onde a garantia está guardada</h2>
-        <svg id="grafico-custodiantes" class="grafico" role="img" aria-labelledby="titulo-custodiantes"></svg>
+      <section aria-labelledby="titulo-onde">
+        <h2 id="titulo-onde" class="secao">Onde a garantia está custodiada</h2>
+        <svg id="grafico-onde-esta" class="grafico" role="img" aria-labelledby="titulo-onde"></svg>
+      </section>
+
+      <section aria-labelledby="titulo-haircut">
+        <h2 id="titulo-haircut" class="secao">Haircut por classe e prazo</h2>
+        <p class="nota">Desconto sobre o valor de mercado, o complemento do LTV de partida do
+          catálogo regulatório (hipótese de calibração, não padrão de mercado).</p>
+        <div class="tabela-rolavel">
+          <table class="tabela" id="tabela-haircut">
+            <caption class="so-leitor">Haircut por classe de ativo e prazo até o vencimento</caption>
+            <thead><tr><th scope="col">Classe</th><th scope="col">Prazo até o vencimento</th><th scope="col">Haircut</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-fgc">
+        <h2 id="titulo-fgc" class="secao">Concentração por conglomerado (FGC)</h2>
+        <p class="nota">CDB, LCI e LCA somados por cliente e conglomerado, antes do choque. O
+          FGC cobre até <span id="teto-fgc">R$ 250.000,00</span> por titular e conglomerado, e
+          paga o titular, não o credor.</p>
+        <div class="tabela-rolavel">
+          <table class="tabela" id="tabela-fgc">
+            <caption class="so-leitor">CDB, LCI e LCA por conglomerado emissor</caption>
+            <thead><tr><th scope="col">Conglomerado</th><th scope="col">Valor</th><th scope="col">Clientes</th><th scope="col">Acima do teto</th><th scope="col">Excesso</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-provisao">
+        <h2 id="titulo-provisao" class="secao">Carteiras de provisão</h2>
+        <p class="nota">Cada conta cai na carteira de menor provisão entre as suas garantias; sem
+          garantia, na C5 (Res. BCB 352/2023, art. 81). A provisão é o piso se a conta ficasse
+          inadimplida, no 1º e no 13º mês.</p>
+        <div class="tabela-rolavel">
+          <table class="tabela" id="tabela-provisao">
+            <caption class="so-leitor">Provisão mínima por carteira</caption>
+            <thead><tr><th scope="col">Carteira</th><th scope="col">Contas</th><th scope="col">Saldo</th><th scope="col">Provisão no 1º mês</th><th scope="col">Provisão no 13º mês</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section aria-labelledby="titulo-marcacao">
+        <h2 id="titulo-marcacao" class="secao">Marcação a mercado diária</h2>
+        <p id="marcacao" class="nota"></p>
       </section>
     </main>
 
@@ -117,13 +172,16 @@
         <p>Com LTVs conservadores, quedas grandes costumam aparecer primeiro como chamada
           de margem e só depois como perda. É isso que a régua por ativo mostra: o
           tracejado é o valor que o choque tirou.</p>
+        <p><strong>A garantia reduz a perda; não a elimina.</strong> Continuam o risco do
+          emissor, o de preço, o de liquidez e o de execução. Uma perda esperada pequena
+          neste painel mostra o efeito das premissas, não ausência de risco.</p>
         <p class="aviso-leitura">A carteira é sintética e as premissas são ilustrativas.
           Não use estes números como estimativa de risco real.</p>
         <h3>Premissas usadas nesta simulação</h3>
         <dl class="premissas" id="premissas"></dl>
       </div>
       <footer>
-        <span>Custodiantes externos são simulados</span>
+        <span>Agentes de custódia e emissores são simulados</span>
         <a href="/docs#/Risco">Documentação da API</a>
       </footer>
     </aside>

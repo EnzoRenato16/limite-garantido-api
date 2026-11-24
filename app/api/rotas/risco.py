@@ -8,13 +8,14 @@ from fastapi import APIRouter, Depends
 
 from app.api import apresentacao, esquemas
 from app.api.dependencias import ParceiroAutenticado, Unidade, exigir_sandbox
-from app.api.rotas.contas import ERROS_COMUNS, IdDaConta, IdDaGarantia
+from app.api.rotas.contas import ERROS_COMUNS, IdDaConta, IdDaGarantia, resposta_da_garantia
 from app.aplicacao import risco as casos
 from app.dominio.dinheiro import Dinheiro
 from app.dominio.erros import ValorInvalido
 from app.dominio.stress import PremissasDaGarantiaExterna, simular_painel
 from app.infra.carteira_sintetica import carregar_parametros, gerar_carteira
 from app.infra.politica_referencia import carregar_politica_de_referencia
+from app.infra.regulacao import carregar_catalogo
 
 rotas_de_risco = APIRouter(prefix="/v1", tags=["Risco"], responses=ERROS_COMUNS)
 rotas_de_sandbox = APIRouter(
@@ -49,7 +50,7 @@ def simular_stress(
     - quantas contas entrariam em chamada de margem;
     - de quanto seria o déficit de margem;
     - quanto da dívida ficaria descoberto mesmo vendendo toda a garantia ao preço
-      estressado, e a perda esperada correspondente.
+      estressado, e a perda esperada associada.
 
     Exemplo: `{"choques": {"acoes": "-0.30", "tesouro_prefixado": "-0.10"}}`.
     """
@@ -65,8 +66,9 @@ def simular_stress(
     summary="Cenários prontos do painel de risco",
 )
 def listar_cenarios(_: ParceiroAutenticado) -> list[esquemas.CenarioDoPainel]:
-    """Os cenários prontos do painel: dia normal, crash da bolsa, alta de juros e
-    custodiante fora do ar. Os números são ilustrativos, não previsões."""
+    """Os cenários prontos do painel: dia normal, crash da bolsa, alta de juros, quebra
+    de emissor e agente de custódia que perde a participação. Os números são
+    ilustrativos, não previsões."""
     return [apresentacao.cenario(c) for c in carregar_parametros().cenarios.values()]
 
 
@@ -88,10 +90,13 @@ def simular_carteira(
 
     - **com execução imediata**: o que se perderia mesmo vendendo toda a garantia na
       hora, ao preço estressado;
-    - **adicional da garantia externa**: o que piora porque parte da garantia está em
-      outro custodiante (indisponível, ou vendendo com dias de atraso).
+    - **adicional da garantia fora da casa**: o que piora porque parte da garantia está
+      com um agente de custódia que atrasa, ou é de um emissor em quebra.
 
-    As premissas usadas voltam na resposta. Todas são ilustrativas.
+    Responde também o painel regulatório: haircut por classe e prazo, concentração de CDB,
+    LCI e LCA por conglomerado contra o teto do FGC, e as carteiras de provisão. A garantia
+    reduz a perda; não a elimina. As premissas usadas voltam na resposta. Todas são
+    ilustrativas, e `aviso_sintetico` lembra que os clientes são sintéticos.
     """
     parametros = carregar_parametros()
     base = None
@@ -116,10 +121,16 @@ def simular_carteira(
         if corpo.dias_extra_de_execucao is not None
         else padrao.dias_extra_de_execucao,
         desconto_diario_por_ativo=parametros.desconto_diario_por_ativo,
+        atraso_por_onde_esta=corpo.atraso_por_onde_esta
+        if corpo.atraso_por_onde_esta is not None
+        else padrao.atraso_por_onde_esta,
+        emissores_em_quebra=frozenset(corpo.emissores_em_quebra)
+        if corpo.emissores_em_quebra is not None
+        else padrao.emissores_em_quebra,
     )
     carteira = gerar_carteira(parametros, corpo.tamanho, corpo.semente)
     resultado = simular_painel(
-        carteira, choques, carregar_politica_de_referencia(), taxa, premissas
+        carteira, choques, carregar_politica_de_referencia(), taxa, premissas, carregar_catalogo()
     )
     return apresentacao.painel(
         resultado,
@@ -157,10 +168,7 @@ def remarcar_garantia(
         if corpo.valor_de_mercado is None
         else Dinheiro.de_decimal(corpo.valor_de_mercado),
     )
-    resposta = esquemas.GarantiaComLimite(
-        garantia=apresentacao.garantia(garantia, conta, parceiro.politica),
-        limite=apresentacao.posicao(conta.posicao(parceiro.politica)),
-    )
+    resposta = resposta_da_garantia(uow, parceiro, conta, garantia)
     uow.commit()
     return resposta
 
@@ -180,6 +188,6 @@ def avancar_dias(
     chamada de margem sem esperar uma semana.
     """
     conta = casos.avancar_dias_no_sandbox(uow, parceiro, conta_id, corpo.dias)
-    resposta = apresentacao.conta(conta, parceiro.politica, uow.relogio.hoje())
+    resposta = apresentacao.conta(conta, parceiro.politica, uow.catalogo, uow.relogio.hoje())
     uow.commit()
     return resposta

@@ -39,11 +39,11 @@ def _disparar_juntas(quantidade: int, tarefa):  # type: ignore[no-untyped-def]
 
 @pytest.mark.postgres
 def test_compras_simultaneas_nunca_passam_do_limite(parceiro: Parceiro) -> None:
-    """40 compras de R$ 100 ao mesmo tempo num limite de R$ 1.000: passam exatamente 10."""
+    """40 compras de R$ 85 ao mesmo tempo num limite de R$ 850: passam exatamente 10."""
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "1000.00")
+    parceiro.bloquear(conta, "cdb", "1000.00")  # x 0,85 = limite de 850,00
 
-    respostas = _disparar_juntas(THREADS, lambda _: parceiro.comprar(conta, "100.00"))
+    respostas = _disparar_juntas(THREADS, lambda _: parceiro.comprar(conta, "85.00"))
 
     status = Counter(resposta.status_code for resposta in respostas)
     assert status == {201: 10, 402: 30}
@@ -51,9 +51,9 @@ def test_compras_simultaneas_nunca_passam_do_limite(parceiro: Parceiro) -> None:
         "limite_insuficiente"
     }
     limite = parceiro.limite(conta)
-    assert limite["divida_total"] == "1000.00"
+    assert limite["divida_total"] == "850.00"
     assert limite["limite_disponivel"] == "0.00"
-    # No ledger: exatamente 10 lançamentos de compra, R$ 1.000 no total.
+    # No ledger: exatamente 10 lançamentos de compra, R$ 850 no total.
     extrato = parceiro.get(f"/v1/contas/{conta}/lancamentos", params={"limite": 100}).json()
     compras = [x for x in extrato["dados"] if x["tipo"] == "compra"]
     assert len(compras) == 10
@@ -91,7 +91,7 @@ def test_teto_do_parceiro_vale_mesmo_com_compras_simultaneas_em_contas_diferente
     )
     contas = [parceiro.abrir_conta() for _ in range(4)]
     for conta in contas:
-        parceiro.bloquear(conta, "deposito", "1000.00")  # cada conta sozinha caberia no teto
+        parceiro.bloquear(conta, "cdb", "1000.00")  # cada conta sozinha caberia no teto
 
     respostas = _disparar_juntas(
         THREADS, lambda i: parceiro.comprar(contas[i % len(contas)], "100.00")
@@ -106,7 +106,7 @@ def test_teto_do_parceiro_vale_mesmo_com_compras_simultaneas_em_contas_diferente
 @pytest.mark.postgres
 def test_mesma_chave_de_idempotencia_em_paralelo_executa_uma_vez_so(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "1000.00")
+    parceiro.bloquear(conta, "cdb", "1000.00")
     chave = str(uuid.uuid4())
     corpo = {"valor": "100.00", "descricao": "Loja Exemplo"}
 
@@ -125,7 +125,7 @@ def test_pagamentos_e_compras_misturados_mantem_o_ledger_fechado(
     parceiro: Parceiro, cliente: TestClient
 ) -> None:
     conta = parceiro.abrir_conta()
-    parceiro.bloquear(conta, "deposito", "500.00")
+    parceiro.bloquear(conta, "cdb", "500.00")
     parceiro.comprar(conta, "400.00")
 
     def tarefa(indice: int):  # type: ignore[no-untyped-def]
@@ -149,7 +149,7 @@ def test_trava_otimista_recusa_gravacao_sobre_leitura_velha(
     uma compra que, sozinha, caberia. A segunda a gravar é recusada pela versão: mesmo
     se alguém esquecer o FOR UPDATE, o limite não é estourado."""
     conta_id = parceiro.abrir_conta()
-    parceiro.bloquear(conta_id, "deposito", "100.00")
+    parceiro.bloquear(conta_id, "cdb", "100.00")
     recursos = app.state.recursos
     with recursos.abrir_unidade() as leitura:
         dominio = leitura.parceiros.obter(parceiro.id)
@@ -162,7 +162,9 @@ def test_trava_otimista_recusa_gravacao_sobre_leitura_velha(
         assert conta_b is not None
         hoje, agora = uow_a.relogio.hoje(), uow_a.relogio.agora()
         for conta in (conta_a, conta_b):
-            compra = conta.autorizar_compra(Dinheiro(8000), "loja", dominio.politica, agora, hoje)
+            compra = conta.autorizar_compra(
+                Dinheiro(8000), "loja", dominio.politica, uow_a.catalogo, agora, hoje
+            )
             assert compra.aprovada  # cada uma, olhando o saldo velho, acha que cabe
         uow_a.contas.salvar(conta_a, dominio)
         uow_a.commit()
@@ -187,7 +189,7 @@ def test_caminho_normal_carrega_a_conta_com_trava_de_linha(
         return original(self, parceiro_id, id_da_conta)
 
     monkeypatch.setattr(RepositorioDeContasSql, "obter_para_atualizar", espiao)
-    garantia = parceiro.bloquear(conta_id, "deposito", "100.00")["garantia"]
+    garantia = parceiro.bloquear(conta_id, "cdb", "100.00")["garantia"]
     parceiro.comprar(conta_id, "10.00")
     parceiro.fechar_fatura(conta_id)
     parceiro.pagar(conta_id, "10.00")

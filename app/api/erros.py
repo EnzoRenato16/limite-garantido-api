@@ -73,6 +73,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
     ),
     # 404
     "nao_encontrado": (404, "Não encontrado", "O recurso não existe."),
+    "emprestimo_nao_encontrado": (
+        404,
+        "Empréstimo não encontrado",
+        "O empréstimo não existe ou pertence a outra conta.",
+    ),
     "conta_nao_encontrada": (
         404,
         "Conta não encontrada",
@@ -92,7 +97,7 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
     "solicitacao_nao_encontrada": (
         404,
         "Pedido não encontrado",
-        "Não há pedido com este id para este custodiante.",
+        "Não há pedido com este id para esta contraparte.",
     ),
     "metodo_nao_permitido": (
         405,
@@ -134,17 +139,17 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
     "solicitacao_divergente": (
         409,
         "Sem pedido em aberto",
-        "A garantia não tem pedido em aberto no custodiante que corresponda a esta ação.",
+        "A garantia não tem pedido de entrada em aberto que corresponda a esta ação.",
     ),
     "solicitacao_no_prazo": (
         409,
         "Pedido ainda no prazo",
-        "O custodiante ainda está dentro do prazo para responder a este pedido.",
+        "A contraparte ainda está dentro do prazo para responder a este pedido.",
     ),
     "resposta_duplicada": (
         409,
         "Resposta duplicada",
-        "Esta resposta do custodiante já foi recebida e aplicada.",
+        "Esta resposta da contraparte já foi recebida e aplicada.",
     ),
     "webhook_nao_configurado": (
         409,
@@ -160,6 +165,14 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         409,
         "Requisição em andamento",
         "Outra requisição com a mesma Idempotency-Key ainda está sendo processada.",
+    ),
+    # 410: rotas que existiam e foram substituídas; o corpo traz `rota_nova`
+    "rota_substituida": (
+        410,
+        "Rota substituída",
+        "O fluxo de custodiante externo foi substituído pelos trilhos de entrada "
+        "(portabilidade, transferência de custódia, TD Garantia e Res. Conjunta 12). O campo "
+        "`rota_nova` diz onde.",
     ),
     # 422
     "requisicao_invalida": (
@@ -185,15 +198,133 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "A política de risco tem valores fora da regra.",
     ),
     "vencimento_invalido": (422, "Vencimento inválido", "O vencimento não pode ficar no passado."),
+    "primeiro_vencimento_fora_do_prazo": (
+        422,
+        "Primeiro vencimento fora do prazo",
+        "O primeiro vencimento precisa ficar entre amanhã e 60 dias corridos a partir de hoje.",
+    ),
     "pagamento_excede_divida": (
         422,
         "Pagamento maior que a dívida",
         "O valor pago é maior que o saldo devedor da conta.",
     ),
-    "custodiante_nao_configurado": (
+    "contraparte_nao_configurada": (
         422,
-        "Custodiante não configurado",
-        "O custodiante informado não existe. Veja a lista em GET /v1/custodiantes.",
+        "Contraparte não configurada",
+        "A contraparte informada não existe. Veja a lista em GET /v1/contrapartes.",
+    ),
+    "contraparte_nao_atende_o_trilho": (
+        422,
+        "Contraparte não atende o trilho",
+        "A contraparte informada não atua neste trilho. Veja os trilhos de cada uma em "
+        "GET /v1/contrapartes.",
+    ),
+    "resposta_invalida_para_o_trilho": (
+        422,
+        "Resposta inválida para o trilho",
+        "A entidade operadora não pode recusar pedido que siga as normas (Res. Conjunta 12, "
+        "art. 18); só a portabilidade tem impedimento (Res. CVM 210, art. 19) e só o TD "
+        "Garantia e a transferência de custódia recusam.",
+    ),
+    "politica_ativo_nao_recomendado": (
+        422,
+        "Política com ativo não recomendado",
+        "A política do parceiro não pode aceitar um ativo que o catálogo regulatório não "
+        "recomenda, como o COE.",
+    ),
+    "politica_ltv_acima_da_faixa": (
+        422,
+        "LTV acima da faixa do catálogo",
+        "O LTV de um ativo na política passa do topo da faixa do catálogo regulatório.",
+    ),
+    # Combinações que o catálogo regulatório não aceita (app/regulacao.toml). O corpo traz
+    # `sugestao`, com a rota certa.
+    "previdencia_so_no_emprestimo": (
+        422,
+        "Previdência só no empréstimo",
+        "A Res. Conjunta 12 exclui os limites rotativos de conta e de cartão (art. 1º, §2º, "
+        "VII): previdência garante só empréstimo ou financiamento.",
+    ),
+    "ativo_so_no_emprestimo": (
+        422,
+        "Ativo só no empréstimo",
+        "Este ativo não garante o cartão; use-o num empréstimo com garantia.",
+    ),
+    "cartao_exige_liquidez_diaria": (
+        422,
+        "Cartão exige liquidez diária",
+        "No cartão, o CDB precisa ter liquidez diária; os demais vão para o empréstimo.",
+    ),
+    "fundo_no_cartao_so_ate_d1": (
+        422,
+        "Fundo no cartão só até D+1",
+        "No cartão, só fundo DI com resgate em D+0 ou D+1; os demais vão para o empréstimo.",
+    ),
+    "tesouro_no_cartao_exige_agente_do_td": (
+        422,
+        "Tesouro no cartão exige agente do TD",
+        "Tesouro só garante o cartão se a CTVM do grupo for agente de custódia do Tesouro "
+        "Direto; sem isso, use-o num empréstimo.",
+    ),
+    "trilho_nao_atende_o_ativo": (
+        422,
+        "Trilho não atende o ativo",
+        "O trilho pedido não serve para este ativo. Por exemplo, a portabilidade da Res. CVM "
+        "210 não cobre CDB, LCI, LCA nem Tesouro.",
+    ),
+    "ativo_ja_em_garantia": (
+        422,
+        "Ativo já em garantia",
+        "Ativo dado em garantia é impedimento à portabilidade (Res. CVM 210, art. 19, §1º, "
+        'IV, "b"). Peça a baixa do gravame antes.',
+    ),
+    "coe_nao_recomendado": (
+        422,
+        "COE não recomendado",
+        "COE não é aceito como garantia: baixa liquidez e recompra a critério do emissor.",
+    ),
+    "plano_fora_da_res_conjunta_12": (
+        422,
+        "Plano fora da Res. Conjunta 12",
+        "Só PGBL, VGBL e capitalização entram pela Res. Conjunta 12; o FAPI fica fora "
+        "(art. 1º, §1º).",
+    ),
+    "emprestimo_conta_bloqueada": (
+        422,
+        "Conta bloqueada para empréstimo",
+        "A conta está bloqueada (chamada de margem vencida ou dívida descoberta): "
+        "regularize antes de contratar empréstimo.",
+    ),
+    "emprestimo_fatura_em_atraso": (
+        422,
+        "Fatura em atraso",
+        "Há fatura do cartão vencida e não paga; o empréstimo fica suspenso até a regularização.",
+    ),
+    "emprestimo_em_atraso_na_conta": (
+        422,
+        "Empréstimo em atraso",
+        "Há empréstimo em atraso nesta conta; regularize antes de contratar outro.",
+    ),
+    "emprestimo_teto_do_parceiro_excedido": (
+        422,
+        "Teto do parceiro excedido",
+        "O empréstimo passaria do teto da carteira definido pela política de risco do parceiro.",
+    ),
+    "prazo_alem_da_acumulacao": (
+        422,
+        "Prazo além da acumulação",
+        "A última parcela do empréstimo não pode vencer depois do fim da acumulação do plano "
+        "de previdência (Res. Conjunta 12, art. 6º, §3º).",
+    ),
+    "vencimento_nao_casado": (
+        422,
+        "Vencimento não casado",
+        "A última parcela precisa vencer até o vencimento do título dado em garantia.",
+    ),
+    "emprestimo_carteira_nao_informada": (
+        500,
+        "Erro interno",
+        "A política tem teto do parceiro e a carteira não foi informada ao domínio.",
     ),
     "url_de_webhook_invalida": (
         422,
@@ -217,7 +348,18 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "Erro interno",
         "Um lançamento contábil não fechou. A operação foi desfeita por segurança.",
     ),
+    "data_fora_da_cobertura": (
+        500,
+        "Calendário sem cobertura",
+        "O prazo em dias úteis sai do período coberto pelo calendário de feriados; o "
+        "calendário precisa ser estendido.",
+    ),
     "erro_interno": (500, "Erro interno", "Erro inesperado. Informe o request_id ao suporte."),
+    "infraestrutura_indisponivel": (
+        503,
+        "Infraestrutura de registro indisponível",
+        "Não há infraestrutura de registro de gravame ligada neste ambiente.",
+    ),
     "servico_indisponivel": (503, "Serviço indisponível", "O banco de dados não respondeu."),
 }
 

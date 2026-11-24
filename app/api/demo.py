@@ -119,6 +119,19 @@ def montar_demo(app: FastAPI, recursos: Recursos) -> None:
             },
         )
 
+    @app.get("/regulacao", include_in_schema=False)
+    def matriz_regulatoria() -> FileResponse:
+        """O que cada ativo aceita, por trilho, com a categoria de cada afirmação."""
+        return FileResponse(
+            PASTA / "regulacao.html",
+            headers={
+                "Content-Security-Policy": POLITICA_DE_SEGURANCA,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "Cache-Control": "no-store",
+            },
+        )
+
     @app.get("/negocio", include_in_schema=False)
     def modelo_economico() -> FileResponse:
         """Modelo econômico por cliente (plataforma e parceiro), no mesmo estilo do /demo."""

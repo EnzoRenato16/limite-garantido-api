@@ -14,6 +14,7 @@ import tempfile
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
@@ -116,11 +117,12 @@ def contar_a_historia(
 
     capitulo(
         1,
-        "O cliente guarda R$ 5.000 em CDB",
+        "O cliente aplica R$ 5.000 em CDB custodiado na casa",
         "O investimento continua rendendo e fica bloqueado como garantia.",
     )
     garantia = parceiro.post(
-        f"/contas/{conta}/garantias", {"tipo_ativo": "cdb", "valor": "5000.00"}
+        f"/contas/{conta}/garantias",
+        {"tipo_ativo": "cdb", "valor": "5000.00", "liquidez_dias": 0},
     ).json()
     tela.print(
         f"   LTV do CDB na política deste parceiro: {Decimal(garantia['garantia']['ltv']):.0%}. "
@@ -196,9 +198,11 @@ def contar_a_historia(
     executada = parceiro.get("/eventos", conta_id=conta, tipo="garantia.executada").json()["dados"][
         0
     ]["dados"]
+    resultado = executada["demonstrativo"]
     tela.print(
-        f"   Vendidos só os [bold]{reais(executada['valor_executado'])}[/bold] da fatura. "
-        f"Os {reais(executada['valor_remanescente'])} que sobraram continuam bloqueados e rendendo."
+        f"   Vendida a garantia inteira ([bold]{reais(resultado['valor_de_mercado'])}[/bold]); "
+        f"{reais(resultado['divida_abatida'])} quitam a fatura e "
+        f"[bold]{reais(resultado['excedente_devolvido'])}[/bold] voltam ao cliente."
     )
     regua(final["limite"], "5000.00")
 
@@ -231,12 +235,12 @@ def contar_a_historia(
     for lancamento in reversed(extrato):
         debitos = [p for p in lancamento["partidas"] if p["sentido"] == "D"]
         creditos = [p for p in lancamento["partidas"] if p["sentido"] == "C"]
-        for indice, (debito, credito) in enumerate(zip(debitos, creditos, strict=True)):
+        for indice, (debito, credito) in enumerate(zip_longest(debitos, creditos, fillvalue=None)):
             tabela.add_row(
                 lancamento["tipo"] if indice == 0 else "",
-                debito["conta_contabil"],
-                credito["conta_contabil"],
-                reais(debito["valor"]),
+                debito["conta_contabil"] if debito else "",
+                credito["conta_contabil"] if credito else "",
+                reais((debito or credito)["valor"]),
             )
     tela.print(tabela)
     verificacao = api.get("/v1/admin/ledger/verificacao", headers=ADMIN).json()
@@ -255,11 +259,11 @@ def simular_stress(parceiro: Parceiro) -> None:
     capitulo(
         8,
         "E se o mercado virar amanhã?",
-        "Simulador de stress numa carteira de exemplo: ações −30%, prefixado −10%.",
+        "Simulador de stress numa carteira de exemplo: fundo DI −30%, CDB −10%.",
     )
     carteira = [
-        ("acoes", "10000.00", "5500.00"),
-        ("tesouro_prefixado", "10000.00", "7500.00"),
+        ("fundo_di", "10000.00", "5500.00"),
+        ("cdb", "10000.00", "7500.00"),
         ("cdb", "8000.00", "2000.00"),
     ]
     for indice, (tipo, valor, compra) in enumerate(carteira):
@@ -267,7 +271,14 @@ def simular_stress(parceiro: Parceiro) -> None:
             "/v1/contas", json={"cliente_ref": f"carteira-{indice}"}, headers=parceiro.cabecalhos
         ).json()["id"]
         for caminho, corpo in (
-            (f"/v1/contas/{conta}/garantias", {"tipo_ativo": tipo, "valor": valor}),
+            (
+                f"/v1/contas/{conta}/garantias",
+                {
+                    "tipo_ativo": tipo,
+                    "valor": valor,
+                    "liquidez_dias": 1 if tipo == "fundo_di" else 0,
+                },
+            ),
             (f"/v1/contas/{conta}/compras", {"valor": compra, "descricao": "Compras"}),
         ):
             parceiro.api.post(
@@ -276,7 +287,7 @@ def simular_stress(parceiro: Parceiro) -> None:
                 headers={**parceiro.cabecalhos, "Idempotency-Key": str(uuid.uuid4())},
             )
     resultado = parceiro.post(
-        "/risco/simulacoes-de-stress", {"choques": {"acoes": "-0.30", "tesouro_prefixado": "-0.10"}}
+        "/risco/simulacoes-de-stress", {"choques": {"fundo_di": "-0.30", "cdb": "-0.10"}}
     ).json()
     tabela = Table(box=None, padding=(0, 2), show_header=False)
     tabela.add_row("contas analisadas", str(resultado["contas_analisadas"]))
@@ -299,7 +310,7 @@ def simular_stress(parceiro: Parceiro) -> None:
 def _resumo(evento: dict[str, Any]) -> str:
     dados = evento["dados"]
     match evento["tipo"]:
-        case "garantia.bloqueada":
+        case "gravame.registrado":
             return f"{reais(dados['valor_de_mercado'])} em {dados['tipo_ativo']} → {reais(dados['limite_gerado'])} de limite"
         case "limite.atualizado":
             return f"limite {reais(dados['limite_total'])}, disponível {reais(dados['limite_disponivel'])}"
@@ -312,7 +323,7 @@ def _resumo(evento: dict[str, Any]) -> str:
         case "fatura.em_atraso":
             return f"{dados['dias_em_atraso']} dia de atraso; execução a partir de {dados['execucao_a_partir_de']}"
         case "garantia.executada":
-            return f"vendidos {reais(dados['valor_executado'])}; sobram {reais(dados['valor_remanescente'])}"
+            return f"vendida por inteiro; excedente devolvido {reais(dados['demonstrativo']['excedente_devolvido'])}"
         case _:
             return ""
 

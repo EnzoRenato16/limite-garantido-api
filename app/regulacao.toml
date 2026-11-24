@@ -1,0 +1,1335 @@
+# Catálogo regulatório: fonte única do que cada ativo aceita.
+#
+# Fonte: o documento "Limite Garantido as a Service — checagem regulatória", auditado em
+# 20/11/2026 e revisado em 22/11/2026 (fora do repositório). Nada aqui é integração: o
+# projeto SIMULA o registro na B3, no Selic e na plataforma da Res. Conjunta 12.
+#
+# Toda afirmação tem uma categoria:
+#   norma               — com `norma` e `artigo` (o carregador recusa sem os dois);
+#   pratica_de_mercado  — o que o mercado faz ou divulga;
+#   interpretacao       — leitura do documento, a validar com jurídico ou contabilidade;
+#   imprensa            — só noticiado;
+#   nao_verificado      — a fonte lista como ainda sem confirmação oficial.
+# `tema` diz em que coluna da matriz (página /regulacao, docs/regulacao.md) ela aparece.
+#
+# Unidades: prazos de trilho e de baixa em dias úteis {dia_util}; atraso e tabela
+# regressiva em dias corridos {dia_corrido}; LTV, alíquota e piso como razão {1} em texto
+# decimal; dinheiro em reais {BRL} como texto.
+
+# Não há confirmação pública de que a CTVM do grupo seja agente de custódia do Tesouro
+# Direto. Enquanto for false, Tesouro não entra no cartão.
+ctvm_do_grupo_e_agente_do_td = false
+
+# {dia_util} para pedir a baixa do gravame depois da quitação, da liberação ou da execução.
+prazo_da_baixa_dias_uteis = 2
+
+# {BRL} por titular e conglomerado (Regulamento do FGC, art. 2º, §2º).
+teto_do_fgc = "250000.00"
+
+rota_do_emprestimo = "POST /v1/contas/{conta_id}/emprestimos"
+rota_da_matriz = "GET /v1/regulacao/matriz"
+
+[fonte]
+documento = "Limite Garantido as a Service — checagem regulatória"
+auditado_em = "2026-11-20"
+revisado_em = "2026-11-22"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "Após a quitação, a baixa do gravame deve ser pedida em até 2 dias úteis. A regra é da previdência; o documento recomenda adotá-la para todos os ativos, sem citar o artigo."
+categoria = "nao_verificado"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "O FGC garante até R$ 250 mil por titular e conglomerado."
+categoria = "norma"
+norma = "Regulamento do FGC (Res. CMN 4.222/2013)"
+artigo = "art. 2º, §2º"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "O beneficiário da garantia do FGC é o titular do crédito, não o credor da operação garantida."
+categoria = "norma"
+norma = "Regulamento do FGC (Res. CMN 4.222/2013)"
+artigo = "art. 2º, §4º, I"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "Pisos de provisão para inadimplidos, contados a partir do inadimplemento (atraso acima de 90 dias): no 1º mês, C2 30%, C3 45% e C5 50%; no 13º mês, C2 70,8%, C3 89,4% e C5 90,8%."
+categoria = "norma"
+norma = "Res. CMN 4.966/2021 e Res. BCB 352/2023"
+artigo = "art. 76, §2º, I (inadimplido: atraso acima de 90 dias); art. 81 e Anexo I"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "Com mais de uma garantia, vale a carteira de menor provisão."
+categoria = "norma"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, §1º"
+
+[[afirmacoes]]
+tema = "geral"
+texto = "Crédito sem garantia, como o rotativo, vai para a C5."
+categoria = "norma"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, V, \"a\""
+
+# Pisos de provisão {1} sobre o saldo, a partir do inadimplemento.
+[pisos_de_provisao.c2]
+primeiro_mes = "0.30"
+decimo_terceiro_mes = "0.708"
+
+[pisos_de_provisao.c3]
+primeiro_mes = "0.45"
+decimo_terceiro_mes = "0.894"
+
+[pisos_de_provisao.c5]
+primeiro_mes = "0.50"
+decimo_terceiro_mes = "0.908"
+
+# IR regressivo da renda fixa sobre o rendimento (Lei 11.033/2004, art. 1º). Prazo em
+# {dia_corrido} desde a aplicação; a faixa sem `ate_dias_corridos` é "acima de 720".
+[[tabela_regressiva_renda_fixa]]
+ate_dias_corridos = 180
+aliquota = "0.225"
+
+[[tabela_regressiva_renda_fixa]]
+ate_dias_corridos = 360
+aliquota = "0.20"
+
+[[tabela_regressiva_renda_fixa]]
+ate_dias_corridos = 720
+aliquota = "0.175"
+
+[[tabela_regressiva_renda_fixa]]
+aliquota = "0.15"
+
+# =================================================================== trilhos
+# prazo_dias_uteis {dia_util}: ausente quando não há prazo ou quando muda com o ativo
+# (aí vem em prazos_por_ativo).
+
+[trilhos.casa]
+nome = "custódia na casa"
+rota = "POST /v1/contas/{conta_id}/garantias"
+prazo_e_regulatorio = false
+pode_recusar = false
+
+[[trilhos.casa.afirmacoes]]
+tema = "trilho"
+texto = "Ativo custodiado na CTVM do grupo, ou cotas de fundo DI da DTVM do grupo, com gravame registrado na B3 a favor da SCD do grupo, no mesmo dia."
+categoria = "pratica_de_mercado"
+
+[[trilhos.casa.afirmacoes]]
+tema = "trilho"
+texto = "O gravame sobre ativo registrado ou depositado só tem eficácia perante terceiros se constituído na registradora ou no depositário central; contrato sozinho não basta."
+categoria = "norma"
+norma = "Lei 12.810/2013 (redação da Lei 13.476/2017)"
+artigo = "art. 26"
+
+[[trilhos.casa.afirmacoes]]
+tema = "trilho"
+texto = "O limite só é liberado depois da confirmação do registro do gravame."
+categoria = "interpretacao"
+
+[trilhos.portabilidade_cvm_210]
+nome = "portabilidade (Res. CVM 210)"
+rota = "POST /v1/contas/{conta_id}/portabilidades"
+prazo_e_regulatorio = true
+# Só por impedimento; o art. 19, §1º traz exemplos, não uma lista fechada.
+pode_recusar = true
+
+[trilhos.portabilidade_cvm_210.prazos_por_ativo]
+acoes = 2
+fii = 2
+etf = 2
+fundo_di = 9
+
+[[trilhos.portabilidade_cvm_210.afirmacoes]]
+tema = "prazo"
+texto = "Portabilidade em 2 dias úteis para valores mobiliários em depósito centralizado (ações, FIIs, ETFs) e em até 9 dias úteis para cotas de fundos."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[trilhos.portabilidade_cvm_210.afirmacoes]]
+tema = "trilho"
+texto = "A portabilidade pode ser pedida no custodiante de destino."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 8º"
+
+[[trilhos.portabilidade_cvm_210.afirmacoes]]
+tema = "trilho"
+texto = "Ativo dado em garantia é impedimento à portabilidade; o art. 19, §1º traz exemplos de impedimento, não uma lista fechada."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 19, §1º, IV, \"b\""
+
+[[trilhos.portabilidade_cvm_210.afirmacoes]]
+tema = "trilho"
+texto = "Pelo entendimento corrente, CDB, LCI, LCA e Tesouro ficam fora da Res. CVM 210, porque não são valores mobiliários."
+categoria = "interpretacao"
+norma = "Lei 6.385/1976"
+artigo = "art. 2º, §1º"
+
+[[trilhos.portabilidade_cvm_210.afirmacoes]]
+tema = "trilho"
+texto = "Sem resgate nem alienação, a portabilidade não gera fato gerador de IR; isso não vem da CVM."
+categoria = "interpretacao"
+
+[trilhos.transferencia_de_custodia]
+nome = "transferência de custódia (fora da CVM 210)"
+rota = "POST /v1/contas/{conta_id}/transferencias-de-custodia"
+# Operacional, ilustrativo e configurável: não encontramos prazo regulatório.
+prazo_dias_uteis = 5
+prazo_e_regulatorio = false
+pode_recusar = true
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "trilho"
+texto = "CDB, LCI e LCA de outro banco vêm para a CTVM do grupo por pedido de transferência de custódia; não encontramos prazo regulatório para ela."
+categoria = "pratica_de_mercado"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "prazo"
+texto = "Não encontramos prazo regulatório para a transferência de custódia; a B3 define."
+categoria = "pratica_de_mercado"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "prazo"
+texto = "O número de 5 dias úteis é ilustrativo do projeto e configurável."
+categoria = "interpretacao"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "trilho"
+texto = "O CDB é título nominativo, transferível por endosso ou por lançamento no sistema."
+categoria = "norma"
+norma = "Lei 13.986/2020"
+artigo = "arts. 34 e 35"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "trilho"
+texto = "O CDB do próprio emissor, emitido e custodiado por ele, costuma não ser portável."
+categoria = "pratica_de_mercado"
+
+[[trilhos.transferencia_de_custodia.afirmacoes]]
+tema = "trilho"
+texto = "Transferir a custódia sem trocar o titular não é alienação, liquidação, resgate, cessão nem repactuação: não há retenção de IR na transferência."
+categoria = "interpretacao"
+
+[trilhos.td_garantia]
+nome = "TD Garantia (Selic)"
+rota = "POST /v1/contas/{conta_id}/garantias/tesouro"
+# O regulamento não fixa prazo; a B3 define. Operacional, ilustrativo e configurável.
+prazo_dias_uteis = 3
+prazo_e_regulatorio = false
+pode_recusar = true
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "trilho"
+texto = "O gravame é instruído pelo agente de custódia do investidor nos sistemas da B3 e registrado no Selic."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 108 e 109"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "trilho"
+texto = "Quando os agentes de custódia do garantidor e do garantido são diferentes, a contraparte confirma."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 100 e 105"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "trilho"
+texto = "A recusa acontece quando o agente de custódia do cliente não opera o serviço ou não confirma."
+categoria = "interpretacao"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "prazo"
+texto = "Não encontramos prazo regulatório para o gravame do TD Garantia; a B3 define."
+categoria = "pratica_de_mercado"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "prazo"
+texto = "O número de 3 dias úteis é ilustrativo do projeto e configurável."
+categoria = "interpretacao"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "trilho"
+texto = "Execução: o agente do garantido instrui, os títulos são vendidos ao Tesouro e o dinheiro vai ao agente do garantido."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 116 a 119"
+
+[[trilhos.td_garantia.afirmacoes]]
+tema = "trilho"
+texto = "Juros e amortizações dos títulos gravados vão ao agente de custódia do garantido."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "item 127"
+
+[trilhos.res_conjunta_12]
+nome = "direito de resgate (Res. Conjunta 12)"
+rota = "POST /v1/contas/{conta_id}/garantias/previdencia"
+prazo_dias_uteis = 2
+prazo_e_regulatorio = true
+pode_recusar = false
+
+[[trilhos.res_conjunta_12.afirmacoes]]
+tema = "prazo"
+texto = "A entidade operadora presta as informações em até 2 dias úteis."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 4º, §1º"
+
+[[trilhos.res_conjunta_12.afirmacoes]]
+tema = "trilho"
+texto = "A entidade operadora não pode recusar pedido que siga as normas."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 18"
+
+[[trilhos.res_conjunta_12.afirmacoes]]
+tema = "trilho"
+texto = "O bloqueio é simultâneo à formalização da operação de crédito."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 8º"
+
+[[trilhos.res_conjunta_12.afirmacoes]]
+tema = "trilho"
+texto = "O valor bloqueado não pode ser resgatado, portado nem transferido."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 9º"
+
+[[trilhos.res_conjunta_12.afirmacoes]]
+tema = "trilho"
+texto = "A troca de informações passa por plataforma de infraestrutura autorizada, exigida desde 30/09/2025."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 10"
+
+# ==================================================================== ativos
+# instrumentos: o primeiro é o padrão. carteira_de_provisao: uma por instrumento.
+# faixas_de_ltv: LTV de partida {1} (hipótese de calibração, anexo D3); `ate_anos` {ano}
+# até o vencimento, crescente; a faixa sem `ate_anos` é a aberta (e a única, se não há
+# prazo). liquidez_maxima_no_cartao_dias_uteis {dia_util}: 0 = D+0.
+# dias_minimos_execucao {dia_corrido}: ausente = prazo contratual da política.
+
+# --------------------------------------------------------------------- CDB
+[ativos.cdb]
+nome = "CDB de banco parceiro"
+infraestrutura = "b3_balcao"
+instrumentos = ["cessao_fiduciaria", "penhor"]
+trilhos = ["casa", "transferencia_de_custodia"]
+produtos = ["cartao", "emprestimo"]
+condicao_no_cartao = "liquidez_diaria"
+liquidez_maxima_no_cartao_dias_uteis = 0
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.85", maximo = "0.95" }]
+
+[ativos.cdb.carteira_de_provisao]
+cessao_fiduciaria = "c2"
+penhor = "c2"
+
+[ativos.cdb.retencao]
+regra = "tabela_regressiva_renda_fixa"
+
+[[ativos.cdb.retencao.afirmacoes]]
+tema = "retencao"
+texto = "IR regressivo sobre o rendimento: 22,5% até 180 dias, 20% até 360, 17,5% até 720 e 15% acima. Quem paga o rendimento retém na fonte."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 1º"
+
+[[ativos.cdb.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Funciona hoje dentro de casa: CDB de banco parceiro custodiado na CTVM do grupo, com gravame registrado na B3 a favor da SCD do grupo."
+categoria = "pratica_de_mercado"
+
+[[ativos.cdb.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Não há CDB da casa: a SCD não capta do público."
+categoria = "norma"
+norma = "Res. CMN 5.050/2022"
+artigo = "art. 10, I"
+
+[[ativos.cdb.afirmacoes]]
+tema = "trilho"
+texto = "Na casa, gravame no dia. De fora, só com o custodiante de origem ou transferindo a custódia antes, fora da Res. CVM 210."
+categoria = "pratica_de_mercado"
+
+[[ativos.cdb.afirmacoes]]
+tema = "trilho"
+texto = "Não encontramos norma que obrigue o custodiante a registrar gravame para credor de outra instituição."
+categoria = "interpretacao"
+
+[[ativos.cdb.afirmacoes]]
+tema = "instrumento"
+texto = "Cessão fiduciária: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.cdb.afirmacoes]]
+tema = "instrumento"
+texto = "Penhor de direitos e títulos: o bem continua do devedor e o credor tem preferência."
+categoria = "norma"
+norma = "Código Civil"
+artigo = "arts. 1.451 a 1.460"
+
+[[ativos.cdb.afirmacoes]]
+tema = "instrumento"
+texto = "Penhor de aplicações financeiras de tomador PJ ou MEI em recuperação judicial vai para conta vinculada; a forma fiduciária fica fora da recuperação."
+categoria = "norma"
+norma = "Lei 11.101/2005"
+artigo = "art. 49, §§3º e 5º"
+
+[[ativos.cdb.afirmacoes]]
+tema = "infraestrutura"
+texto = "O CDB é ativo financeiro registrado em registradora (B3, Balcão): a registradora registra o gravame; o custodiante comanda."
+categoria = "norma"
+norma = "Res. CMN 4.593/2017"
+artigo = "art. 2º"
+
+[[ativos.cdb.afirmacoes]]
+tema = "infraestrutura"
+texto = "O participante que é parte da operação registra o Instrumento de Constituição de Gravame; a contraparte confirma e, se recusar ou não responder, o ativo é liberado."
+categoria = "norma"
+norma = "Regulamento do Balcão B3 (21/09/2026) e Manual de Normas B3 (31/08/2026)"
+artigo = "Regulamento art. 97, II; Manual arts. 88 e 94"
+
+[[ativos.cdb.afirmacoes]]
+tema = "produto"
+texto = "Cartão só com liquidez diária; empréstimo nos demais casos."
+categoria = "pratica_de_mercado"
+
+[[ativos.cdb.afirmacoes]]
+tema = "prazo"
+texto = "Gravame no dia; transferência de custódia sem prazo legal encontrado."
+categoria = "pratica_de_mercado"
+
+[[ativos.cdb.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Médio: o resgate antecipado depende do emissor ou de mercado secundário; resta o risco do emissor."
+categoria = "pratica_de_mercado"
+
+[[ativos.cdb.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Se o emissor quebrar, o FGC paga ao titular registrado, não ao credor."
+categoria = "norma"
+norma = "Regulamento do FGC (Res. CMN 4.222/2013)"
+artigo = "art. 2º, §4º, I"
+
+[[ativos.cdb.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "O limite por emissor do projeto fica dentro do teto do FGC."
+categoria = "interpretacao"
+
+[[ativos.cdb.afirmacoes]]
+tema = "provisao"
+texto = "Crédito garantido por depósito a prazo, CDB inclusive, vai para a C2, qualquer que seja o instrumento. Confirmar com a contabilidade."
+categoria = "interpretacao"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"c\""
+
+[[ativos.cdb.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 85% a 95%, dentro do teto do FGC por emissor: hipótese de calibração."
+categoria = "interpretacao"
+
+# ------------------------------------------------------------------ LCI e LCA
+[ativos.lci]
+nome = "LCI"
+infraestrutura = "b3_balcao"
+instrumentos = ["cessao_fiduciaria", "penhor"]
+trilhos = ["casa", "transferencia_de_custodia"]
+produtos = ["emprestimo"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.80", maximo = "0.90" }]
+
+[ativos.lci.carteira_de_provisao]
+cessao_fiduciaria = "c3"
+penhor = "c3"
+
+[ativos.lci.retencao]
+regra = "isento"
+
+[[ativos.lci.retencao.afirmacoes]]
+tema = "retencao"
+texto = "Isenta de IR para pessoa física."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 3º"
+
+[[ativos.lci.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Funciona dentro de casa como o CDB de outro banco: custodiada na CTVM do grupo, com gravame registrado na B3."
+categoria = "pratica_de_mercado"
+
+[[ativos.lci.afirmacoes]]
+tema = "trilho"
+texto = "De fora, igual ao CDB de outro banco: transferência de custódia antes do gravame, fora da Res. CVM 210."
+categoria = "pratica_de_mercado"
+
+[[ativos.lci.afirmacoes]]
+tema = "instrumento"
+texto = "Cessão fiduciária: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.lci.afirmacoes]]
+tema = "infraestrutura"
+texto = "A LCI é ativo financeiro registrado em registradora (B3, Balcão): a registradora registra o gravame; o custodiante comanda."
+categoria = "norma"
+norma = "Res. CMN 4.593/2017"
+artigo = "art. 2º"
+
+[[ativos.lci.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo, com vencimento casado: a última parcela vence até o vencimento do título."
+categoria = "interpretacao"
+
+[[ativos.lci.afirmacoes]]
+tema = "prazo"
+texto = "Igual ao CDB: gravame no dia na casa; transferência de custódia sem prazo legal encontrado."
+categoria = "pratica_de_mercado"
+
+[[ativos.lci.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto antes da carência: o emissor não pode recomprar nem resgatar antes do prazo mínimo de 6 meses, ou 36 se atualizada por índice de preços. O artigo não foi conferido."
+categoria = "nao_verificado"
+norma = "Res. CMN 4.410/2015 (alterada pela Res. CMN 5.215/2025)"
+
+[[ativos.lci.afirmacoes]]
+tema = "provisao"
+texto = "Cessão fiduciária e penhor de direitos creditórios vão para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, III, \"b\""
+
+[[ativos.lci.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 80% a 90%, só no empréstimo com vencimento casado: hipótese de calibração."
+categoria = "interpretacao"
+
+[ativos.lca]
+nome = "LCA"
+infraestrutura = "b3_balcao"
+instrumentos = ["cessao_fiduciaria", "penhor"]
+trilhos = ["casa", "transferencia_de_custodia"]
+produtos = ["emprestimo"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.80", maximo = "0.90" }]
+
+[ativos.lca.carteira_de_provisao]
+cessao_fiduciaria = "c3"
+penhor = "c3"
+
+[ativos.lca.retencao]
+regra = "isento"
+
+[[ativos.lca.retencao.afirmacoes]]
+tema = "retencao"
+texto = "Isenta de IR para pessoa física."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 3º"
+
+[[ativos.lca.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Funciona dentro de casa como o CDB de outro banco: custodiada na CTVM do grupo, com gravame registrado na B3."
+categoria = "pratica_de_mercado"
+
+[[ativos.lca.afirmacoes]]
+tema = "trilho"
+texto = "De fora, igual ao CDB de outro banco: transferência de custódia antes do gravame, fora da Res. CVM 210."
+categoria = "pratica_de_mercado"
+
+[[ativos.lca.afirmacoes]]
+tema = "instrumento"
+texto = "Cessão fiduciária: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.lca.afirmacoes]]
+tema = "infraestrutura"
+texto = "A LCA é ativo financeiro registrado em registradora (B3, Balcão): a registradora registra o gravame; o custodiante comanda."
+categoria = "norma"
+norma = "Res. CMN 4.593/2017"
+artigo = "art. 2º"
+
+[[ativos.lca.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo, com vencimento casado: a última parcela vence até o vencimento do título."
+categoria = "interpretacao"
+
+[[ativos.lca.afirmacoes]]
+tema = "prazo"
+texto = "Igual ao CDB: gravame no dia na casa; transferência de custódia sem prazo legal encontrado."
+categoria = "pratica_de_mercado"
+
+[[ativos.lca.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto antes da carência: o emissor não pode recomprar nem resgatar antes do prazo mínimo de 6 meses, ou 12 se atualizada por índice de preços. O artigo não foi conferido."
+categoria = "nao_verificado"
+norma = "Res. CMN 5.006/2022 (alterada pela Res. CMN 5.215/2025)"
+
+[[ativos.lca.afirmacoes]]
+tema = "provisao"
+texto = "Cessão fiduciária e penhor de direitos creditórios vão para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, III, \"b\""
+
+[[ativos.lca.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 80% a 90%, só no empréstimo com vencimento casado: hipótese de calibração."
+categoria = "interpretacao"
+
+# ---------------------------------------------------------------------- COE
+# Descrito para a matriz, mas não recomendado: recusado em qualquer trilho e produto.
+[ativos.coe]
+nome = "COE"
+infraestrutura = "b3_balcao"
+instrumentos = []
+trilhos = []
+produtos = []
+recomendado = false
+faixas_de_ltv = []
+
+[ativos.coe.carteira_de_provisao]
+
+[[ativos.coe.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Possível se emitido e custodiado na casa, mas não recomendado como garantia."
+categoria = "pratica_de_mercado"
+
+[[ativos.coe.afirmacoes]]
+tema = "trilho"
+texto = "Portável em 2 dias úteis só se ofertado publicamente e custodiado por terceiro; o COE distribuído e custodiado pelo próprio emissor fica fora da portabilidade."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 1º, parágrafo único, e art. 16"
+
+[[ativos.coe.afirmacoes]]
+tema = "instrumento"
+texto = "Nenhum instrumento modelado: o COE é recusado."
+categoria = "interpretacao"
+
+[[ativos.coe.afirmacoes]]
+tema = "infraestrutura"
+texto = "B3 (Balcão)."
+categoria = "pratica_de_mercado"
+
+[[ativos.coe.afirmacoes]]
+tema = "produto"
+texto = "Não recomendado: recusado no cartão e no empréstimo."
+categoria = "pratica_de_mercado"
+
+[[ativos.coe.afirmacoes]]
+tema = "prazo"
+texto = "2 dias úteis para portar, quando aplicável."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[ativos.coe.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto: baixa liquidez e recompra a critério do emissor."
+categoria = "pratica_de_mercado"
+
+# ------------------------------------------------------------------ fundo DI
+[ativos.fundo_di]
+nome = "fundo DI da DTVM do grupo"
+infraestrutura = "registradora_ou_b3_escriturador"
+instrumentos = ["cessao_fiduciaria", "alienacao_fiduciaria"]
+trilhos = ["casa", "portabilidade_cvm_210"]
+produtos = ["cartao", "emprestimo"]
+condicao_no_cartao = "resgate_ate_d1"
+liquidez_maxima_no_cartao_dias_uteis = 1
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.85", maximo = "0.95" }]
+
+[ativos.fundo_di.carteira_de_provisao]
+cessao_fiduciaria = "c3"
+alienacao_fiduciaria = "c2"
+
+[ativos.fundo_di.retencao]
+regra = "tabela_regressiva_renda_fixa"
+
+[[ativos.fundo_di.retencao.afirmacoes]]
+tema = "retencao"
+texto = "Fundo de renda fixa: IR regressivo sobre o rendimento, de 22,5% a 15% conforme o prazo, retido por quem paga o rendimento."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 1º"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Cotas de fundos DI da DTVM do grupo, com bloqueio de resgate e gravame sobre as cotas. De fora, portar (mesma classe e subclasse) e travar na casa."
+categoria = "pratica_de_mercado"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "trilho"
+texto = "Portabilidade de cotas de fundos, pedida no custodiante de destino; a troca de classe ou subclasse fica fora."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 1º, parágrafo único, e art. 8º"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação ou cessão fiduciária de cotas: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "infraestrutura"
+texto = "Registradoras podem constituir gravames, inclusive sobre cotas."
+categoria = "norma"
+norma = "Res. CVM 31/2021"
+artigo = "art. 36-A"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "infraestrutura"
+texto = "Na B3, o bloqueio de cotas exige comando do escriturador, salvo distribuição por conta e ordem."
+categoria = "norma"
+norma = "Manual de Normas B3 (31/08/2026)"
+artigo = "art. 99, §2º"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "produto"
+texto = "Cartão só com fundo DI de liquidez imediata (resgate em D+0 ou D+1); empréstimo nos demais casos."
+categoria = "pratica_de_mercado"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "prazo"
+texto = "Até 9 dias úteis para portar, em etapas de 2, 2 e 3 dias."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Baixo em fundo DI com resgate em D+0 ou D+1; alto com cotização longa."
+categoria = "pratica_de_mercado"
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2."
+categoria = "interpretacao"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\""
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "provisao"
+texto = "Cessão fiduciária vai para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, III, \"b\""
+
+[[ativos.fundo_di.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 85% a 95%: hipótese de calibração. A Circular 3.809 aceita cotas se a carteira do fundo for ao menos 95% elegível."
+categoria = "interpretacao"
+norma = "Circular BCB 3.809/2016"
+
+# ------------------------------------------------------------------- Tesouro
+[ativos.tesouro_selic]
+nome = "Tesouro Selic"
+infraestrutura = "selic_td_garantia"
+instrumentos = ["alienacao_fiduciaria"]
+trilhos = ["td_garantia"]
+produtos = ["cartao", "emprestimo"]
+condicao_no_cartao = "ctvm_agente_do_td"
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.90", maximo = "0.95" }]
+
+[ativos.tesouro_selic.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+
+[ativos.tesouro_selic.retencao]
+regra = "tabela_regressiva_renda_fixa"
+
+[[ativos.tesouro_selic.retencao.afirmacoes]]
+tema = "retencao"
+texto = "IR regressivo sobre o rendimento, de 22,5% a 15% conforme o prazo; no Tesouro, o agente de custódia retém."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 1º"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa, só se a CTVM do grupo for agente de custódia do TD, o que não tem confirmação pública. De fora, pelo TD Garantia, se o agente de custódia do cliente operar o serviço."
+categoria = "interpretacao"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "trilho"
+texto = "TD Garantia: gravame no Selic instruído pelo agente de custódia do investidor; com agentes diferentes, a contraparte confirma."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 100, 105, 108 e 109"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária do título, com execução por venda ao Tesouro; o regulamento do TD não nomeia o instrumento."
+categoria = "interpretacao"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "infraestrutura"
+texto = "Selic, conta de ônus e gravames, comandado pela B3. No TD o gravame é sempre universal, não por título."
+categoria = "norma"
+norma = "Res. BCB 409/2024 (Regulamento do Selic)"
+artigo = "art. 116, §4º, III"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "produto"
+texto = "Cartão e empréstimo; no cartão, só se a CTVM do grupo for agente de custódia do TD. No mercado, um player já usa Tesouro em cartão."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "prazo"
+texto = "O regulamento não fixa prazo; a B3 define."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Baixo: a execução é por venda ao Tesouro, com o dinheiro indo ao agente do garantido (Portaria MF 1.748/2024, itens 116 a 119)."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\""
+
+[[ativos.tesouro_selic.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 90% a 95%: hipótese de calibração. A Circular 3.809 dá desconto de 0,5% a 4% para título público, conforme o prazo."
+categoria = "interpretacao"
+norma = "Circular BCB 3.809/2016"
+
+[ativos.tesouro_prefixado]
+nome = "Tesouro Prefixado"
+infraestrutura = "selic_td_garantia"
+instrumentos = ["alienacao_fiduciaria"]
+trilhos = ["td_garantia"]
+produtos = ["cartao", "emprestimo"]
+condicao_no_cartao = "ctvm_agente_do_td"
+recomendado = true
+faixas_de_ltv = [
+    { ate_anos = 2, minimo = "0.85", maximo = "0.85" },
+    { ate_anos = 5, minimo = "0.80", maximo = "0.80" },
+    { minimo = "0.70", maximo = "0.70" },
+]
+
+[ativos.tesouro_prefixado.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+
+[ativos.tesouro_prefixado.retencao]
+regra = "tabela_regressiva_renda_fixa"
+
+[[ativos.tesouro_prefixado.retencao.afirmacoes]]
+tema = "retencao"
+texto = "IR regressivo sobre o rendimento, de 22,5% a 15% conforme o prazo; no Tesouro, o agente de custódia retém."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 1º"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa, só se a CTVM do grupo for agente de custódia do TD, o que não tem confirmação pública. De fora, pelo TD Garantia, se o agente de custódia do cliente operar o serviço."
+categoria = "interpretacao"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "trilho"
+texto = "TD Garantia: gravame no Selic instruído pelo agente de custódia do investidor; com agentes diferentes, a contraparte confirma."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 100, 105, 108 e 109"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária do título, com execução por venda ao Tesouro; o regulamento do TD não nomeia o instrumento."
+categoria = "interpretacao"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "infraestrutura"
+texto = "Selic, conta de ônus e gravames, comandado pela B3. No TD o gravame é sempre universal, não por título."
+categoria = "norma"
+norma = "Res. BCB 409/2024 (Regulamento do Selic)"
+artigo = "art. 116, §4º, III"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "produto"
+texto = "Cartão e empréstimo; no cartão, só se a CTVM do grupo for agente de custódia do TD."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "prazo"
+texto = "O regulamento não fixa prazo; a B3 define."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Baixo na execução, por venda ao Tesouro; o prefixado longo oscila com a marcação a mercado."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\""
+
+[[ativos.tesouro_prefixado.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 85% até 2 anos, 80% de 2 a 5 anos e 70% acima de 5 anos: hipótese de calibração, menor quanto mais longo."
+categoria = "interpretacao"
+
+[ativos.tesouro_ipca]
+nome = "Tesouro IPCA+"
+infraestrutura = "selic_td_garantia"
+instrumentos = ["alienacao_fiduciaria"]
+trilhos = ["td_garantia"]
+produtos = ["cartao", "emprestimo"]
+condicao_no_cartao = "ctvm_agente_do_td"
+recomendado = true
+faixas_de_ltv = [
+    { ate_anos = 2, minimo = "0.85", maximo = "0.85" },
+    { ate_anos = 5, minimo = "0.80", maximo = "0.80" },
+    { minimo = "0.70", maximo = "0.70" },
+]
+
+[ativos.tesouro_ipca.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+
+[ativos.tesouro_ipca.retencao]
+regra = "tabela_regressiva_renda_fixa"
+
+[[ativos.tesouro_ipca.retencao.afirmacoes]]
+tema = "retencao"
+texto = "IR regressivo sobre o rendimento, de 22,5% a 15% conforme o prazo; no Tesouro, o agente de custódia retém."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 1º"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa, só se a CTVM do grupo for agente de custódia do TD, o que não tem confirmação pública. De fora, pelo TD Garantia, se o agente de custódia do cliente operar o serviço."
+categoria = "interpretacao"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "trilho"
+texto = "TD Garantia: gravame no Selic instruído pelo agente de custódia do investidor; com agentes diferentes, a contraparte confirma."
+categoria = "norma"
+norma = "Portaria MF 1.748/2024 (Regulamento do TD)"
+artigo = "itens 100, 105, 108 e 109"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária do título, com execução por venda ao Tesouro; o regulamento do TD não nomeia o instrumento."
+categoria = "interpretacao"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "infraestrutura"
+texto = "Selic, conta de ônus e gravames, comandado pela B3. No TD o gravame é sempre universal, não por título."
+categoria = "norma"
+norma = "Res. BCB 409/2024 (Regulamento do Selic)"
+artigo = "art. 116, §4º, III"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "produto"
+texto = "Cartão e empréstimo; no cartão, só se a CTVM do grupo for agente de custódia do TD."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "prazo"
+texto = "O regulamento não fixa prazo; a B3 define."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Baixo na execução, por venda ao Tesouro; o IPCA+ longo oscila com a marcação a mercado."
+categoria = "pratica_de_mercado"
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\""
+
+[[ativos.tesouro_ipca.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 85% até 2 anos, 80% de 2 a 5 anos e 70% acima de 5 anos: hipótese de calibração, menor quanto mais longo."
+categoria = "interpretacao"
+
+# --------------------------------------------------------- ações, FIIs e ETFs
+[ativos.acoes]
+nome = "ações"
+infraestrutura = "b3_central_depositaria"
+instrumentos = ["alienacao_fiduciaria", "penhor"]
+trilhos = ["casa", "portabilidade_cvm_210"]
+produtos = ["emprestimo"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.50", maximo = "0.70" }]
+
+[ativos.acoes.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+penhor = "c3"
+
+[ativos.acoes.retencao]
+regra = "sobre_a_venda"
+percentual = "0.00005"  # 0,005% {1} sobre o valor da venda
+
+[[ativos.acoes.retencao.afirmacoes]]
+tema = "retencao"
+texto = "A corretora retém só 0,005% sobre a venda; o IR de 15% sobre o ganho, com isenção para vendas de até R$ 20 mil no mês (PF), o próprio investidor apura e recolhe por DARF."
+categoria = "norma"
+norma = "Lei 11.033/2004"
+artigo = "art. 2º, II e §1º, e art. 3º, I"
+
+[[ativos.acoes.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa: gravame na Central Depositária da B3 via custodiante. De fora: portar para a CTVM do grupo e travar."
+categoria = "pratica_de_mercado"
+
+[[ativos.acoes.afirmacoes]]
+tema = "trilho"
+texto = "Portabilidade em 2 dias úteis, pedida no custodiante de destino."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "arts. 8º e 16"
+
+[[ativos.acoes.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária e penhor de ações."
+categoria = "norma"
+norma = "Lei 6.404/1976"
+artigo = "arts. 39 e 40"
+
+[[ativos.acoes.afirmacoes]]
+tema = "infraestrutura"
+texto = "Gravames seguem as regras do depositário central; a movimentação depende de instrução do custodiante."
+categoria = "norma"
+norma = "Res. CVM 31/2021"
+artigo = "arts. 35 e 36"
+
+[[ativos.acoes.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo, com desconto de 50% a 70% sobre o valor, em linha com usar no cartão só colateral que a casa controla."
+categoria = "interpretacao"
+
+[[ativos.acoes.afirmacoes]]
+tema = "prazo"
+texto = "2 dias úteis para portar."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[ativos.acoes.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto: volatilidade e liquidação em D+2; o cliente apura o IR sobre o ganho."
+categoria = "pratica_de_mercado"
+
+[[ativos.acoes.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2; penhor, para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\", e III, \"b\""
+
+[[ativos.acoes.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 50% a 70%, só no empréstimo: hipótese de calibração. A Circular 3.809 dá desconto de 20% para ações incluídas em índices relevantes de bolsa."
+categoria = "interpretacao"
+norma = "Circular BCB 3.809/2016"
+
+[ativos.fii]
+nome = "FII"
+infraestrutura = "b3_central_depositaria"
+instrumentos = ["alienacao_fiduciaria", "penhor"]
+trilhos = ["casa", "portabilidade_cvm_210"]
+produtos = ["emprestimo"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.50", maximo = "0.70" }]
+
+[ativos.fii.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+penhor = "c3"
+
+[ativos.fii.retencao]
+regra = "sobre_a_venda"
+percentual = "0.00005"  # 0,005% {1} sobre o valor da venda
+
+[[ativos.fii.retencao.afirmacoes]]
+tema = "retencao"
+texto = "Retenção de 0,005% sobre a venda, como nas ações; IR de 20% sobre o ganho, apurado pelo investidor. O IR de FIIs não foi reconferido."
+categoria = "nao_verificado"
+norma = "Lei 11.033/2004"
+artigo = "art. 2º, §1º"
+
+[[ativos.fii.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa: gravame na Central Depositária da B3 via custodiante. De fora: portar para a CTVM do grupo e travar."
+categoria = "pratica_de_mercado"
+
+[[ativos.fii.afirmacoes]]
+tema = "trilho"
+texto = "Portabilidade em 2 dias úteis, pedida no custodiante de destino."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "arts. 8º e 16"
+
+[[ativos.fii.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária de cotas: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.fii.afirmacoes]]
+tema = "infraestrutura"
+texto = "Gravames seguem as regras do depositário central; a movimentação depende de instrução do custodiante."
+categoria = "norma"
+norma = "Res. CVM 31/2021"
+artigo = "arts. 35 e 36"
+
+[[ativos.fii.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo, com desconto de 50% a 70% sobre o valor."
+categoria = "interpretacao"
+
+[[ativos.fii.afirmacoes]]
+tema = "prazo"
+texto = "2 dias úteis para portar."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[ativos.fii.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto: volatilidade e liquidação em D+2; o cliente apura o IR sobre o ganho."
+categoria = "pratica_de_mercado"
+
+[[ativos.fii.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2; penhor, para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\", e III, \"b\""
+
+[[ativos.fii.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 50% a 70%, só no empréstimo: hipótese de calibração."
+categoria = "interpretacao"
+
+[ativos.etf]
+nome = "ETF"
+infraestrutura = "b3_central_depositaria"
+instrumentos = ["alienacao_fiduciaria", "penhor"]
+trilhos = ["casa", "portabilidade_cvm_210"]
+produtos = ["emprestimo"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.50", maximo = "0.70" }]
+
+[ativos.etf.carteira_de_provisao]
+alienacao_fiduciaria = "c2"
+penhor = "c3"
+
+[ativos.etf.retencao]
+regra = "sobre_a_venda"
+percentual = "0.00005"  # 0,005% {1} sobre o valor da venda
+
+[[ativos.etf.retencao.afirmacoes]]
+tema = "retencao"
+texto = "Retenção de 0,005% sobre a venda, como nas ações; IR de 15% sobre o ganho, sem isenção, apurado pelo investidor. O IR de ETFs não foi reconferido."
+categoria = "nao_verificado"
+norma = "Lei 11.033/2004"
+artigo = "art. 2º, §1º"
+
+[[ativos.etf.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Dentro de casa: gravame na Central Depositária da B3 via custodiante. De fora: portar para a CTVM do grupo e travar."
+categoria = "pratica_de_mercado"
+
+[[ativos.etf.afirmacoes]]
+tema = "trilho"
+texto = "Portabilidade em 2 dias úteis, pedida no custodiante de destino."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "arts. 8º e 16"
+
+[[ativos.etf.afirmacoes]]
+tema = "instrumento"
+texto = "Alienação fiduciária de cotas: no atraso, o credor vende sem leilão nem ordem judicial, abate a dívida e devolve o saldo com demonstrativo."
+categoria = "norma"
+norma = "Lei 4.728/1965"
+artigo = "art. 66-B, §§3º e 4º"
+
+[[ativos.etf.afirmacoes]]
+tema = "infraestrutura"
+texto = "Gravames seguem as regras do depositário central; a movimentação depende de instrução do custodiante."
+categoria = "norma"
+norma = "Res. CVM 31/2021"
+artigo = "arts. 35 e 36"
+
+[[ativos.etf.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo, com desconto de 50% a 70% sobre o valor."
+categoria = "interpretacao"
+
+[[ativos.etf.afirmacoes]]
+tema = "prazo"
+texto = "2 dias úteis para portar."
+categoria = "norma"
+norma = "Res. CVM 210/2024"
+artigo = "art. 16"
+
+[[ativos.etf.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Alto: volatilidade e liquidação em D+2; o cliente apura o IR sobre o ganho."
+categoria = "pratica_de_mercado"
+
+[[ativos.etf.afirmacoes]]
+tema = "provisao"
+texto = "Alienação fiduciária vai para a C2; penhor, para a C3. A carteira do crédito garantido por ativo que não é depósito ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+norma = "Res. BCB 352/2023"
+artigo = "art. 81, II, \"b\", e III, \"b\""
+
+[[ativos.etf.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 50% a 70%, só no empréstimo: hipótese de calibração."
+categoria = "interpretacao"
+
+# --------------------------------------------------------------- previdência
+[ativos.previdencia]
+nome = "previdência (PGBL, VGBL) e capitalização"
+infraestrutura = "plataforma_res_conjunta_12"
+instrumentos = ["direito_de_resgate"]
+trilhos = ["res_conjunta_12"]
+produtos = ["emprestimo"]
+dias_minimos_execucao = 90
+planos_aceitos = ["pgbl", "vgbl", "capitalizacao"]
+recomendado = true
+faixas_de_ltv = [{ minimo = "0.60", maximo = "0.80" }]
+
+[ativos.previdencia.carteira_de_provisao]
+direito_de_resgate = "c3"
+
+[ativos.previdencia.retencao]
+regra = "ja_liquido"  # o valor garantido já é líquido dos tributos informados: retenção zero
+
+[[ativos.previdencia.retencao.afirmacoes]]
+tema = "retencao"
+texto = "A entidade operadora resgata o valor bloqueado em nome do cliente e paga à instituição financeira líquido de tributos e carregamento; como o valor da garantia já entra líquido dos tributos informados (art. 7º), a execução não retém nada de novo."
+categoria = "interpretacao"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 13"
+
+[[ativos.previdencia.retencao.afirmacoes]]
+tema = "retencao"
+texto = "A base do IR de PGBL e VGBL não foi reconferida: PGBL sobre o valor total e VGBL sobre o rendimento, pela prática de mercado."
+categoria = "nao_verificado"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "o_que_funciona"
+texto = "De fora, trilho obrigatório e sem recusa: a entidade operadora não pode recusar pedido que siga as normas."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 18"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "o_que_funciona"
+texto = "Vale para PGBL e VGBL de contribuição variável e para capitalização tradicional; o FAPI fica fora."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 1º, §1º"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "trilho"
+texto = "Direito de resgate em garantia de crédito de instituição financeira, por plataforma de infraestrutura autorizada."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "arts. 1º, §2º, VII, e 10"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "instrumento"
+texto = "Após 90 dias de atraso, a instituição financeira pede o resgate; a entidade operadora resgata o valor bloqueado e paga líquido de tributos e carregamento."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "arts. 12 e 13"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "infraestrutura"
+texto = "Plataforma de infraestrutura autorizada para a troca de informações."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 10"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "infraestrutura"
+texto = "Uma plataforma privada opera a troca de informações."
+categoria = "imprensa"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "infraestrutura"
+texto = "O RC Garantias da B3 foi anunciado; a operação não tem confirmação oficial."
+categoria = "nao_verificado"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "produto"
+texto = "Só empréstimo ou financiamento com dívida previamente estabelecida; ficam fora os limites rotativos de conta e de cartão."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 1º, §2º, VII"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "prazo"
+texto = "Informações em até 2 dias úteis; bloqueio na formalização."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 4º, §1º, e art. 8º"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "prazo"
+texto = "O prazo do crédito não pode passar do fim do período de acumulação do plano."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 6º, §3º"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Execução só após 90 dias de inadimplemento, salvo pedido do cliente."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 12"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "Aviso obrigatório ao cliente aos 45 dias de atraso e 10 dias antes da liquidação."
+categoria = "norma"
+norma = "Res. Conjunta 12/2024"
+artigo = "art. 6º, §2º, IV"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "risco_de_execucao"
+texto = "O valor do plano oscila e há IR no resgate."
+categoria = "pratica_de_mercado"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "provisao"
+texto = "Direito de resgate vai para a C3 por interpretação; a carteira do crédito garantido por previdência ainda não tem confirmação oficial."
+categoria = "nao_verificado"
+
+[[ativos.previdencia.afirmacoes]]
+tema = "ltv"
+texto = "LTV de partida de 60% a 80%, conforme o fundo do plano, contando 90 dias até executar e o IR: hipótese de calibração."
+categoria = "interpretacao"

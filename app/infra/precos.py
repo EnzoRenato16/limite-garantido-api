@@ -19,16 +19,21 @@ _DIA_ZERO = date(2024, 1, 1)
 _PRECO_INICIAL = Decimal(100)
 
 # (carrego diário, oscilação diária máxima), em fração do preço. Valores só para a
-# simulação fazer sentido: depósito parado, renda fixa pós andando devagar para cima,
-# prefixado e IPCA+ balançando com juros, ações balançando bastante.
+# simulação fazer sentido: renda fixa pós andando devagar para cima, prefixado e IPCA+
+# balançando com juros, renda variável balançando bastante, previdência no meio.
 _COMPORTAMENTO: dict[TipoAtivo, tuple[Decimal, Decimal]] = {
-    TipoAtivo.DEPOSITO: (Decimal(0), Decimal(0)),
+    TipoAtivo.CDB: (Decimal("0.0004"), Decimal("0.0002")),
+    TipoAtivo.LCI: (Decimal("0.0004"), Decimal("0.0002")),
+    TipoAtivo.LCA: (Decimal("0.0004"), Decimal("0.0002")),
+    TipoAtivo.COE: (Decimal("0.0003"), Decimal("0.004")),
     TipoAtivo.FUNDO_DI: (Decimal("0.0004"), Decimal("0.0001")),
     TipoAtivo.TESOURO_SELIC: (Decimal("0.0004"), Decimal("0.0001")),
-    TipoAtivo.CDB: (Decimal("0.0004"), Decimal("0.0002")),
     TipoAtivo.TESOURO_PREFIXADO: (Decimal("0.0004"), Decimal("0.006")),
     TipoAtivo.TESOURO_IPCA: (Decimal("0.0004"), Decimal("0.008")),
     TipoAtivo.ACOES: (Decimal("0.0003"), Decimal("0.025")),
+    TipoAtivo.FII: (Decimal("0.0003"), Decimal("0.015")),
+    TipoAtivo.ETF: (Decimal("0.0003"), Decimal("0.02")),
+    TipoAtivo.PREVIDENCIA: (Decimal("0.0003"), Decimal("0.003")),
 }
 
 _ESCALA_DO_SORTEIO = 10**6

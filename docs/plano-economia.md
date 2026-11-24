@@ -86,7 +86,7 @@ vezes a taxa condicional do cenário. A taxa condicional é fi × condicional in
 fe × condicional externa. Cada condicional é `perda_esperada_total / exposicao` do
 `simular_painel` sobre a carteira sintética (1.000 clientes, semente 42), gerada com
 fração externa 0 e com fração externa 1. Assim são duas rodadas do motor por cenário,
-guardadas em cache. Variar a fração externa não roda o motor de novo, porque a mistura
+mantidas em cache. Variar a fração externa não roda o motor de novo, porque a mistura
 é linear.
 
 **Rotativo.** O teto da Lei 14.690/2023, regulamentada pela Resolução CMN 5.112/2023,

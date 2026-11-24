@@ -1,9 +1,10 @@
 # Política de risco de referência da plataforma.
 #
 # É o ponto de partida de um parceiro novo. Cada parceiro tem a sua cópia, que o time de
-# risco ajusta pela API administrativa. Os LTVs são referência de mercado para um produto
-# de limite garantido; os tetos são valores ilustrativos de um piloto. Nada disto está no
-# código de domínio.
+# risco ajusta pela API administrativa. Os LTVs ficam no início de cada faixa de partida
+# do catálogo regulatório (app/regulacao.toml): hipótese de calibração, não padrão de
+# mercado. Os tetos, os prazos e a taxa são valores ilustrativos de um piloto. Nada disto
+# está no código de domínio. COE fica de fora: o catálogo não o recomenda.
 
 # Dias de atraso da fatura a partir dos quais a garantia é executada.
 dias_para_execucao = 7
@@ -12,27 +13,46 @@ dias_para_execucao = 7
 # Passado o prazo, a conta é bloqueada para novas compras.
 prazo_chamada_de_margem_dias = 5
 
-# Na execução, vende primeiro o que está mais à esquerda (o mais líquido).
+# Dias corridos de atraso da parcela a partir dos quais a garantia do empréstimo é
+# executada (prazo contratual, ilustrativo). A previdência tem piso próprio de 90 dias
+# (Res. Conjunta 12, art. 12), que está no catálogo regulatório.
+dias_para_execucao_emprestimo = 30
+
+# Taxa do empréstimo com garantia, ao mês (ilustrativa).
+taxa_do_emprestimo_ao_mes = "0.0199"
+
+# Na execução, vende primeiro o que está mais à esquerda (o mais líquido). Leitura da
+# matriz de risco de execução: CDB com liquidez diária e fundo DI até D+1 saem no dia;
+# Tesouro, por venda ao Tesouro; renda variável liquida em D+2; LCI e LCA não podem ser
+# resgatadas antes da carência; previdência só executa após 90 dias de atraso.
 ordem_de_execucao = [
-    "deposito",
+    "cdb",
     "fundo_di",
     "tesouro_selic",
-    "cdb",
     "tesouro_prefixado",
     "tesouro_ipca",
     "acoes",
+    "etf",
+    "fii",
+    "lci",
+    "lca",
+    "previdencia",
 ]
 
 # Tetos ilustrativos de piloto (em reais).
 teto_limite_por_cliente = "50000.00"
 teto_limite_do_parceiro = "5000000.00"
 
-# LTV: quanto de limite cada R$ 1 de garantia libera.
+# LTV {1}: quanto de limite cada R$ 1 de garantia libera. Início de cada faixa do catálogo.
 [ltv_por_ativo]
-deposito = "1.00"           # dinheiro em conta: não oscila
-fundo_di = "0.95"
-tesouro_selic = "0.95"
-cdb = "0.85"
-tesouro_prefixado = "0.80"  # mais volátil: sofre com a curva de juros
-tesouro_ipca = "0.80"
-acoes = "0.60"
+cdb = "0.85"                # faixa 0,85 a 0,95
+fundo_di = "0.85"           # faixa 0,85 a 0,95
+tesouro_selic = "0.90"      # faixa 0,90 a 0,95
+tesouro_prefixado = "0.85"  # 0,85 até 2 anos; cai com o prazo (0,80 e 0,70)
+tesouro_ipca = "0.85"       # idem
+acoes = "0.50"              # faixa 0,50 a 0,70, só empréstimo
+etf = "0.50"
+fii = "0.50"
+lci = "0.80"                # faixa 0,80 a 0,90, só empréstimo
+lca = "0.80"
+previdencia = "0.60"        # faixa 0,60 a 0,80, só empréstimo

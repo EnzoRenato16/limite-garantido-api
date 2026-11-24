@@ -186,6 +186,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   são valores que eu escolhi para um piloto hipotético. Não são dados de mercado.
 
 ### 20. Datas de negócio e dias corridos
+- **Situação.** Substituída em parte pela decisão 78: os prazos regulatórios passam a contar dias úteis. O atraso do cartão e do empréstimo segue em dias corridos.
 - **Decisão.** Atraso e prazo contam pela data de Brasília, em dias corridos, sem
   calendário de feriados.
 
@@ -321,6 +322,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
 
 <a id="39-fase-2-pedido-e-ponto-de-partida"></a>
 ### 39. Fase 2: pedido e ponto de partida
+- **Situação.** Substituída pela decisão 79 (trilhos no lugar do custodiante externo).
 - **Contexto.** Depois da v1.0 (PR #1) e do ajuste de plugins (PR #2), o pedido foi:
   garantia em custodiante externo, assíncrona e que pode falhar, com callback assinado,
   polling de reserva e prazo; um painel de risco sobre carteira sintética em `/risco`;
@@ -350,6 +352,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   conferi rodando contra as versões instaladas, como na v1.0.
 
 ### 41. O que acontece com o `pendente`
+- **Situação.** Substituída pela decisão 75 (gravame separado da garantia).
 - **Contexto.** A garantia interna nasce `pendente` e, com a custódia interna, vira
   `bloqueada` na mesma transação. Com `CUSTODIA_MODO=assincrona` ela ficava `pendente`
   até a confirmação administrativa, para sempre se ninguém confirmasse (item 13).
@@ -365,6 +368,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   deixa garantia pendurada.
 
 ### 42. O que cada estado externo conta para o limite
+- **Situação.** Substituída pela decisão 75 (gravame separado da garantia).
 - **Contexto.** A regra pedida: o limite só nasce em `bloqueada`; na liberação ele sai
   no pedido; em `execucao_solicitada` não há limite novo.
 - **Opções para a garantia em execução.** (a) Tirá-la de tudo, como a que está sendo
@@ -376,6 +380,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   cliente que está sendo executado, e o parceiro receberia um aviso sem sentido.
 
 ### 43. Execução externa: o que se pede e o que se abate
+- **Situação.** Substituída pela decisão 76 (execução por inteiro, com retenção e devolução do excedente).
 - **Decisão.** No pedido, nada vai para o ledger: só o estado e o valor mandado vender
   (`valor_em_execucao`), que sai do devido para a rotina não pedir de novo. Na
   confirmação, um lançamento consome da garantia o valor pedido e abate da dívida o
@@ -389,6 +394,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   seria registrar um recebimento que ainda não aconteceu.
 
 ### 44. O pedido sai depois do commit, pelo worker
+- **Situação.** Substituída pela decisão 79 (trilhos no lugar do custodiante externo).
 - **Contexto.** Pedir o gravame dentro da transação da API parece mais rápido.
 - **Decisão.** A API grava a garantia `solicitada` e responde `202`. Quem envia o
   pedido é a rotina de custódia, no worker, alguns segundos depois.
@@ -398,6 +404,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   outbox dos webhooks.
 
 ### 45. Histórico de pedidos e resposta obsoleta
+- **Situação.** Substituída pela decisão 79 (trilhos no lugar do custodiante externo).
 - **Decisão.** Cada pedido fica gravado em `solicitacoes_de_custodia`, mesmo depois de
   encerrado. Uma resposta que chega para um pedido que já não está em aberto (por
   exemplo, uma confirmação depois de a garantia expirar) é reconhecida, registrada como
@@ -407,6 +414,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   custodiante confirmou tarde) não está implementada e está em "Próximos passos".
 
 ### 46. Segurança do callback
+- **Situação.** Segue valendo, agora para as contrapartes simuladas (decisão 79).
 - **Decisão.**
   - Autenticação só pela assinatura HMAC-SHA256 do corpo exato, com timestamp e janela
     de 5 minutos, no mesmo formato dos webhooks de saída.
@@ -421,6 +429,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
     `evento_id`, nenhum efeito.
 
 ### 47. Simulador determinístico e sem estado
+- **Situação.** Substituída pela decisão 79 (trilhos no lugar do custodiante externo).
 - **Decisão.** O destino de cada pedido (confirma, recusa ou nunca responde) sai de um
   SHA-256 da semente do perfil com o id do pedido. A resposta fica pronta quando o
   relógio injetado passa da latência. O `evento_id` também é derivado do pedido e do
@@ -433,6 +442,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   mesma e não é aplicada de novo.
 
 ### 48. Simulador fora de produção
+- **Situação.** Segue valendo, agora para as contrapartes simuladas (decisão 79): o simulador fica desligado em produção.
 - **Decisão.** Sem `CUSTODIA_EXTERNA` explícito, o simulador fica ligado fora de
   produção e desligado em produção. Pedir `simulador` em produção impede a aplicação
   de subir, assim como um segredo de callback curto ou de exemplo.
@@ -440,6 +450,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   parceiros de verdade.
 
 ### 49. Liberação ou execução que falham voltam a `bloqueada`
+- **Situação.** Substituída pela decisão 75 (gravame separado da garantia).
 - **Decisão.** Recusa ou falta de resposta num pedido de liberação ou de execução
   devolve a garantia para `bloqueada`, com o evento `liberacao.falhou` ou
   `execucao.falhou`. Na execução, a rotina do dia seguinte pede de novo.
@@ -477,6 +488,7 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   ativo, sobre o valor estressado.
 
 ### 52. Os quatro cenários
+- **Situação.** Substituída pela decisão 85 (cenários do painel de risco).
 - **Dia normal:** ações −2%, prefixado e IPCA+ −0,5%; 10% dos descobertos não
   reforçam; venda externa leva 2 dias a mais.
 - **Crash da bolsa:** ações −30%, o resto parado; 30% não reforçam.
@@ -701,6 +713,319 @@ mesmo para quem pular o resto: [o que os testes pegaram](#o-que-os-testes-pegara
   empate com bisseção como alternativa; o `ESQUEMA` lido do TOML, e não repetido no
   código.
 
+## Alinhamento regulatório (nov/2026)
+
+Pedido: alinhar o projeto à auditoria regulatória de 20/11/2026, revisada em 22/11/2026.
+O documento ficou fora do repositório. As entidades do grupo a que ele se destina viraram
+papéis genéricos: SCD do grupo, CTVM do grupo, DTVM do grupo e plataforma autorizada da
+Res. Conjunta 12. O plano está em [plano-regulacao.md](plano-regulacao.md).
+
+### 72. Início, modo de trabalho e ponto de partida
+- **Modo.** O pedido foi trabalhar sem perguntas. As perguntas do brainstorming eu mesmo
+  respondi, e cada resposta virou uma decisão desta seção.
+- **Fonte.** Quando o pedido e o documento divergem, vale o documento (item 73).
+- **Branch.** O branch de trabalho foi reiniciado a partir do `main` atualizado, que já
+  tem o modelo econômico mergeado. Foi o mesmo procedimento das fases anteriores.
+- **Partida** (antes de qualquer mudança):
+  - ruff e mypy limpos;
+  - pytest no SQLite: 853 passaram, 14 pulados (os que pedem Postgres);
+  - pytest -m e2e: 26 passaram numa rodada completa. Numa rodada com `-x`, o teste
+    `test_fase_2_execucao_externa` falhou uma vez por conflito de concorrência. Esse
+    fluxo sai nesta entrega.
+
+### 73. Divergências entre o pedido e o documento
+- **Avisos da previdência.** O pedido fala em "avisos aos 45 e aos 10 dias antes da
+  execução". O documento diz "aos 45 dias de atraso e 10 dias antes da liquidação" (Res.
+  Conj. 12, art. 6º, §2º, IV). Seguimos o documento: o aviso sai no 45º dia de atraso e
+  10 dias antes da execução.
+- **Ações, FIIs e ETFs.** O pedido e a seção 4 dizem "desconto de 50% a 70% sobre o
+  valor". O anexo D3 põe 50% a 70% na coluna de ponto de partida do LTV. A referência
+  0,50 de LTV satisfaz as duas leituras (item 83).
+- **Seção 4 e anexo D3.** Numa versão anterior, a seção 4 aceitava ações no cartão "com
+  desconto alto" e o anexo D3 dizia "só empréstimo". A revisão de 22/11/2026 corrigiu a
+  seção 4 e registrou a correção na nota de consistência. Fica só empréstimo.
+- **Baixa em 2 dias úteis.** O pedido chama de "regra da previdência". O documento
+  recomenda adotá-la para todos os ativos, mas não cita o artigo. O prazo entra como
+  recomendação do documento, e o artigo fica como não verificado.
+- **Rotas.** O documento sugere `POST /portabilidades` e `POST /garantias/previdencia`.
+  `/garantias/tesouro` vem do pedido, não do documento. As três ficaram no padrão
+  multi-tenant do projeto, sob `/v1/contas/{conta_id}/...` (item 86).
+- **Bloqueio da previdência.** O pedido cita "arts. 8º e 10" para o bloqueio na
+  formalização. O documento põe o bloqueio no art. 8º e a plataforma no art. 10. Citamos
+  assim.
+- **Liquidação antes dos 90 dias.** O documento acrescenta "salvo pedido do cliente"
+  (art. 12). A liquidação antecipada a pedido do cliente fica em "Próximos passos".
+- **Provisão.** O pedido diz "C2 ou C3 para os demais, conforme o instrumento". O
+  documento põe o CDB na C2 por ser depósito a prazo, qualquer que seja o instrumento
+  (interpretação). A previdência tende à C3, mas isso também é interpretação e não está
+  verificado.
+- **COE.** O documento diz "possível se emitido e custodiado na casa" e "não
+  recomendado". O pedido diz "não recomendado". O protótipo recusa COE em qualquer
+  trilho, com código próprio.
+
+### 74. O ativo `deposito` sai
+- **Decisão.** O tipo `deposito` ("dinheiro em conta" ou "CDB da plataforma") deixa de
+  existir. Na casa, a garantia passa a ser CDB de banco parceiro custodiado na CTVM do
+  grupo, ou cotas de fundo DI da DTVM do grupo.
+- **Por quê.** A SCD não capta do público (Res. CMN 5.050/2022, art. 10, I). "CDB do
+  próprio emissor" só vale se a casa for banco. As garantias `deposito` existentes migram
+  para `cdb` com liquidez diária (item 87).
+
+### 75. Gravame separado da garantia
+- **Decisão.** O gravame é o registro na infraestrutura e tem máquina de estados própria:
+  `solicitado → registrado → liberado_para_excussao → executado → baixado`. Também:
+  `registrado → baixado`, `solicitado → recusado` (só no TD Garantia) e
+  `solicitado → cancelado`. A garantia é a relação de crédito: produto, valor, LTV,
+  instrumento e a dívida que cobre.
+- **Regra central.** O limite (cartão) e o valor de empréstimo só existem com gravame
+  `registrado` e sem baixa pedida. O gravame sempre fica numa infraestrutura (Lei
+  12.810/2013, art. 26), e o projeto simula esse registro.
+- Substitui as decisões 41, 42 e 49.
+
+### 76. Execução por inteiro, com retenção e devolução do excedente
+- **Situação.** A retenção ilustrativa de 10% na previdência foi retirada pela decisão 90: o valor já entra líquido.
+- **Decisão.** Na execução, o ativo é vendido ou resgatado por inteiro. Quem paga o
+  rendimento retém o tributo, o líquido abate a dívida e o excedente volta ao cliente com
+  demonstrativo (Lei 4.728/1965, art. 66-B, §3º). A execução parcial sai.
+- **Retenção** (arredondada para cima):
+  - renda fixa: tabela regressiva sobre o rendimento (Lei 11.033/2004, art. 1º);
+  - LCI e LCA: isentas para PF (art. 3º);
+  - ações, FIIs e ETFs: 0,005% sobre a venda (art. 2º, §1º; FIIs e ETFs não verificados).
+    O IR sobre o ganho o cliente apura;
+  - previdência: a operadora paga líquido de tributos e carregamento (Res. Conj. 12, art.
+    13), com uma retenção ilustrativa de 10%.
+- **O que fica de fora.** O IOF regressivo sobre o rendimento (Decreto 6.306, art. 32)
+  não é calculado, porque o documento não traz a tabela.
+- Substitui a decisão 43.
+
+### 77. Baixa automática e conciliação
+- **Decisão.** Depois da quitação, da liberação ou da execução, a baixa é pedida na hora,
+  com prazo de 2 dias úteis (item 73), e o worker a faz na infraestrutura simulada.
+- **Conciliação.** Uma rotina diária aponta três coisas: gravame sem dívida, dívida sem
+  gravame e baixa atrasada.
+
+### 78. Dias úteis nos prazos regulatórios
+- **Decisão.** Os prazos regulatórios e operacionais dos trilhos e a baixa contam dias
+  úteis, pelo calendário nacional em `app/feriados_nacionais.toml` (2026 e 2027, com a
+  fonte). O atraso do cartão e do empréstimo continua em dias corridos. Prazo fora da
+  cobertura do calendário dá erro, não uma data errada.
+- Substitui em parte a decisão 20: ela continua valendo para o atraso.
+
+### 79. Trilhos no lugar do "custodiante externo"
+- **Decisão.** A fase 2 deixa de simular um pedido de gravame a outro custodiante,
+  serviço que não existe no mercado para CDB, ações e fundos (Manual de Normas da B3,
+  arts. 88 e 94). Entram quatro trilhos de fora, cada um com uma contraparte simulada e
+  determinística:
+  - portabilidade (Res. CVM 210);
+  - transferência de custódia (prática de mercado);
+  - TD Garantia (Portaria MF 1.748/2024);
+  - previdência (Res. Conj. 12).
+- **Recusa.** Só onde a regra permite: no TD Garantia e na transferência. A portabilidade
+  termina por impedimento (art. 19, §1º, com exemplos). A operadora da previdência não
+  pode recusar (art. 18).
+- **O que fica.** O callback assinado, a janela contra replay e a idempotência da fase 2
+  continuam. Os perfis Ágil e Lento saem.
+- Substitui as decisões 39, 44, 45 e 47; a 46 e a 48 continuam, agora para as
+  contrapartes.
+
+### 80. Régua da previdência
+- **Decisão.** O atraso conta em dias corridos: a norma fala em dias, não em dias úteis,
+  e isto é interpretação. O aviso sai no 45º dia de atraso. O segundo aviso sai no 81º dia,
+  10 dias antes da primeira data possível de execução. A execução só acontece com mais de
+  90 dias de atraso e pelo menos 10 dias depois do segundo aviso.
+- **Por quê.** Um salto de 91 dias (sandbox ou rotina parada) não executa sem aviso: os
+  avisos saem no mesmo dia e a execução espera 10 dias. Executar antes dos 90 dias ou sem
+  os avisos é irregular (Res. Conj. 12, arts. 6º e 12).
+
+### 81. Empréstimo com garantia, o mínimo
+- **Decisão.** Empréstimo parcelado pela tabela Price, com taxa ao mês ilustrativa na
+  política. A parcela é arredondada para cima ao centavo, os juros do mês para baixo, e a
+  última parcela fecha o saldo em zero. O saldo devedor na execução não inclui juros
+  futuros.
+- **Prazo do crédito.**
+  - previdência: até o fim da acumulação (art. 6º, §3º);
+  - LCI e LCA: vencimento casado (última parcela até o vencimento do título).
+- **Execução nos demais ativos.** Prazo contratual da política: 30 dias, ilustrativo.
+- **Fora.** Rotativo, refinanciamento e portabilidade de crédito.
+
+### 82. Tesouro no cartão só com chave explícita
+- **Decisão.** O cartão só aceita Tesouro se `ctvm_do_grupo_e_agente_do_td` for
+  verdadeira no catálogo, e o valor padrão é `false`.
+- **Por quê.** O documento não achou confirmação pública de que a CTVM do grupo seja
+  agente de custódia do TD. No empréstimo, o Tesouro entra pelo TD Garantia.
+
+### 83. LTV de partida
+- **Decisão.** Os LTVs da política de referência ficam no início de cada faixa do anexo
+  D3, que é interpretação e hipótese de calibração, não padrão de mercado:
+  - Tesouro Selic: 0,90;
+  - prefixado e IPCA+: 0,85;
+  - CDB: 0,85;
+  - LCI e LCA: 0,80;
+  - fundo DI: 0,85;
+  - ações, FII e ETF: 0,50;
+  - previdência: 0,60.
+- **Prefixado e IPCA+.** Caem com o prazo: 0,85 até 2 anos, 0,80 de 2 a 5 anos e 0,70
+  acima de 5 anos.
+- **Teto.** O catálogo limita o LTV da política ao teto da faixa.
+
+### 84. Cupom do Tesouro fica vinculado
+- **Decisão.** Cupons e amortizações de título gravado vão ao agente do garantido
+  (Regulamento do TD, item 127). No ledger, viram `cupons_vinculados`, que continuam como
+  garantia e são vendidos junto na execução. A reaplicação automática fica para depois.
+
+### 85. Cenários do painel de risco
+- **O que sai.** "Custodiante fora do ar" dependia dos custodiantes Ágil e Lento.
+- **O que entra.**
+  - "Quebra de emissor": o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º,
+    §4º, I), então a garantia daquele emissor vale zero para o credor. É premissa
+    conservadora.
+  - "Agente de custódia perde a condição de participante": no Selic, as contas vão para
+    outro participante em 10 dias úteis (Res. BCB 409/2024), e a execução atrasa nesse
+    intervalo.
+- **Economia.** Os conjuntos Conservador e Base da conta do negócio passam a usar o
+  segundo cenário.
+- Substitui a decisão 52.
+
+### 86. Rotas novas e rotas antigas em 410
+- **Decisão.** Os trilhos ganham rotas próprias sob a conta (item 73). As rotas de
+  custodiante externo respondem `410 Gone` com problem+json que aponta a rota nova.
+  Combinação inválida responde `422`, com código estável e sugestão.
+
+### 87. Migração 0003
+- **Decisão.** Uma revisão nova do Alembic, sem editar as anteriores (a 0003 foi
+  ajustada durante o trabalho porque ainda não tinha ido para o `main`). Tabelas novas:
+  `gravames` (1:1 com `garantias`), `emprestimos` e `parcelas`. Em `garantias` saem
+  `estado`, `origem`, `valor_em_execucao` e `motivo`; `custodiante_id` vira
+  `contraparte_id`; entram `produto` (padrão cartão), `emissor`, `vencimento`,
+  `liquidez_dias`, `plano`, `fim_da_acumulacao`, `aplicado_em`, `emprestimo_id` e as
+  informações da operadora.
+- **Estados.**
+  - `deposito` vira `cdb` com liquidez diária (`liquidez_dias` 0);
+  - interna `pendente` vira `solicitado`; `bloqueada`, `parcialmente_executada` e
+    `gravame_confirmado` viram `registrado`; `liberada` e `executada` viram `baixado`;
+  - interna `liberacao_pendente` vira `registrado` com baixa pedida e recebe o
+    lançamento de compensação da liberação (o valor sai do ledger);
+  - interna `execucao_solicitada` vira `liberado_para_excussao`, e a rotina diária
+    conclui a venda;
+  - externa `pendente`, `solicitada` e `gravame_pendente` viram `cancelado`, com o motivo
+    `trilho_substituido`, e o pedido em aberto da garantia é limpo;
+  - externa `gravame_recusado` vira `recusado` no Tesouro e `cancelado` nos demais;
+    `gravame_expirado` vira `cancelado`; externa `bloqueada` vira `registrado`.
+- **Trilho.** Interna vira a casa. Externa vira o primeiro trilho que não é a casa para o
+  ativo: Tesouro em `td_garantia`; fundo DI, ações, FIIs e ETFs em
+  `portabilidade_cvm_210`; previdência em `res_conjunta_12`; os demais em
+  `transferencia_de_custodia`. Infraestrutura e instrumento vêm do catálogo (o primeiro
+  instrumento). O protocolo é `MIGRADO-0003-<garantia_id>`, e datas ausentes viram
+  `criada_em`.
+- **Solicitações.** `solicitacoes_de_custodia.tipo` `gravame` vira `entrada`; liberação e
+  execução ficam só como histórico.
+- **Políticas dos parceiros.** `deposito` sai (o LTV vai para `cdb` se ele não existir) e
+  os tipos que faltam entram com a referência (CDB 0,85; fundo DI 0,85; Tesouro Selic
+  0,90; Tesouro prefixado e IPCA 0,85; ações, ETFs e FIIs 0,50; LCI e LCA 0,80;
+  previdência 0,60), também na ordem de execução.
+- **Índices e checagens.** Índices parciais `ix_gravames_aguardando_contraparte`,
+  `ix_gravames_baixa_pendente`, `ix_emprestimos_abertos` e `ix_parcelas_em_aberto`. As
+  CHECKs usam só `IN (...)` e `>=`, aceitos pelo SQLite. O `downgrade` reconstrói o estado
+  antigo de forma aproximada e roda em SQLite e Postgres. No SQLite, `alembic/env.py`
+  desliga as chaves estrangeiras durante a migração e faz commit explícito.
+
+### 88. Velocidade acima da revisão por tarefa
+- **Decisão.** Por pedido de velocidade (limite semanal de uso), os blocos restantes foram
+  feitos por um implementador cada, sem revisão por tarefa. Uma revisão final antes do PR.
+- **Custo.** Um erro entre tarefas só aparece no fim. As tarefas 1 a 4 tiveram revisão
+  (sem pontos críticos; um importante, a troca do evento, na decisão 91).
+- **Estado da suíte no caminho.** Entre as tarefas 3 e 8, só unidade e propriedade (e o
+  mypy do domínio) precisavam passar: remover o fluxo externo do domínio quebra a
+  aplicação, a API e o banco, que as tarefas seguintes reescrevem. A suíte inteira voltou
+  ao verde no fim da tarefa 8, e os testes de navegador na 12.
+
+### 89. Base e Conservador com quebra de emissor
+- **Decisão.** Os conjuntos Base e Conservador do modelo econômico usam o cenário
+  `quebra_de_emissor`. Com garantia registrada, o risco que resta é o do emissor.
+- **Motivo.** Com `agente_perde_participacao` (ou com `crash`) a perda condicional saía
+  zero, e usar perda nula no Base esconderia esse risco. O Otimista segue com o crash.
+- **Efeito.** O Base cai para cerca de R$ 4,10 por cliente por mês de margem da plataforma
+  e o do parceiro fica em R$ 4,79 (ilustrativos). Ponto de equilíbrio do Base: 97.561
+  clientes, numa carteira de 100.000, com R$ 10.000 de resultado por mês; perda de R$ 0,32
+  por cliente por mês (0,70% ao ano); a garantia de fora custa R$ 1,73 a mais (2,89
+  contra 4,62). O IOF, cerca de R$ 0,20, fica fora das margens. O Conservador dá −4,05
+  sem equilíbrio; o Otimista, 19,32 e equilíbrio em 15.528.
+
+### 90. Previdência entra líquida e a execução não retém de novo
+- **Decisão.** O valor da garantia de previdência já entra líquido de tributos e de
+  carregamento, pelo que a operadora informa (Res. Conj. 12, art. 7º). Na execução a
+  retenção é zero (regra `ja_liquido` do catálogo), sem os 10% por cima.
+- **Custo.** Se a operadora não informar todo o carregamento, o modelo subestima o que
+  será descontado. Fica registrado como limitação.
+
+### 91. `garantia.bloqueada` virou `gravame.registrado`
+- **Decisão.** O evento que dizia que a garantia estava "bloqueada" foi trocado por
+  `gravame.registrado`, o vocabulário da auditoria: o que vale é o registro na
+  infraestrutura. O parceiro que escutava o evento antigo precisa mudar a assinatura.
+- **Origem.** A revisão da tarefa 4 apontou a remoção como ponto importante; foi aceita
+  e documentada no README, na seção "Mudanças".
+
+### 92. Teste de expressões e de nomes proibidos, por hash
+- **Decisão.** `tests/unidade/test_expressoes_proibidas.py` procura, sem diferenciar
+  maiúsculas e com fronteira de palavra, as expressões a evitar em `app/api/estatico/`,
+  no README e em `docs/` (fora deste arquivo e do bloco de vocabulário de
+  `docs/regulacao.md`). Os planos antigos foram reescritos onde citavam as expressões.
+- **Nomes.** O teste que confere que nenhum arquivo versionado traz os nomes de empresas
+  que não podem aparecer guarda só o SHA-256 de cada palavra ou par de palavras, em
+  minúsculas, nunca os nomes. Custo: o teste é menos legível; ganho: ele próprio não
+  vira a fonte do vazamento.
+
+### 93. Decisões de percurso das tarefas 3 a 12
+- **Previdência.** A conclusão da entrada só registra as informações da operadora. O
+  gravame nasce na formalização do empréstimo (art. 8º).
+- **Prazo.** `prazo_ate` é hoje mais os dias úteis do catálogo; `prazo_da_baixa` sai do
+  calendário. Prazo fora do calendário dá erro `data_fora_da_cobertura`.
+- **Portabilidade.** Só aceita `impedimento`; as demais respostas negativas são `recusada`
+  (CVM 210, art. 19). Resposta cruzada entre trilhos é 422.
+- **Execução.** O domínio vende ao valor de mercado dentro da execução; o `executar` da
+  porta de infraestrutura existe e tem teste, mas a aplicação não o chama.
+- **Empréstimo.** Antes de contratar, a conta recusa bloqueio, fatura do cartão em
+  atraso e empréstimo em atraso, e confere o teto do parceiro com a carteira dele (sem a
+  carteira, falha fechada). Os juros do saldo devedor correm pro rata, arredondados para
+  cima. A régua da previdência executa a partir do 91º dia, com avisos aos 45 dias e 10
+  dias antes.
+- **Mensagens e eventos.** Eventos de recusa, cancelamento e conclusão saem com o estado
+  novo. O registro vem antes do evento de conclusão. O motivo da recusa pelo sandbox é
+  `recusa_pelo_sandbox`.
+- **Painel.** `simular_painel` exige o catálogo. `custodiante_fora_do_ar` saiu, e entraram
+  `quebra_de_emissor` e `agente_perde_participacao`. A carteira sintética é 30% de
+  contas de empréstimo.
+- **Negócio.** Entra o IOF do crédito, repassado ao governo e fora das margens, e três
+  notas (IR, capital e teto da Lei 14.690, art. 28). O parcelado não tem linha própria.
+- **Páginas.** A `/regulacao` e o `docs/regulacao.md` são gerados do mesmo catálogo.
+
+### 94. Primeiro vencimento do empréstimo: de amanhã a 60 dias
+O juro do 1º período é de um mês cheio. Sem teto, `primeiro_vencimento` em 5 anos cobrava
+um mês de juros por 5 anos de crédito, e o atraso só contava depois dele. Agora a data
+precisa ficar entre amanhã e 60 dias corridos (422 `primeiro_vencimento_fora_do_prazo`),
+e o esquema da API limita o ano (2000 a 2100), de modo que data extrema dá 422 em vez de
+500. Mantém-se o mês cheio de juros na 1ª parcela, já que o período é limitado.
+
+### 95. Infraestrutura de registro simulada também é recusada em produção
+`INFRAESTRUTURA_DE_REGISTRO=simulada|desligada`, com o mesmo critério das contrapartes:
+sem valor explícito, fora de produção é `simulada` e em produção é `desligada`; `simulada`
+com `AMBIENTE=producao` impede a subida. Desligada, registrar, executar e baixar respondem
+503 `infraestrutura_indisponivel`, em vez de devolver um protocolo `SIM-...` e liberar
+limite sem registro algum.
+
+### 96. Downgrade da 0003 deixa a base legível para o código da 0002
+Remove das políticas os tipos novos e devolve `deposito` (ao lado do `cdb`, com o mesmo
+LTV; a 0002 aceita os dois), apaga os lançamentos `lan_mig0003_*` (no Postgres, com os
+gatilhos do ledger desligados só durante a limpeza), volta os estados e `cdb` com liquidez
+0 volta a `deposito`. Limite conhecido: um CDB D+0 criado depois da 0003 também volta como
+depósito. O downgrade recusa (`RuntimeError`) se houver empréstimo, garantia de tipo novo
+ou partida em conta contábil nova, porque o código antigo não os lê.
+
+### 97. A 0003 só acrescenta tipos que a 0002 não conhecia
+`lci`, `lca`, `fii`, `etf` e `previdencia` entram na política de cada parceiro; `cdb`
+entra só se o parceiro tinha `deposito` e não tinha `cdb`. Tipo que o parceiro tinha
+tirado (ações, fundo DI, Tesouro) não volta: a decisão de risco dele é preservada.
+
 <a id="revisao-final"></a>
 ## Revisão final
 
@@ -793,7 +1118,7 @@ fora do repositório)
   q nem `Vary` e duplicações na rota.
 - **`pr-review-toolkit:review-pr`** (falhas silenciosas, testes, tipos e comentários,
   feito sem subagentes): o TOML quebrado só aparecia na primeira chamada, como 500;
-  exposição zero virava perda zero e erro interno virava 422; ramos de erro do
+  exposição zero virava perda calculada como nula e erro interno virava 422; ramos de erro do
   carregador sem teste (83%); testes de tempo frágeis; `None` com três sentidos no
   empate e no equilíbrio.
 - **`dimensional-analysis`**: a perda anual, que é soma de eventos, era convertida ao
