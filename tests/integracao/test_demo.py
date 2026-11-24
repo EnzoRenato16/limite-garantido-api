@@ -69,6 +69,15 @@ def test_pagina_e_servida_com_politica_de_seguranca_restrita(cliente: TestClient
         assert cliente.get(f"/demo/estatico/{arquivo}").status_code == 200
 
 
+def test_arquivos_estaticos_sao_revalidados_a_cada_carga(cliente: TestClient) -> None:
+    # Depois de uma atualização, o navegador não pode juntar HTML novo com JS antigo.
+    for arquivo in ("demo.js", "risco.js", "regulacao.js", "negocio.js", "demo.css"):
+        resposta = cliente.get(f"/demo/estatico/{arquivo}")
+        assert resposta.status_code == 200
+        assert resposta.headers["cache-control"] == "no-cache"
+        assert "etag" in resposta.headers
+
+
 def test_config_entrega_a_chave_do_parceiro_de_exemplo_e_ela_funciona(
     cliente: TestClient,
 ) -> None:

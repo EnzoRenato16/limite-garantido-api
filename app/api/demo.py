@@ -23,6 +23,7 @@ from fastapi import APIRouter, FastAPI, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.types import Message, Receive, Scope, Send
 
 from app.api.erros import ErroDeApi
 from app.api.recursos import Recursos
@@ -41,6 +42,29 @@ POLITICA_DE_SEGURANCA = (
     "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
+
+
+class _EstaticoSempreRevalidado(StaticFiles):
+    """Arquivos da demo com `Cache-Control: no-cache`.
+
+    Sem esse cabeçalho, o navegador reaproveita o JS de uma versão anterior junto com o
+    HTML novo depois de uma atualização, e a página quebra sem erro visível. Com
+    `no-cache`, ele confere o ETag a cada carga e só baixa de novo o que mudou.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def enviar(mensagem: Message) -> None:
+            if mensagem["type"] == "http.response.start":
+                cabecalhos = [
+                    (nome, valor)
+                    for nome, valor in mensagem.get("headers", [])
+                    if nome.lower() != b"cache-control"
+                ]
+                cabecalhos.append((b"cache-control", b"no-cache"))
+                mensagem = {**mensagem, "headers": cabecalhos}
+            await send(mensagem)
+
+        await super().__call__(scope, receive, enviar)
 
 
 class ConfiguracaoDaDemo(BaseModel):
@@ -194,5 +218,5 @@ def montar_demo(app: FastAPI, recursos: Recursos) -> None:
         return caixa.listar(depois_de, conta_id)
 
     app.include_router(rotas)
-    app.mount("/demo/estatico", StaticFiles(directory=PASTA), name="demo-estatico")
+    app.mount("/demo/estatico", _EstaticoSempreRevalidado(directory=PASTA), name="demo-estatico")
     app.state.caixa_da_demo = caixa
