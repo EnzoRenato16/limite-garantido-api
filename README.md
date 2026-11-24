@@ -107,8 +107,18 @@ stateDiagram-v2
 | Os webhooks para o parceiro | Os botões de simulador do `/demo` (sandbox) |
 | O catálogo regulatório, a matriz e as páginas gerados dele | A carteira de 1.000 clientes do `/risco` e as premissas dos cenários |
 
+![A demonstração com uma portabilidade de ações pedida e ainda sem limite](docs/img/trilhos-1-portabilidade-solicitada.png)
+
+A régua da previdência (avisos de 45 e de 10 dias, execução só após 90 dias de atraso):
+
+![A régua da previdência na demonstração](docs/img/trilhos-4-previdencia-avisos.png)
+
 Onde entrariam os trilhos reais está em
 [docs/arquitetura.md](docs/arquitetura.md#onde-entraria-o-trilho-real).
+
+A matriz regulatória, ativo por ativo, com a categoria de cada afirmação:
+
+![A página /regulacao](docs/img/regulacao.png)
 
 ## Empréstimo com garantia
 
@@ -131,6 +141,8 @@ conglomerado contra o teto do FGC, o haircut por classe e prazo e a carteira de 
 execução.** A carteira é gerada da mesma semente, e as premissas são ilustrativas.
 
 ![O painel de risco no cenário de quebra de emissor](docs/img/risco-quebra_de_emissor.png)
+
+![O painel de risco no crash da bolsa](docs/img/risco-crash_da_bolsa.png)
 
 ## Rodando em 3 comandos
 
@@ -216,6 +228,8 @@ conta, as premissas com faixa e origem e as fontes estão em
 [docs/economia.md](docs/economia.md).
 
 ![A página /negocio no conjunto base](docs/img/negocio-base.png)
+
+![A página /negocio no celular](docs/img/negocio-celular.png)
 
 O conjunto conservador mostra margem negativa e nenhum ponto de equilíbrio, de propósito:
 com premissas ruins, o negócio não se sustenta.
