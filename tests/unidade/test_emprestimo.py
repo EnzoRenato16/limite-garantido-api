@@ -90,6 +90,7 @@ def _contratar(
     valor: str = "5000.00",
     parcelas: int = 12,
     protocolos: dict[str, str] | None = None,
+    primeiro: date = PRIMEIRO,
 ):  # type: ignore[no-untyped-def]
     return conta.contratar_emprestimo(
         valor=reais(valor),
@@ -97,7 +98,7 @@ def _contratar(
         garantia_ids=[g.id for g in garantias],
         politica=POL,
         catalogo=CAT,
-        primeiro_vencimento=PRIMEIRO,
+        primeiro_vencimento=primeiro,
         agora=AGORA,
         hoje=HOJE,
         protocolos_da_previdencia=protocolos or {},
@@ -166,6 +167,23 @@ def test_cronograma_sem_juros_e_entradas_invalidas() -> None:
 
 
 # ------------------------------------------------------------------- contratação
+@pytest.mark.parametrize("dias", [-1, 0, 61, 5 * 365])
+def test_primeiro_vencimento_fora_de_amanha_a_60_dias_e_recusado(dias: int) -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    with pytest.raises(ErroDominio) as erro:
+        _contratar(conta, [cdb], primeiro=HOJE + timedelta(days=dias))
+    assert erro.value.codigo == "primeiro_vencimento_fora_do_prazo"
+
+
+@pytest.mark.parametrize("dias", [1, 60])
+def test_primeiro_vencimento_nas_bordas_da_janela_e_aceito(dias: int) -> None:
+    conta = nova_conta()
+    cdb = _ativo(conta)
+    emprestimo = _contratar(conta, [cdb], primeiro=HOJE + timedelta(days=dias))
+    assert emprestimo.parcelas[0].vencimento == HOJE + timedelta(days=dias)
+
+
 def test_contratar_desembolsa_e_amarra_as_garantias() -> None:
     conta = nova_conta()
     cdb = _ativo(conta)

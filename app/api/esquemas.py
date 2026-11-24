@@ -657,7 +657,12 @@ class NovoEmprestimo(Esquema):
         "ainda `solicitado`, com as informações da operadora, é formalizada neste passo.",
     )
     primeiro_vencimento: date | None = Field(
-        default=None, description="Sem ele, 30 dias corridos a partir de hoje."
+        default=None,
+        ge=date(2000, 1, 1),
+        le=date(2100, 12, 31),
+        description="Sem ele, 30 dias corridos a partir de hoje. Entre amanhã e 60 dias "
+        "corridos; a data exata é conferida contra o relógio da casa (422 "
+        "`primeiro_vencimento_fora_do_prazo`).",
     )
 
     model_config = ConfigDict(

@@ -198,6 +198,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "A política de risco tem valores fora da regra.",
     ),
     "vencimento_invalido": (422, "Vencimento inválido", "O vencimento não pode ficar no passado."),
+    "primeiro_vencimento_fora_do_prazo": (
+        422,
+        "Primeiro vencimento fora do prazo",
+        "O primeiro vencimento precisa ficar entre amanhã e 60 dias corridos a partir de hoje.",
+    ),
     "pagamento_excede_divida": (
         422,
         "Pagamento maior que a dívida",

@@ -39,6 +39,7 @@ from app.dominio.erros import (
     SemSaldoParaFaturar,
     TransicaoInvalida,
     ValorInvalido,
+    PrimeiroVencimentoForaDoPrazo,
     VencimentoInvalido,
 )
 from app.dominio.eventos import EventoDominio, TipoEvento
@@ -68,6 +69,8 @@ from app.dominio.tributos import ResultadoDaExecucao, retencao_na_execucao
 # liquidação. {dia_corrido}
 _AVISO_INICIAL = 45
 _AVISO_FINAL = 10
+# Janela do primeiro vencimento do empréstimo: o juro do 1º período é de um mês cheio.
+PRAZO_MAXIMO_DO_PRIMEIRO_VENCIMENTO_EM_DIAS = 60
 
 TIPOS_DO_TESOURO = frozenset(
     {TipoAtivo.TESOURO_SELIC, TipoAtivo.TESOURO_PREFIXADO, TipoAtivo.TESOURO_IPCA}
@@ -1168,8 +1171,15 @@ class Conta:
         if not valor.positivo:
             raise ValorInvalido("O valor do empréstimo precisa ser positivo")
         self._exigir_conta_apta_para_emprestimo(valor, politica, hoje, carteira_do_parceiro)
-        if primeiro_vencimento <= hoje:
-            raise VencimentoInvalido("O primeiro vencimento precisa ficar no futuro")
+        if (
+            not hoje
+            < primeiro_vencimento
+            <= hoje + timedelta(days=PRAZO_MAXIMO_DO_PRIMEIRO_VENCIMENTO_EM_DIAS)
+        ):
+            raise PrimeiroVencimentoForaDoPrazo(
+                "O primeiro vencimento precisa ficar entre amanhã e "
+                f"{PRAZO_MAXIMO_DO_PRIMEIRO_VENCIMENTO_EM_DIAS} dias corridos a partir de hoje"
+            )
         if not ids or len(set(ids)) != len(ids):
             raise ValorInvalido("Informe uma ou mais garantias, sem repetir")
         cronograma = cronograma_price(

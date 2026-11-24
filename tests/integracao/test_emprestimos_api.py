@@ -44,6 +44,33 @@ def test_contrata_com_cronograma_e_marca_a_garantia(parceiro: Parceiro) -> None:
     assert liberar.json()["codigo"] == "garantia_cobrindo_divida"
 
 
+def test_primeiro_vencimento_fora_da_janela_e_422(parceiro: Parceiro) -> None:
+    conta = parceiro.abrir_conta()
+    garantia = _cdb_para_emprestimo(parceiro, conta)
+    for data in ("2031-03-02", "9999-12-31"):
+        resposta = parceiro.post(
+            f"/v1/contas/{conta}/emprestimos",
+            {
+                "valor": "5000.00",
+                "parcelas": 6,
+                "garantia_ids": [garantia],
+                "primeiro_vencimento": data,
+            },
+        )
+        assert resposta.status_code == 422, (data, resposta.text)
+    # A data de hoje do sandbox é 2026-03-02: dentro da janela passa.
+    resposta = parceiro.post(
+        f"/v1/contas/{conta}/emprestimos",
+        {
+            "valor": "5000.00",
+            "parcelas": 6,
+            "garantia_ids": [garantia],
+            "primeiro_vencimento": "2026-04-30",
+        },
+    )
+    assert resposta.status_code == 201, resposta.text
+
+
 def test_valor_acima_do_que_a_garantia_sustenta_e_recusado(parceiro: Parceiro) -> None:
     conta = parceiro.abrir_conta()
     garantia = _cdb_para_emprestimo(parceiro, conta, "1000.00")  # sustenta 850,00

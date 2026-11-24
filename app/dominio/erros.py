@@ -60,6 +60,10 @@ class VencimentoInvalido(ErroDominio):
     codigo = "vencimento_invalido"
 
 
+class PrimeiroVencimentoForaDoPrazo(ErroDominio):
+    codigo = "primeiro_vencimento_fora_do_prazo"
+
+
 class PagamentoExcedeDivida(ErroDominio):
     codigo = "pagamento_excede_divida"
 
