@@ -74,7 +74,7 @@ const DIAS_PARA_EXECUCAO_PADRAO = 7;
 const INTERVALO_DOS_WEBHOOKS_EM_MS = 700;
 const INTERVALO_DE_RECONSULTA_EM_MS = 1500;
 const ANOS_DE_ACUMULACAO = 14;
-const GUARDADO = "lg-demo-conta";
+const CHAVE_DA_CONTA = "lg-demo-conta";
 const MENSAGENS = [
   "resultado-garantia", "resultado-compra", "resultado-queda", "resultado-fatura",
   "resultado-fora", "resultado-emprestimo", "resultado-relogio",
@@ -1121,7 +1121,7 @@ async function abrirConta() {
   if (!resposta.ok) throw new Error(erroDe(resposta));
   estado.contaId = resposta.dados.id;
   estado.demonstrativos = {};
-  sessionStorage.setItem(GUARDADO, estado.contaId);
+  sessionStorage.setItem(CHAVE_DA_CONTA, estado.contaId);
 }
 
 async function recomecar() {
@@ -1130,7 +1130,7 @@ async function recomecar() {
   document.body.inert = true;
   document.body.dataset.pronta = "false";
   try {
-    sessionStorage.removeItem(GUARDADO);
+    sessionStorage.removeItem(CHAVE_DA_CONTA);
     $("eventos").replaceChildren();
     $("vazio").hidden = false;
     for (const id of MENSAGENS) mostrar(id, "");
@@ -1203,7 +1203,7 @@ async function iniciar() {
     dia.hidden = indice >= diasParaExecucao();
   });
 
-  estado.contaId = sessionStorage.getItem(GUARDADO);
+  estado.contaId = sessionStorage.getItem(CHAVE_DA_CONTA);
   if (estado.contaId && !(await chamar("GET", `/contas/${estado.contaId}`)).ok) estado.contaId = null;
   if (!estado.contaId) await abrirConta();
   $("conta-atual").textContent = estado.contaId;

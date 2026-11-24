@@ -146,7 +146,7 @@ da fase 2.
   empregador do autor, em nenhum arquivo nem mensagem de commit. O PDF não entra no
   repositório.
 - Vocabulário:
-  - custodiado, custodiar, custodiante (nunca "guardado" ou "guardar");
+  - custodiado, custodiar, custodiante (nunca o verbo que sugere posse do ativo);
   - "gravame registrado na B3 ou no Selic";
   - "a registradora ou o depositário central registra; o custodiante comanda";
   - agente de custódia (no Tesouro); entidade operadora (Res. Conj. 12); entidade
@@ -675,7 +675,7 @@ da fase 2.
     - cada conta cai na carteira de menor provisão entre as garantias (art. 81, §1º);
     - conta sem garantia cai na C5;
     - piso do 1º mês: C2 30%, C3 45%, C5 50%.
-  - A resposta tem `aviso_sintetico` e nenhum texto com "perda zero".
+  - A resposta tem `aviso_sintetico` e nenhum texto que prometa perda nula.
 - [ ] **Passo 2:** implementar. Gerar a carteira com prazo, emissor e produto por ativo.
   Faixa de valor nova de R$ 100.000 a R$ 400.000, com peso pequeno, para a concentração
   aparecer. O painel mostra o haircut por classe e prazo, a concentração, a provisão, a
@@ -791,7 +791,7 @@ da fase 2.
   - `docs/mercado.md`: seções 6 e 12, com fonte e categoria;
   - `docs/post-linkedin.md`: seção 10;
   - `docs/roteiro-video.md`: até 3 minutos;
-  - `docs/DECISOES.md`, incluindo a entrada de economia que fala de perda zero
+  - `docs/DECISOES.md`, incluindo a entrada de economia que promete perda nula
     (reescrever sem a expressão);
   - o "correspondente" de `app/api/rotas/risco.py`: é adjetivo, mas trocar para evitar
     ambiguidade;
@@ -800,9 +800,8 @@ da fase 2.
 - Imagens: `docs/img/` (demo, regulação, risco, negócio, celular).
 
 - [ ] **Passo 1: teste que falha.** Procura, sem diferenciar maiúsculas e com fronteira
-  de palavra, as expressões "guardado", "guardar", "perda zero", "risco zero", "elimina o
-  risco", "qualquer investimento", "Drex em 2026", "bloqueio no app", "a B3 registra" e
-  "nenhuma norma". O alcance é `app/api/estatico/`, `README.md`, `docs/` (fora
+  de palavra, as expressões listadas no próprio teste (as da tabela de termos a evitar e as
+  promessas de ausência de risco, de perda ou de norma). O alcance é `app/api/estatico/`, `README.md`, `docs/` (fora
   `DECISOES.md` e o bloco de vocabulário de `docs/regulacao.md`) e o post. Também confere
   que nenhum arquivo do repositório contém os nomes proibidos da lista do brief.
 - [ ] **Passo 2:** reescrever os textos até o teste passar. As afirmações vão com norma e

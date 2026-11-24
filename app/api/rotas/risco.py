@@ -50,7 +50,7 @@ def simular_stress(
     - quantas contas entrariam em chamada de margem;
     - de quanto seria o déficit de margem;
     - quanto da dívida ficaria descoberto mesmo vendendo toda a garantia ao preço
-      estressado, e a perda esperada correspondente.
+      estressado, e a perda esperada associada.
 
     Exemplo: `{"choques": {"acoes": "-0.30", "tesouro_prefixado": "-0.10"}}`.
     """

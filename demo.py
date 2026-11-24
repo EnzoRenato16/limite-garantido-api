@@ -117,7 +117,7 @@ def contar_a_historia(
 
     capitulo(
         1,
-        "O cliente guarda R$ 5.000 em CDB",
+        "O cliente aplica R$ 5.000 em CDB custodiado na casa",
         "O investimento continua rendendo e fica bloqueado como garantia.",
     )
     garantia = parceiro.post(

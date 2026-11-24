@@ -168,7 +168,7 @@ o risco do emissor, o de preço, o de liquidez e o de execução.
 aponta como remanescente mesmo com garantia, e o único cenário em que a garantia deixa de
 cobrir: o CDB, a LCI e a LCA do conglomerado B valem zero para o credor. É uma premissa
 conservadora: o FGC paga o titular, não o credor (Regulamento do FGC, art. 2º, §4º, I).
-Usar um cenário de perda zero no Base esconderia esse risco. O Otimista segue com o crash
+Usar um cenário de perda nula no Base esconderia esse risco. O Otimista segue com o crash
 da bolsa, de propósito: é o conjunto que mostra o quanto a garantia protege. O atraso do
 agente de custódia (10 dias úteis, cerca de 14 corridos; Res. BCB 409/2024; Regulamento do
 Selic, art. 15, §1º) continua disponível como cenário no painel.

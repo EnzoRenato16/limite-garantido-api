@@ -1,8 +1,49 @@
 # Arquitetura
 
-Este documento mostra como o código está organizado e o que acontece, passo a passo, nas
-quatro operações que mais importam: bloquear uma garantia, autorizar uma compra, executar
-a garantia e entregar um webhook.
+Este documento mostra os papéis, como o código está organizado e o que acontece, passo a
+passo, nas operações que mais importam: registrar o gravame, autorizar uma compra,
+executar a garantia, entregar um webhook e trazer um ativo de fora.
+
+> O projeto **simula** o registro na B3 e no Selic, a plataforma da Res. Conjunta 12 e
+> as contrapartes. Nenhuma integração real existe.
+
+## Papéis
+
+| Papel | O que faz | Observação |
+|---|---|---|
+| Entidade tomadora de BaaS | A fintech parceira: só interface e distribuição | Não concede o crédito nem emite o cartão (Res. Conjunta 16/2025, art. 6º, I) |
+| Plataforma BaaS (esta API) | Presta o serviço de garantia ao parceiro | Responde pelos serviços que presta (Res. Conjunta 16/2025, arts. 9º, 10 e 16) |
+| SCD do grupo | Concede o crédito, emite o cartão e é a beneficiária do gravame | Papel genérico; não nomeia empresa |
+| CTVM do grupo | Custodia o ativo e comanda o gravame | O custodiante comanda; a registradora registra |
+| DTVM do grupo | Administra os fundos DI | |
+| Registradora ou depositário central | Registra o gravame (B3 ou Selic) | Lei 12.810/2013, art. 26. **Simulado aqui** |
+| Agente de custódia | Custodia o Tesouro Direto do cliente (TD Garantia) | Simulado |
+| Entidade operadora | Seguradora, EAPC ou sociedade de capitalização da previdência | Simulada; troca informações pela plataforma autorizada da Res. Conjunta 12 |
+
+## Os trilhos
+
+Cada tipo de ativo chega à garantia por um caminho. A regra de qual caminho serve a qual
+ativo e produto mora no catálogo (`app/regulacao.toml`), e o domínio só pergunta a ele.
+
+```mermaid
+flowchart LR
+    CLI["Cliente"] --> PAR["Parceiro<br/>(tomadora de BaaS)"]
+    PAR --> API["API da plataforma"]
+    API --> CAT{{"Catálogo regulatório<br/>ativo · produto · trilho"}}
+    CAT -- "custodiado na casa" --> CASA["Trilho casa<br/>gravame no mesmo dia"]
+    CAT -- "ações, FIIs, ETFs, fundos" --> POR["Portabilidade<br/>Res. CVM 210"]
+    CAT -- "CDB, LCI, LCA" --> TRA["Transferência de custódia<br/>(fora da CVM 210)"]
+    CAT -- "Tesouro Direto" --> TD["TD Garantia<br/>agente de custódia"]
+    CAT -- "PGBL, VGBL" --> RC["Res. Conjunta 12<br/>entidade operadora"]
+    CASA --> INF["Infraestrutura simulada<br/>(B3 ou Selic)"]
+    POR --> INF
+    TRA --> INF
+    TD --> INF
+    RC --> PLA["Plataforma autorizada<br/>(simulada)"]
+    INF --> GRA["Gravame registrado"]
+    PLA --> GRA
+    GRA --> LIM["Cartão: limite<br/>Empréstimo: crédito"]
+```
 
 ## Camadas
 
@@ -12,20 +53,23 @@ flowchart TB
         rotas["Rotas FastAPI<br/>autenticação, RFC 7807, idempotência,<br/>paginação, rate limit"]
     end
     subgraph APLICACAO["Aplicação · app/aplicacao"]
-        casos["Casos de uso<br/>contas, parceiros, risco"]
-        portas["Portas<br/>Relógio, Custodiante, ProvedorDePrecos,<br/>Repositórios"]
+        casos["Casos de uso<br/>contas, trilhos, empréstimos,<br/>conciliação, parceiros, risco"]
+        portas["Portas<br/>Relógio, Contraparte, InfraestruturaDeRegistro,<br/>ProvedorDePrecos, Repositórios"]
     end
     subgraph DOMINIO["Domínio · app/dominio (só biblioteca padrão)"]
         conta["Conta (agregado)"]
-        garantia["Garantia<br/>(máquina de estados)"]
+        garantia["Garantia"]
+        gravame["Gravame<br/>(máquina de estados)"]
+        emprestimo["Empréstimo<br/>e parcelas"]
         ledger["Ledger<br/>(partidas dobradas)"]
         politica["PoliticaRisco"]
         dinheiro["Dinheiro<br/>(centavos inteiros)"]
     end
     subgraph INFRA["Infraestrutura · app/infra"]
         sql["Repositórios SQL<br/>SQLAlchemy 2 + Alembic"]
-        worker["Worker de webhooks"]
-        rotinas["Rotinas de risco"]
+        worker["Worker: webhooks, contrapartes,<br/>baixas"]
+        rotinas["Rotinas: marcação, virada do dia,<br/>conciliação"]
+        simulados["Contrapartes e infraestrutura<br/>simuladas"]
         precos["Provedor de preços fake"]
     end
     BD[("Postgres")]
@@ -34,9 +78,10 @@ flowchart TB
     rotas --> casos
     casos --> conta
     casos --> portas
-    conta --> garantia & ledger & politica & dinheiro
+    conta --> garantia & gravame & emprestimo & ledger & politica & dinheiro
     sql -. implementa .-> portas
     precos -. implementa .-> portas
+    simulados -. implementa .-> portas
     sql --> BD
     worker --> BD
     rotinas --> casos
@@ -50,10 +95,10 @@ máquina de estados do Hypothesis consegue sortear milhares de sequências de op
 
 | Camada | O que mora ali | O que não pode fazer |
 |---|---|---|
-| `app/dominio` | `Conta`, `Garantia`, `Lancamento`, `PoliticaRisco`, `Dinheiro`, simulador de stress, modelo econômico (`economia/`, ver [economia.md](economia.md)) | Importar qualquer coisa fora da biblioteca padrão |
+| `app/dominio` | `Conta`, `Garantia`, `Gravame`, `Emprestimo`, `Lancamento`, `PoliticaRisco`, `Dinheiro`, o catálogo regulatório, simulador de stress, modelo econômico (`economia/`, ver [economia.md](economia.md)) | Importar qualquer coisa fora da biblioteca padrão |
 | `app/aplicacao` | Casos de uso e as portas (interfaces) de que eles precisam | Falar SQL ou HTTP |
-| `app/infra` | SQLAlchemy, Alembic, worker, rotinas, logs, métricas, provedor de preços | Decidir regra de crédito |
-| `app/api` | Rotas, esquemas, erros, idempotência, página `/demo` | Ter regra de negócio |
+| `app/infra` | SQLAlchemy, Alembic, worker, rotinas, logs, métricas, provedor de preços, contrapartes e infraestrutura simuladas | Decidir regra de crédito |
+| `app/api` | Rotas, esquemas, erros, idempotência, páginas `/demo`, `/regulacao`, `/risco` e `/negocio` | Ter regra de negócio |
 
 ## O dinheiro: ledger de partidas dobradas
 
@@ -63,30 +108,37 @@ somam o mesmo valor.
 
 | Conta contábil | Natureza | O que representa |
 |---|---|---|
-| `garantias_custodiadas` | devedora | Valor de mercado dos investimentos bloqueados |
+| `garantias_custodiadas` | devedora | Valor de mercado dos ativos com gravame registrado |
+| `cupons_vinculados` | devedora | Cupom e amortização de Tesouro com gravame, vinculados à garantia |
+| `excedente_a_devolver` | credora | Sobra da execução que volta ao cliente |
+| `emprestimos_a_receber` | devedora | Saldo do empréstimo com garantia |
+| `desembolsos_a_liquidar` | credora | Desembolso do empréstimo ainda não pago ao cliente |
+| `receita_de_juros` | credora | Juros do empréstimo recebidos |
 | `garantias_a_devolver` | credora | Contrapartida: a garantia é do cliente e volta para ele |
 | `recebiveis_a_faturar` | devedora | Compras aprovadas que ainda não entraram em fatura |
 | `recebiveis_faturados` | devedora | Fatura fechada e ainda não paga |
 | `liquidacao_a_pagar` | credora | O que a plataforma deve à rede pelas compras aprovadas |
 | `caixa_recebimentos` | devedora | O que entrou: pagamentos e execução de garantia |
 
-As duas primeiras são contas de compensação: registram a garantia recebida sem misturar
-com o dinheiro da operação de crédito.
+As duas primeiras (e `cupons_vinculados`) são contas de compensação: registram a garantia
+recebida sem misturar com o dinheiro da operação de crédito.
 
 | Operação | Débito | Crédito |
 |---|---|---|
-| Bloqueio de garantia | `garantias_custodiadas` | `garantias_a_devolver` |
+| Gravame registrado | `garantias_custodiadas` | `garantias_a_devolver` |
 | Marcação a mercado (queda) | `garantias_a_devolver` | `garantias_custodiadas` |
 | Compra aprovada | `recebiveis_a_faturar` | `liquidacao_a_pagar` |
 | Fechamento de fatura | `recebiveis_faturados` | `recebiveis_a_faturar` |
 | Pagamento | `caixa_recebimentos` | `recebiveis_faturados` (e o que sobrar em `recebiveis_a_faturar`) |
-| Execução | `garantias_a_devolver` e `caixa_recebimentos` | `garantias_custodiadas` e `recebiveis_faturados` |
-| Liberação | `garantias_a_devolver` | `garantias_custodiadas` |
+| Execução (por inteiro) | `garantias_a_devolver` e `caixa_recebimentos` | `garantias_custodiadas`, `recebiveis_faturados` e `excedente_a_devolver` (a sobra) |
+| Devolução do excedente | `excedente_a_devolver` | `caixa_recebimentos` |
+| Baixa pedida (liberação) | `garantias_a_devolver` | `garantias_custodiadas` |
+| Empréstimo contratado | `emprestimos_a_receber` | `desembolsos_a_liquidar` |
 
 A partir daí, tudo é leitura:
 
 - **dívida** = saldo de `recebiveis_a_faturar` + `recebiveis_faturados`;
-- **valor de uma garantia** = saldo de `garantias_custodiadas` daquela garantia;
+- **valor de uma garantia** = saldo de `garantias_custodiadas` (mais `cupons_vinculados`) daquela garantia;
 - **limite** = soma de `valor de mercado × LTV` de cada garantia ativa, cada parcela
   arredondada para baixo, limitada pelo teto por cliente;
 - **limite disponível** = `max(0, limite − dívida)`, e zero se a conta estiver bloqueada.
@@ -98,69 +150,59 @@ teste de propriedade sorteia sequências de operações e confere que a soma é 
 
 ## Estados
 
-### Garantia
+### Gravame
+
+O gravame é o registro na infraestrutura (a registradora ou o depositário central) e tem
+a sua própria máquina de estados. A garantia é a relação de crédito: produto, valor, LTV,
+instrumento e a dívida que cobre. O limite do cartão e o valor do empréstimo só existem
+com o gravame `registrado` e sem baixa pedida (decisão 75).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pendente: pedido registrado
-    pendente --> bloqueada: custódia confirma o gravame
-    bloqueada --> liberada: cliente resgata
-    bloqueada --> parcialmente_executada: execução vende uma parte
-    bloqueada --> executada: execução vende tudo
-    parcialmente_executada --> parcialmente_executada: nova execução parcial
-    parcialmente_executada --> liberada: cliente resgata a sobra
-    parcialmente_executada --> executada: execução vende o resto
-    liberada --> [*]
-    executada --> [*]
+    [*] --> solicitado: pedido gravado
+    solicitado --> registrado: infraestrutura registra, com protocolo
+    solicitado --> recusado: contraparte recusa (só TD Garantia)
+    solicitado --> cancelado: prazo vence ou pedido cancelado
+    registrado --> baixado: quitação ou liberação, baixa em até 2 dias úteis
+    registrado --> liberado_para_excussao: atraso na régua
+    liberado_para_excussao --> executado: venda ou resgate por inteiro
+    executado --> baixado: baixa na infraestrutura
+    recusado --> [*]
+    cancelado --> [*]
+    baixado --> [*]
 ```
 
-Só `bloqueada` e `parcialmente_executada` contam para o limite. Qualquer transição fora
-do desenho responde `409 transicao_de_estado_invalida`, com o estado atual e o pedido.
-
-Esta é a garantia **interna** (fase 1). Dentro de casa a confirmação é imediata e a
-garantia já nasce `bloqueada` na resposta. O `pendente` só chega ao banco no modo legado
-`CUSTODIA_MODO=assincrona`; nesse caso, sem confirmação no prazo, a rotina de custódia
-leva a garantia para `gravame_expirado` ([DECISOES 41](DECISOES.md)).
-
-### Garantia em custodiante externo (fase 2, simulada)
-
-```mermaid
-stateDiagram-v2
-    [*] --> solicitada: pedido gravado (API responde 202)
-    solicitada --> gravame_pendente: custodiante aceita o pedido
-    solicitada --> gravame_recusado: recusa
-    solicitada --> gravame_expirado: prazo vence
-    gravame_pendente --> gravame_confirmado: confirma
-    gravame_pendente --> gravame_recusado: recusa
-    gravame_pendente --> gravame_expirado: prazo vence sem resposta
-    gravame_confirmado --> bloqueada: lançamento de bloqueio (o limite nasce aqui)
-    bloqueada --> liberacao_pendente: resgate pedido (o limite sai aqui)
-    liberacao_pendente --> liberada: custodiante confirma (lançamento de liberação)
-    liberacao_pendente --> bloqueada: recusa ou prazo vence
-    bloqueada --> execucao_solicitada: 7º dia de atraso (venda pedida)
-    execucao_solicitada --> parcialmente_executada: venda confirmada, sobrou garantia
-    execucao_solicitada --> executada: venda confirmada, acabou a garantia
-    execucao_solicitada --> bloqueada: recusa ou prazo vence (pede de novo no dia seguinte)
-    parcialmente_executada --> liberacao_pendente
-    parcialmente_executada --> execucao_solicitada
-    gravame_recusado --> [*]
-    gravame_expirado --> [*]
-    liberada --> [*]
-    executada --> [*]
-```
-
-| Estado | Gera limite | Cobre a dívida | Espera o custodiante |
+| Estado | Gera limite | Cobre a dívida | Espera a infraestrutura ou a contraparte |
 |---|---|---|---|
-| `solicitada`, `gravame_pendente` | não | não | sim |
-| `gravame_confirmado` | não (estado de passagem) | não | não |
-| `bloqueada`, `parcialmente_executada` | sim | sim | não |
-| `liberacao_pendente` | não, já no pedido | não | sim |
-| `execucao_solicitada` | não | sim, até a venda ser confirmada | sim |
-| `gravame_recusado`, `gravame_expirado`, `liberada`, `executada` | não | não | não |
+| `solicitado` | não | não | sim |
+| `registrado` (sem baixa pedida) | sim | sim | não |
+| `registrado` (com baixa pedida) | não, desde o pedido | não | sim, até a baixa |
+| `liberado_para_excussao`, `executado` | não | sim, até a venda | sim |
+| `recusado`, `cancelado`, `baixado` | não | não | não |
 
-A tabela de transições é separada por origem: uma garantia interna não alcança nenhum
-estado externo, e uma externa não pula de `bloqueada` para `liberada` sem passar pelo
-pedido. Recusa e expiração nunca geram lançamento.
+Recusa e cancelamento nunca geram lançamento. Uma garantia na casa nasce `solicitado` e
+`registrado` na mesma requisição, porque o registro é do mesmo grupo; nos trilhos de fora,
+fica `solicitado` até a contraparte responder. Qualquer transição fora do desenho responde
+`409 transicao_de_estado_invalida`, com o estado atual e o pedido.
+
+A baixa é pedida na hora, com prazo de 2 dias úteis (decisão 77), e uma rotina
+de conciliação aponta gravame sem dívida, dívida sem gravame e baixa atrasada.
+
+### Empréstimo com garantia
+
+```mermaid
+stateDiagram-v2
+    [*] --> ativo: contratado (gravame registrado e teto conferido)
+    ativo --> em_atraso: parcela vencida e não paga
+    ativo --> quitado: última parcela paga
+    em_atraso --> quitado: pagamento total
+    em_atraso --> liquidado_por_execucao: atraso passa da régua e a garantia é executada
+```
+
+A régua de atraso vem da política (30 dias na maior parte dos ativos). Na previdência, a
+execução só vem depois de 90 dias de atraso (Res. Conjunta 12, art. 12), com avisos aos 45
+dias e 10 dias antes da execução. Os juros do saldo devedor correm pro rata, arredondados
+para cima.
 
 ### Fatura, chamada de margem e conta
 
@@ -188,28 +230,30 @@ stateDiagram-v2
 
 ## Sequências
 
-### 1. Bloquear uma garantia
+### 1. Registrar o gravame na casa
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant P as Parceiro
     participant A as API
+    participant K as Catálogo regulatório
     participant D as Domínio (Conta)
-    participant C as Custódia
+    participant I as Infraestrutura (simulada)
     participant B as Postgres
 
-    P->>A: POST /v1/contas/{id}/garantias<br/>Idempotency-Key, tipo_ativo, valor
+    P->>A: POST /v1/contas/{id}/garantias<br/>Idempotency-Key, tipo_ativo, valor, liquidez_dias
+    A->>K: exigir_combinacao(ativo, cartão, liquidez)
+    K-->>A: ok, ou 422 com código e sugestão
     A->>B: BEGIN · reserva a chave de idempotência
     A->>B: SELECT conta FOR NO KEY UPDATE + saldos do ledger
-    A->>D: registrar_garantia (nasce pendente)
-    A->>C: solicitar_bloqueio
-    C-->>A: confirmado (custódia interna)
-    A->>D: confirmar_bloqueio
-    D-->>A: lançamento + eventos garantia.bloqueada e limite.atualizado
-    A->>B: garantia, lançamento, partidas, eventos e entregas de webhook
+    A->>D: custodiar_na_casa (gravame nasce solicitado)
+    D->>I: registrar o gravame
+    I-->>D: protocolo
+    D-->>A: gravame registrado + lançamento + eventos gravame.registrado e limite.atualizado
+    A->>B: garantia, gravame, lançamento, partidas, eventos e entregas de webhook
     A->>B: guarda a resposta na chave · COMMIT
-    A-->>P: 201 com a garantia e o novo limite
+    A-->>P: 201 com a garantia, o gravame e o novo limite
 ```
 
 ### 2. Autorizar uma compra
@@ -305,7 +349,7 @@ menos uma vez", e por isso todo evento tem um `id` estável para o receptor reco
 repetição. A requisição HTTP acontece fora de qualquer transação: o worker reserva,
 envia e só então grava o resultado, sem segurar conexão do banco durante a chamada.
 
-### 5. Gravame externo, caminho feliz (callback e consulta de reserva)
+### 5. Trazer um ativo de fora: portabilidade, caminho feliz
 
 ```mermaid
 sequenceDiagram
@@ -314,86 +358,107 @@ sequenceDiagram
     participant A as API
     participant D as Domínio
     participant B as Banco
-    participant W as Worker (rotina de custódia)
-    participant C as Custodiante (simulado)
-    P->>A: POST /v1/contas/{id}/garantias {custodiante_id}
-    A->>D: registrar_garantia (nasce solicitada, com pedido e prazo)
-    A->>B: garantia + pedido + evento gravame.solicitado (mesma transação)
-    A-->>P: 202, garantia solicitada, limite 0
-    Note over W,C: O pedido sai depois do commit: nunca há gravame lá sem registro aqui
-    W->>C: solicitar_gravame(solicitacao_id)
-    C-->>W: pendente (aceito)
-    W->>B: garantia gravame_pendente
+    participant W as Worker (rotina de contrapartes)
+    participant C as Contraparte (simulada)
+    P->>A: POST /v1/contas/{id}/portabilidades {contraparte_id, ativo, valor}
+    A->>D: pedir entrada (gravame solicitado, com prazo em dias úteis)
+    A->>B: garantia + gravame + pedido + evento portabilidade.solicitada
+    A-->>P: 202, limite ainda zero
+    Note over W,C: O pedido sai depois do commit: nunca há registro lá sem registro aqui
+    W->>C: solicitar a entrada
     alt o callback chega
-        C->>A: POST /v1/custodiantes/{id}/callbacks (assinado)
+        C->>A: POST /v1/contrapartes/{id}/callbacks (assinado)
         A->>A: confere HMAC e janela do timestamp
     else o callback não chega
-        W->>C: consultar(solicitacao_id)
-        C-->>W: confirmada, evento_id
+        W->>C: consultar
+        C-->>W: concluída, evento_id
     end
-    A->>B: trava a conta; (custodiante, evento_id) já existe?
+    A->>B: trava a conta; (contraparte, evento_id) já existe?
     alt primeira vez
-        A->>D: confirmar_gravame: gravame_confirmado, depois bloqueada
-        A->>B: lançamento de bloqueio + resposta registrada + eventos
-        B-->>P: webhooks gravame.confirmado, garantia.bloqueada, limite.atualizado
-    else mesma resposta de novo (callback repetido ou já obtida na consulta)
+        A->>D: concluir a entrada e registrar o gravame na infraestrutura
+        A->>B: lançamento + resposta registrada + eventos
+        B-->>P: webhooks portabilidade.concluida, gravame.registrado, limite.atualizado
+    else mesma resposta de novo
         A-->>C: 200 {"resultado": "duplicada"}, nada muda
     end
 ```
 
-### 6. Gravame externo recusado
+### 6. Entrada recusada ou com impedimento
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant W as Worker
-    participant C as Custodiante (simulado)
-    participant A as API / caso de uso
+    participant C as Contraparte (simulada)
+    participant A as Caso de uso
     participant B as Banco
     participant P as Parceiro
-    W->>C: consultar(solicitacao_id)
-    C-->>W: recusada, motivo
+    W->>C: consultar
+    C-->>W: impedimento ou recusada, motivo
     W->>A: aplicar_resposta (canal polling)
-    A->>B: garantia gravame_recusado, sem lançamento
-    B-->>P: webhook gravame.recusado {motivo}
+    A->>B: gravame recusado (TD Garantia) ou cancelado, sem lançamento
+    B-->>P: webhook gravame.recusado ou gravame.cancelado {motivo}
 ```
 
-### 7. Gravame externo sem resposta (timeout)
+Na portabilidade da CVM 210, só `impedimento` é aceito como resposta negativa e as demais
+são recusa (art. 19); resposta de um trilho no outro dá `422`.
+
+### 7. Contraparte sem resposta no prazo
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant W as Worker
-    participant C as Custodiante (simulado)
+    participant C as Contraparte (simulada)
     participant B as Banco
     participant P as Parceiro
-    loop a cada CUSTODIA_INTERVALO_SEGUNDOS
-        W->>C: consultar(solicitacao_id)
+    loop a cada CONTRAPARTES_INTERVALO_SEGUNDOS
+        W->>C: consultar
         C-->>W: pendente
     end
-    Note over W: agora > prazo_ate do pedido
-    W->>B: garantia gravame_expirado, sem lançamento
-    B-->>P: webhook gravame.expirado
-    Note over B: Se a confirmação chegar depois, é registrada como obsoleta e não muda nada
+    Note over W: agora > prazo_ate do pedido (dias úteis)
+    W->>B: gravame cancelado, ou marcado garantia.prazo_regulatorio_vencido
+    B-->>P: webhook gravame.cancelado ou garantia.prazo_regulatorio_vencido
+    Note over B: Se a resposta chegar depois, é registrada como obsoleta e não muda nada
+```
+
+### 8. Baixa e conciliação
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as Domínio
+    participant W as Worker (rotina de baixas)
+    participant I as Infraestrutura (simulada)
+    participant R as Conciliação diária
+    D->>D: quitação, liberação ou execução: baixa pedida, prazo de 2 dias úteis
+    W->>I: pedir a baixa do gravame
+    I-->>W: baixado
+    W->>D: gravame baixado + evento gravame.baixado
+    R->>D: gravame sem dívida? dívida sem gravame? baixa atrasada?
 ```
 
 ## Onde entraria o trilho real
 
-A fase 2 deste projeto para na porta `Custodiante` (`app/aplicacao/portas.py`). O
-simulador (`app/infra/custodia.py`) é uma implementação dela; um trilho real seria
-outra, com os mesmos métodos: pedir gravame, liberação e execução e consultar o status
-de um pedido, mais a rota de callback se o trilho avisar por chamada.
+A integração real pararia em duas portas (`app/aplicacao/portas.py`): `Contraparte`
+(a outra ponta do pedido de entrada: corretora, banco de origem, agente de custódia,
+entidade operadora) e `InfraestruturaDeRegistro` (a B3 ou o Selic). Os simuladores
+(`app/infra/contrapartes.py` e `app/infra/infraestrutura_simulada.py`) são uma
+implementação delas; uma real seria outra, com os mesmos métodos.
 
-| Ativo | Trilho que existe | O que as fontes públicas dizem | O que eu não sei |
+| Ativo | Trilho que existe | O que as fontes públicas dizem | O que não sabemos |
 |---|---|---|---|
-| Tesouro Direto | TD Garantia | Anunciado em 25/11/2024 por B3, Tesouro Nacional e Banco Central; permite ao investidor pessoa física usar títulos do Tesouro Direto como garantia. O Selic passou a permitir o registro de gravames desses títulos (fonte secundária). | Quem pode receber a garantia e como a instituição se habilita, o protocolo, se há callback ou só consulta, os prazos. |
-| Previdência, seguro de pessoas, capitalização | Lei 14.652/2023 e Resolução Conjunta CNSP/CMN nº 12/2024 | O direito de resgate desses planos pode ser dado em garantia de operações de crédito. | O processo operacional nas seguradoras e a existência de um registro de garantias na B3 por API: não encontrei fonte pública para nenhum dos dois. |
+| Tesouro Direto | TD Garantia | Anunciado em 25/11/2024 por B3, Tesouro Nacional e Banco Central; permite ao investidor pessoa física usar títulos do Tesouro Direto como garantia (prática de mercado). O Selic passou a registrar gravames desses títulos (fonte secundária). | Quem pode receber a garantia e como a instituição se habilita, o protocolo, se há callback ou só consulta, os prazos. |
+| Previdência, seguro de pessoas, capitalização | Lei 14.652/2023 e Resolução Conjunta CNSP/CMN nº 12/2024 | O direito de resgate pode ser dado em garantia de operações de crédito; a operadora informa em 2 dias úteis e não recusa pedido que siga a norma (arts. 4º, §1º, e 18); a execução só vem após 90 dias de atraso (art. 12). | O RC Garantias da B3, anunciado em 11/11/2025 para o início de 2026, e se já opera: não verificado. |
+| Ações, FIIs, ETFs, cotas de fundos | Portabilidade da Res. CVM 210/2024 | Prazo de 2, 5 ou até 9 dias úteis (art. 16). | Como o custodiante de origem trata o gravame durante a portabilidade. |
+| CDB, LCI, LCA | Transferência de custódia, fora da CVM 210 | Entendimento corrente: ficam fora da CVM 210 (Lei 6.385, art. 2º, §1º), interpretação. | Não encontramos norma que obrigue o custodiante de origem a registrar gravame para credor de outra instituição, nem prazo regulatório. |
 
 As fontes, e o que foi confirmado em fonte oficial ou só em fonte secundária, estão em
-[mercado.md](mercado.md#trilhos-regulados-que-já-existem). Nada nesta tabela descreve o
-funcionamento interno desses trilhos: o desenho da porta (pedido idempotente, resposta
-assíncrona, prazo, confirmação por evento) é uma suposição minha sobre o que qualquer
-integração desse tipo precisa, não uma descrição de como eles funcionam.
+[mercado.md](mercado.md#trilhos-regulados-que-já-existem) e, por ativo, em
+[regulacao.md](regulacao.md). Nada nesta tabela descreve o funcionamento interno desses
+trilhos: o desenho das portas (pedido idempotente, resposta assíncrona, prazo,
+confirmação por evento) é uma suposição do projeto sobre o que qualquer integração desse
+tipo precisa, não uma descrição de como eles funcionam.
 
 ## Concorrência
 
@@ -415,11 +480,12 @@ encontrou os dois problemas descritos em [DECISOES.md](DECISOES.md): um deadlock
 Ordem das travas, sempre a mesma para não haver deadlock: parceiro (só quando a política
 tem teto de carteira) e depois conta.
 
-**Respostas do custodiante.** Callback e consulta de reserva podem trazer a mesma
-confirmação ao mesmo tempo, e o custodiante pode repetir o callback. As duas defesas
+**Respostas da contraparte.** Callback e consulta podem trazer a mesma resposta ao mesmo
+tempo, e a contraparte pode repetir o callback. As duas defesas
 aqui são a trava de linha da conta (quem chega depois espera e já enxerga a resposta
-registrada) e a chave primária `(custodiante_id, evento_id)` em
-`respostas_de_custodiante`, gravada num savepoint. Um teste dispara dez callbacks
+registrada) e a chave primária `(contraparte_id, evento_id)` em
+`respostas_de_custodiante` (tabela mantida; a coluna `custodiante_id` guarda o
+`contraparte_id`), gravada num savepoint. Um teste dispara dez callbacks
 iguais ao mesmo tempo contra Postgres e exige uma resposta `aplicada`, nove
 `duplicada` e um único lançamento; outro mistura callbacks e rodadas da rotina de
 consulta.
