@@ -248,9 +248,14 @@ def test_negocio_cdi_alto_deixa_a_margem_negativa(pagina: Any) -> None:
     esperar(pagina.locator("#grafico-cascata g.degrau.margem rect.negativo")).to_have_count(1)
 
 
-def test_navegacao_entre_as_tres_paginas(pagina: Any) -> None:
+def test_navegacao_entre_as_quatro_paginas(pagina: Any) -> None:
     esperar = _esperar()
-    paginas = {"/demo": "Demonstração", "/risco": "Risco", "/negocio": "Negócio"}
+    paginas = {
+        "/demo": "Demonstração",
+        "/regulacao": "Regulação",
+        "/risco": "Risco",
+        "/negocio": "Negócio",
+    }
     for caminho, nome in paginas.items():
         pagina.goto(f"{pagina.endereco}{caminho}")
         esperar(pagina.locator("body[data-pronta=true]")).to_have_count(1)
