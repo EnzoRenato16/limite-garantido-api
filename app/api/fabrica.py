@@ -45,7 +45,7 @@ from app.infra.banco.unidade import criar_fabrica_de_unidades
 from app.infra.calendario import carregar_calendario
 from app.infra.contrapartes import montar_contraparte
 from app.infra.economia import carregar_parametros_da_economia
-from app.infra.infraestrutura_simulada import InfraestruturaSimulada
+from app.infra.infraestrutura_simulada import montar_infraestrutura
 from app.infra.logs import configurar_logs
 from app.infra.metricas import Metricas
 from app.infra.precos import ProvedorDePrecosFake
@@ -181,7 +181,7 @@ def criar_app(
             config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         )
     if infraestrutura is None:
-        infraestrutura = InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna")
+        infraestrutura = montar_infraestrutura(config)
 
     metricas = Metricas()
     metricas.observar_fila_de_webhooks(lambda: contar_fila(fabrica_de_sessoes))

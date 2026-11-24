@@ -36,10 +36,10 @@ from app.dominio.erros import (
     GarantiaCobrindoDivida,
     GarantiaNaoEncontrada,
     PagamentoExcedeDivida,
+    PrimeiroVencimentoForaDoPrazo,
     SemSaldoParaFaturar,
     TransicaoInvalida,
     ValorInvalido,
-    PrimeiroVencimentoForaDoPrazo,
     VencimentoInvalido,
 )
 from app.dominio.eventos import EventoDominio, TipoEvento

@@ -22,7 +22,7 @@ from app.config import obter_configuracao
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
 from app.infra.contrapartes import montar_contraparte
-from app.infra.infraestrutura_simulada import InfraestruturaSimulada
+from app.infra.infraestrutura_simulada import montar_infraestrutura
 from app.infra.logs import configurar_logs
 from app.infra.precos import ProvedorDePrecosFake
 from app.infra.relogio import RelogioDoSistema
@@ -50,7 +50,7 @@ def main() -> int:
         montar_contraparte(
             config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         ),
-        InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna"),
+        montar_infraestrutura(config),
     )
 
     erros = 0

@@ -355,6 +355,11 @@ CATALOGO: dict[str, tuple[int, str, str]] = {
         "calendário precisa ser estendido.",
     ),
     "erro_interno": (500, "Erro interno", "Erro inesperado. Informe o request_id ao suporte."),
+    "infraestrutura_indisponivel": (
+        503,
+        "Infraestrutura de registro indisponível",
+        "Não há infraestrutura de registro de gravame ligada neste ambiente.",
+    ),
     "servico_indisponivel": (503, "Serviço indisponível", "O banco de dados não respondeu."),
 }
 

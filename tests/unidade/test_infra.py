@@ -187,6 +187,30 @@ def test_simulador_de_contrapartes_fica_fora_da_producao() -> None:
         )
 
 
+def test_infraestrutura_de_registro_simulada_fica_fora_da_producao() -> None:
+    assert _config().infraestrutura_efetiva == "simulada"
+    producao = {
+        "ambiente": "producao",
+        "database_url": "postgresql+psycopg://app@banco/lg",
+        "admin_token": TOKEN_FORTE,
+    }
+    assert _config(**producao).infraestrutura_efetiva == "desligada"
+    with pytest.raises(ValueError, match="INFRAESTRUTURA_DE_REGISTRO=simulada"):
+        _config(**producao, infraestrutura_de_registro="simulada")
+
+
+def test_infraestrutura_desligada_recusa_em_vez_de_fingir_registro() -> None:
+    from app.dominio.erros import InfraestruturaIndisponivel
+    from app.infra.infraestrutura_simulada import InfraestruturaDesligada, montar_infraestrutura
+
+    assert isinstance(
+        montar_infraestrutura(_config(infraestrutura_de_registro="desligada")),
+        InfraestruturaDesligada,
+    )
+    with pytest.raises(InfraestruturaIndisponivel):
+        InfraestruturaDesligada().registrar(None)  # type: ignore[arg-type]
+
+
 def test_segredo_de_callback_fraco_nao_sobe_em_producao() -> None:
     with pytest.raises(ValueError, match="segredo de callback de banco_de_origem_simulado"):
         _config(

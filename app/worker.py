@@ -29,7 +29,7 @@ from app.infra.banco.repositorios import RepositorioDeIdempotencia
 from app.infra.banco.sessao import criar_engine, criar_fabrica_de_sessoes
 from app.infra.banco.unidade import criar_fabrica_de_unidades
 from app.infra.contrapartes import montar_contraparte
-from app.infra.infraestrutura_simulada import InfraestruturaSimulada
+from app.infra.infraestrutura_simulada import montar_infraestrutura
 from app.infra.logs import configurar_logs
 from app.infra.relogio import RelogioDoSistema
 from app.infra.webhooks.entregador import Entregador
@@ -55,7 +55,7 @@ def main() -> None:
         montar_contraparte(
             config.contrapartes_efetivas, relogio, config.contrapartes_perfis_arquivo
         ),
-        InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna"),
+        montar_infraestrutura(config),
     )
     prazo_legado = timedelta(minutes=config.custodia_prazo_legado_minutos)
 

@@ -123,3 +123,7 @@ class EmprestimoNegado(ErroDominio):
     @property
     def codigo(self) -> str:  # type: ignore[override]
         return self._codigo
+
+
+class InfraestruturaIndisponivel(ErroDominio):
+    codigo = "infraestrutura_indisponivel"

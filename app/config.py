@@ -53,6 +53,10 @@ class Configuracao(BaseSettings):
     # produção e desligado em produção.
     contrapartes: Literal["simulador", "desligada"] | None = None
     contrapartes_perfis_arquivo: Path | None = None
+    # Onde o gravame seria registrado (B3, Selic, plataforma da Res. Conjunta 12). Também só
+    # há simulação: em produção ela é recusada, e "desligada" responde 503
+    # `infraestrutura_indisponivel` em vez de fingir um registro.
+    infraestrutura_de_registro: Literal["simulada", "desligada"] | None = None
     # Segredo HMAC de cada contraparte para assinar callbacks, em JSON:
     # CONTRAPARTES_SEGREDOS='{"banco_de_origem_simulado": "...", ...}'
     contrapartes_segredos: dict[str, SecretStr] = Field(default_factory=dict)
@@ -107,6 +111,11 @@ class Configuracao(BaseSettings):
             problemas.append("WEBHOOK_PERMITIR_REDE_INTERNA precisa ser false")
         if self.contrapartes == "simulador":
             problemas.append("CONTRAPARTES=simulador não roda em produção: não há contraparte real")
+        if self.infraestrutura_de_registro == "simulada":
+            problemas.append(
+                "INFRAESTRUTURA_DE_REGISTRO=simulada não roda em produção: "
+                "não há registro real de gravame"
+            )
         for contraparte_id, segredo in self.contrapartes_segredos.items():
             valor = segredo.get_secret_value()
             if len(valor) < TAMANHO_MINIMO_DE_SEGREDO or MARCA_DE_SEGREDO_DE_EXEMPLO in valor:
@@ -130,6 +139,12 @@ class Configuracao(BaseSettings):
     @property
     def em_producao(self) -> bool:
         return self.ambiente is Ambiente.PRODUCAO
+
+    @property
+    def infraestrutura_efetiva(self) -> Literal["simulada", "desligada"]:
+        if self.infraestrutura_de_registro is not None:
+            return self.infraestrutura_de_registro
+        return "desligada" if self.em_producao else "simulada"
 
     @property
     def contrapartes_efetivas(self) -> Literal["simulador", "desligada"]:

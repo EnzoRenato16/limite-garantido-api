@@ -8,7 +8,9 @@ O protocolo é `SIM-<infraestrutura>-<id da garantia>`, estável para a mesma ga
 from __future__ import annotations
 
 from app.aplicacao.portas import InfraestruturaDeRegistro
+from app.config import Configuracao
 from app.dominio.dinheiro import Dinheiro
+from app.dominio.erros import InfraestruturaIndisponivel
 from app.dominio.garantia import Garantia
 
 
@@ -37,3 +39,29 @@ class InfraestruturaSimulada:
 
 def _confere_o_protocolo(infraestrutura: InfraestruturaSimulada) -> InfraestruturaDeRegistro:
     return infraestrutura
+
+
+class InfraestruturaDesligada:
+    """Não há registro real: toda operação recusa com 503, sem fingir protocolo."""
+
+    confirma_na_hora = False
+
+    def _recusar(self) -> InfraestruturaIndisponivel:
+        return InfraestruturaIndisponivel(
+            "Não há infraestrutura de registro de gravame ligada neste ambiente"
+        )
+
+    def registrar(self, garantia: Garantia) -> str:
+        raise self._recusar()
+
+    def executar(self, garantia: Garantia, valor_de_mercado: Dinheiro) -> Dinheiro:
+        raise self._recusar()
+
+    def baixar(self, garantia: Garantia) -> None:
+        raise self._recusar()
+
+
+def montar_infraestrutura(config: Configuracao) -> InfraestruturaDeRegistro:
+    if config.infraestrutura_efetiva == "desligada":
+        return InfraestruturaDesligada()
+    return InfraestruturaSimulada(confirma_na_hora=config.custodia_modo == "interna")
