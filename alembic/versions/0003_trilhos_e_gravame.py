@@ -108,6 +108,17 @@ ORDEM_DE_REFERENCIA = (
     "previdencia",
 )
 
+# Tipos que não existiam na 0002 (o `deposito` virou `cdb`).
+TIPOS_NOVOS = ("lci", "lca", "fii", "etf", "previdencia")
+CONTAS_CONTABEIS_DA_0002 = (
+    "garantias_custodiadas",
+    "garantias_a_devolver",
+    "recebiveis_a_faturar",
+    "recebiveis_faturados",
+    "liquidacao_a_pagar",
+    "caixa_recebimentos",
+)
+
 # Trilho de fora do catálogo para cada ativo (o primeiro que não é a casa).
 _TRILHO_DE_FORA = """CASE
     WHEN g.tipo_ativo LIKE 'tesouro%' THEN 'td_garantia'
@@ -244,13 +255,81 @@ def _ajustar_politicas() -> None:
             ordem.remove("deposito")
             if "cdb" not in ordem:
                 ordem.insert(posicao, "cdb")
-        for tipo, valor in LTV_DE_REFERENCIA.items():
-            ltv.setdefault(tipo, valor)
-        ordem += [tipo for tipo in ORDEM_DE_REFERENCIA if tipo not in ordem]
+        # Só entram os tipos que a 0002 não conhecia: o que o parceiro tirou da política
+        # (ações, fundo DI, Tesouro, CDB) continua fora.
+        for tipo in TIPOS_NOVOS:
+            ltv.setdefault(tipo, LTV_DE_REFERENCIA[tipo])
+        ordem += [tipo for tipo in ORDEM_DE_REFERENCIA if tipo in TIPOS_NOVOS and tipo not in ordem]
         dados["ltv_por_ativo"] = ltv
         dados["ordem_de_execucao"] = ordem
         conexao.execute(
             sa.update(parceiros).where(parceiros.c.id == identificador).values(politica=dados)
+        )
+
+
+def _reverter_politicas() -> None:
+    """Deixa as políticas no formato estrito da 0002: sem os tipos novos e com `deposito`.
+    Quem tinha `cdb` ganha `deposito` com o mesmo LTV (a 0002 aceita os dois e não dá para
+    saber qual dos dois o parceiro tinha antes)."""
+    parceiros = sa.table(
+        "parceiros", sa.column("id", sa.String), sa.column("politica", _json_da_politica())
+    )
+    conexao = op.get_bind()
+    for identificador, politica in conexao.execute(sa.select(parceiros.c.id, parceiros.c.politica)):
+        dados = json.loads(politica) if isinstance(politica, str) else dict(politica)
+        ltv = {t: v for t, v in dict(dados.get("ltv_por_ativo", {})).items() if t not in TIPOS_NOVOS}
+        ordem = [t for t in dados.get("ordem_de_execucao", []) if t not in TIPOS_NOVOS]
+        if "cdb" in ltv and "deposito" not in ltv:
+            ltv["deposito"] = ltv["cdb"]
+        if "cdb" in ordem and "deposito" not in ordem:
+            ordem.insert(ordem.index("cdb"), "deposito")
+        dados["ltv_por_ativo"] = ltv
+        dados["ordem_de_execucao"] = ordem
+        conexao.execute(
+            sa.update(parceiros).where(parceiros.c.id == identificador).values(politica=dados)
+        )
+
+
+def _desfazer_compensacoes() -> None:
+    """Apaga os lançamentos `lan_mig0003_*`: sem isso, a confirmação da liberação no modelo
+    antigo lançaria a saída de novo. No Postgres o ledger é somente inserção: os gatilhos
+    ficam desligados só durante a limpeza."""
+    ligacao = op.get_bind()
+    no_postgres = ligacao.dialect.name == "postgresql"
+    if no_postgres:
+        op.execute("ALTER TABLE partidas DISABLE TRIGGER tg_partidas_somente_insercao")
+        op.execute("ALTER TABLE lancamentos DISABLE TRIGGER tg_lancamentos_somente_insercao")
+    op.execute(
+        "DELETE FROM partidas WHERE lancamento_sequencia IN "
+        "(SELECT sequencia FROM lancamentos WHERE id LIKE 'lan_mig0003_%')"
+    )
+    op.execute("DELETE FROM lancamentos WHERE id LIKE 'lan_mig0003_%'")
+    if no_postgres:
+        op.execute("ALTER TABLE partidas ENABLE TRIGGER tg_partidas_somente_insercao")
+        op.execute("ALTER TABLE lancamentos ENABLE TRIGGER tg_lancamentos_somente_insercao")
+
+
+def _recusar_se_o_codigo_antigo_nao_le() -> None:
+    ligacao = op.get_bind()
+    problemas = []
+    if ligacao.execute(sa.text("SELECT COUNT(*) FROM emprestimos")).scalar():
+        problemas.append("há empréstimos")
+    novos = ", ".join(f"'{tipo}'" for tipo in TIPOS_NOVOS)
+    if ligacao.execute(
+        sa.text(f"SELECT COUNT(*) FROM garantias WHERE tipo_ativo IN ({novos})")  # noqa: S608
+    ).scalar():
+        problemas.append("há garantias de lci, lca, fii, etf ou previdência")
+    contas = ", ".join(f"'{conta}'" for conta in CONTAS_CONTABEIS_DA_0002)
+    if ligacao.execute(
+        sa.text(  # noqa: S608
+            f"SELECT COUNT(*) FROM partidas WHERE conta_contabil NOT IN ({contas})"
+        )
+    ).scalar():
+        problemas.append("há partidas em contas contábeis novas")
+    if problemas:
+        raise RuntimeError(
+            "Downgrade da 0003 recusado, o código da 0002 não leria a base: "
+            + "; ".join(problemas)
         )
 
 
@@ -408,6 +487,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _recusar_se_o_codigo_antigo_nao_le()
+    _reverter_politicas()
+    _desfazer_compensacoes()
+    # O depósito virou CDB com liquidez diária; CDB com liquidez 0 volta a ser depósito
+    # (um CDB D+0 criado depois da 0003 também volta: os dois não se distinguem).
+    op.execute("UPDATE garantias SET tipo_ativo = 'deposito' WHERE liquidez_dias = 0 AND tipo_ativo = 'cdb'")
     with op.batch_alter_table("garantias") as tabela:
         tabela.drop_constraint("ck_garantias_liquidez", type_="check")
         tabela.drop_constraint("ck_garantias_produto", type_="check")

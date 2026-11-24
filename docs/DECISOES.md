@@ -999,6 +999,33 @@ Res. Conjunta 12. O plano está em [plano-regulacao.md](plano-regulacao.md).
   notas (IR, capital e teto da Lei 14.690, art. 28). O parcelado não tem linha própria.
 - **Páginas.** A `/regulacao` e o `docs/regulacao.md` são gerados do mesmo catálogo.
 
+### 94. Primeiro vencimento do empréstimo: de amanhã a 60 dias
+O juro do 1º período é de um mês cheio. Sem teto, `primeiro_vencimento` em 5 anos cobrava
+um mês de juros por 5 anos de crédito, e o atraso só contava depois dele. Agora a data
+precisa ficar entre amanhã e 60 dias corridos (422 `primeiro_vencimento_fora_do_prazo`),
+e o esquema da API limita o ano (2000 a 2100), de modo que data extrema dá 422 em vez de
+500. Mantém-se o mês cheio de juros na 1ª parcela, já que o período é limitado.
+
+### 95. Infraestrutura de registro simulada também é recusada em produção
+`INFRAESTRUTURA_DE_REGISTRO=simulada|desligada`, com o mesmo critério das contrapartes:
+sem valor explícito, fora de produção é `simulada` e em produção é `desligada`; `simulada`
+com `AMBIENTE=producao` impede a subida. Desligada, registrar, executar e baixar respondem
+503 `infraestrutura_indisponivel`, em vez de devolver um protocolo `SIM-...` e liberar
+limite sem registro algum.
+
+### 96. Downgrade da 0003 deixa a base legível para o código da 0002
+Remove das políticas os tipos novos e devolve `deposito` (ao lado do `cdb`, com o mesmo
+LTV; a 0002 aceita os dois), apaga os lançamentos `lan_mig0003_*` (no Postgres, com os
+gatilhos do ledger desligados só durante a limpeza), volta os estados e `cdb` com liquidez
+0 volta a `deposito`. Limite conhecido: um CDB D+0 criado depois da 0003 também volta como
+depósito. O downgrade recusa (`RuntimeError`) se houver empréstimo, garantia de tipo novo
+ou partida em conta contábil nova, porque o código antigo não os lê.
+
+### 97. A 0003 só acrescenta tipos que a 0002 não conhecia
+`lci`, `lca`, `fii`, `etf` e `previdencia` entram na política de cada parceiro; `cdb`
+entra só se o parceiro tinha `deposito` e não tinha `cdb`. Tipo que o parceiro tinha
+tirado (ações, fundo DI, Tesouro) não volta: a decisão de risco dele é preservada.
+
 <a id="revisao-final"></a>
 ## Revisão final
 

@@ -17,6 +17,15 @@ from sqlalchemy.engine import make_url
 from app.infra.banco.sessao import criar_engine
 from tests.conftest import RAIZ
 
+TIPOS_DA_0002 = {
+    "deposito",
+    "fundo_di",
+    "tesouro_selic",
+    "tesouro_prefixado",
+    "tesouro_ipca",
+    "cdb",
+    "acoes",
+}
 AGORA = "2026-03-02 15:00:00+00:00"
 DATA = "2026-03-02"
 
@@ -278,5 +287,71 @@ def test_migracao_0003_mapeia_estados_tipos_politicas_e_desce(url_vazia: str) ->
             estados = dict(c.execute(text("SELECT id, estado FROM garantias")).all())
             assert estados["gar_m05"] == "liberacao_pendente"
             assert estados["gar_m07"] == "pendente"
+            assert estados["gar_m06"] == "execucao_solicitada"
+            tipos = dict(c.execute(text("SELECT id, tipo_ativo FROM garantias")).all())
+            assert tipos["gar_m01"] == "deposito"  # o depósito convertido volta
+            assert tipos["gar_m02"] == "cdb"
+            # O ledger volta ao que era: sem a compensação da migração, saída não dobra.
+            assert c.execute(text("SELECT COUNT(*) FROM lancamentos")).scalar() == 2
+            assert not c.execute(
+                text("SELECT COUNT(*) FROM lancamentos WHERE id LIKE 'lan_mig0003_%'")
+            ).scalar()
+            saldos = dict(
+                c.execute(
+                    text(
+                        "SELECT garantia_id, "
+                        "SUM(CASE WHEN sentido = 'D' THEN valor ELSE -valor END) "
+                        "FROM partidas WHERE conta_contabil = 'garantias_custodiadas' "
+                        "GROUP BY garantia_id"
+                    )
+                ).all()
+            )
+            assert saldos["gar_m05"] == 100000
+            # A política volta no formato estrito da 0002.
+            politica = c.execute(text("SELECT politica FROM parceiros")).scalar()
+            politica = json.loads(politica) if isinstance(politica, str) else politica
+            assert set(politica["ltv_por_ativo"]) <= TIPOS_DA_0002
+            assert set(politica["ordem_de_execucao"]) <= TIPOS_DA_0002
+            assert politica["ltv_por_ativo"]["deposito"] == "0.95"
+            assert "deposito" in politica["ordem_de_execucao"]
+        # Subir de novo funciona (o downgrade não deixou tabela nem coluna para trás).
+        command.upgrade(configuracao, "0003")
+    finally:
+        engine.dispose()
+
+
+def test_migracao_0003_so_acrescenta_tipos_que_nao_existiam_na_0002(url_vazia: str) -> None:
+    configuracao = _configuracao(url_vazia)
+    command.upgrade(configuracao, "0002")
+    engine = criar_engine(url_vazia)
+    try:
+        cast = "CAST(:politica AS jsonb)" if engine.dialect.name == "postgresql" else ":politica"
+        politica = json.dumps(
+            {
+                # O parceiro tirou acoes, fundo_di e os títulos do Tesouro da política.
+                "ltv_por_ativo": {"cdb": "0.70"},
+                "ordem_de_execucao": ["cdb"],
+                "dias_para_execucao": 7,
+                "prazo_chamada_de_margem_dias": 5,
+            }
+        )
+        with engine.begin() as c:
+            c.execute(
+                text(
+                    "INSERT INTO parceiros (id, nome, chave_prefixo, chave_hash, politica, "  # noqa: S608
+                    "limite_de_requisicoes_por_minuto, ativo, criado_em) VALUES "
+                    f"('par_i4', 'P', 'pre', 'hash', {cast}, 60, true, :agora)"
+                ),
+                {"politica": politica, "agora": AGORA},
+            )
+        command.upgrade(configuracao, "0003")
+        with engine.connect() as c:
+            lido: Any = c.execute(text("SELECT politica FROM parceiros")).scalar()
+        lido = json.loads(lido) if isinstance(lido, str) else lido
+        assert lido["ltv_por_ativo"]["cdb"] == "0.70"  # o que o parceiro escolheu fica
+        assert set(lido["ltv_por_ativo"]) == {"cdb", "lci", "lca", "fii", "etf", "previdencia"}
+        assert set(lido["ordem_de_execucao"]) == set(lido["ltv_por_ativo"])
+        for tipo in ("acoes", "fundo_di", "tesouro_selic", "tesouro_ipca", "tesouro_prefixado"):
+            assert tipo not in lido["ltv_por_ativo"]
     finally:
         engine.dispose()
